@@ -60,18 +60,18 @@ def classify_patch(patch):
         return 0
 
     try:
-        # Crop outer boundaries to eliminate grid division lines (65x65 -> 55x55)
-        cropped = patch[5:60, 5:60]
+        # Crop outer boundaries to eliminate grid division lines (65x65 -> 45x45)
+        cropped = patch[10:55, 10:55]
         gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         
         # 1. Detect Black King (Player, dark intensity)
-        _, thresh_black = cv2.threshold(gray, 75, 255, cv2.THRESH_BINARY_INV)
+        _, thresh_black = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
         contours_black, _ = cv2.findContours(thresh_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         if len(contours_black) > 0:
             c_black = max(contours_black, key=cv2.contourArea)
             area_black = cv2.contourArea(c_black)
-            if area_black > 180.0:
+            if area_black > 100.0:
                 # Black King (Player)
                 return 1
                 
@@ -83,6 +83,10 @@ def classify_patch(patch):
             c_white = max(contours_white, key=cv2.contourArea)
             area_white = cv2.contourArea(c_white)
             
+            # Avoid misclassifying empty bright tiles
+            if area_white > 1700.0:
+                return 0
+                
             if area_white > 75.0:
                 x, y, w, h = cv2.boundingRect(c_white)
                 

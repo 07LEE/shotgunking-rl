@@ -26,11 +26,11 @@ except ImportError:
 class QNetwork(nn.Module if nn is not None else object):
     """Deep Q-Network MLP neural network."""
 
-    def __init__(self, state_size=130, action_size=10):
+    def __init__(self, state_size=133, action_size=10):
         """Initializes the network layers.
 
         Args:
-            state_size: Flattened input state vector dimension (130).
+            state_size: Flattened input state vector dimension (133).
             action_size: Number of discrete action choices (10).
         """
         super().__init__()
@@ -105,11 +105,11 @@ class ReplayBuffer:
 class DQNAgent:
     """Deep Q-Network decision-making agent."""
 
-    def __init__(self, state_size=130, action_size=10, lr=1e-3, gamma=0.99):
+    def __init__(self, state_size=133, action_size=10, lr=1e-3, gamma=0.99):
         """Initializes the agent parameters, networks, and optimizer.
 
         Args:
-            state_size: Flattened input state vector dimension (130).
+            state_size: Flattened input state vector dimension (133).
             action_size: Number of discrete action choices.
             lr: Learning rate for training.
             gamma: Discount factor for future rewards.
@@ -225,8 +225,8 @@ class DQNAgent:
 if __name__ == "__main__":
     print("Testing DQNAgent initialization and forward pass...")
     if torch is not None and np is not None:
-        agent = DQNAgent(state_size=130, action_size=10)
-        dummy_state = np.zeros((130,), dtype=np.float32)
+        agent = DQNAgent(state_size=133, action_size=10)
+        dummy_state = np.zeros((133,), dtype=np.float32)
         
         action = agent.act(dummy_state, epsilon=0.0)
         print(f"Decided action for dummy state: {action}")

@@ -49,15 +49,21 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_step = 0
         self.current_state = None
 
-        # Define Observation Space: 1D flat vector of size 130
-        # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats
+        # Define Observation Space: 1D flat vector of size 133
+        # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
+        # and 3 dimensions for weapon specifications (damage, range, spread)
         self.observation_space = spaces.Box(
-            low=0, high=8, shape=(130,), dtype=np.float32
+            low=0, high=90, shape=(133,), dtype=np.float32
         )
 
         # Ammo Tracking
         self.loaded_ammo = 2
         self.reserve_ammo = 8
+
+        # Weapon Specifications
+        self.damage = 4.0
+        self.range_limit = 3.0
+        self.spread = 34.0
 
         # Define Action Space: Discrete actions
         # 0: Move Up-Left,  1: Move Up,    2: Move Up-Right
@@ -199,7 +205,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     def _get_obs(self):
         self._check_emergency_stop()
-        """Captures screen and returns a 130-dimensional flat observation vector."""
+        """Captures screen and returns a 133-dimensional flat observation vector."""
         image_path = "data/screenshot.png"
         
         # Ensure fresh screen capture
@@ -213,10 +219,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 threat = self._get_threat_matrix(state).astype(np.float32)
                 flat_obs = np.concatenate([state.flatten(), threat.flatten()])
                 ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
-                return np.concatenate([flat_obs, ammo_obs])
+                weapon_obs = np.array([self.damage, self.range_limit, self.spread], dtype=np.float32)
+                return np.concatenate([flat_obs, ammo_obs, weapon_obs])
         
         # Fallback dummy observation if loading fails
-        return np.zeros((130,), dtype=np.float32)
+        return np.zeros((133,), dtype=np.float32)
 
     def reset(self, seed=None, options=None):
         self._check_emergency_stop()
@@ -283,22 +290,57 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if self.current_state is None:
             self.current_state = self._get_obs()
 
-        # Reconstruct 8x8 matrices from 130-dimensional flat state
+        # Reconstruct 8x8 matrices from 133-dimensional flat state
         board_state = self.current_state[:64].reshape(8, 8)
         threat_state = self.current_state[64:128].reshape(8, 8)
 
         # Count enemies before action execution
         prev_enemies = np.sum(board_state >= 2)
 
-        # Ammo Action Guard & Replacement Mechanism
-        if action == 9 and self.loaded_ammo <= 0:
-            if self.reserve_ammo > 0:
-                print(f"DQN Guard: Shoot action (9) requested but loaded_ammo is {self.loaded_ammo}. Overwriting to Reload (8).")
-                action = 8
-            else:
+        # Ammo, Range & Target Validations for Shoot Guard
+        if action == 9:
+            # Check range limit and target existence
+            king_positions = np.argwhere(board_state == 1)
+            has_valid_target = False
+            min_dist = 99
+            
+            if len(king_positions) > 0:
+                king_row, king_col = king_positions[0]
+                # 8 directions to sweep radially for enemies
+                directions = [
+                    (-1, -1), (-1, 0), (-1, 1),
+                    (0, -1),           (0, 1),
+                    (1, -1),  (1, 0),  (1, 1)
+                ]
+                for r_diff, c_diff in directions:
+                    for dist in range(1, 8):
+                        tr = king_row + r_diff * dist
+                        tc = king_col + c_diff * dist
+                        if 0 <= tr < 8 and 0 <= tc < 8:
+                            if board_state[tr, tc] >= 2:
+                                if dist < min_dist:
+                                    min_dist = dist
+                                break
+                            elif board_state[tr, tc] == 1:
+                                break
+                        else:
+                            break
+                if min_dist <= self.range_limit:
+                    has_valid_target = True
+
+            if self.loaded_ammo <= 0:
+                if self.reserve_ammo > 0:
+                    print(f"DQN Guard: Shoot action (9) requested but loaded_ammo is {self.loaded_ammo}. Overwriting to Reload (8).")
+                    action = 8
+                else:
+                    import random
+                    action = random.randint(0, 7)
+                    print(f"DQN Guard: Shoot action (9) requested but ammo fully depleted. Overwriting to Random Move ({action}).")
+            elif not has_valid_target:
                 import random
                 action = random.randint(0, 7)
-                print(f"DQN Guard: Shoot action (9) requested but ammo fully depleted. Overwriting to Random Move ({action}).")
+                reason = f"closest target is out of range (dist: {min_dist} > limit: {self.range_limit})" if min_dist != 99 else "no enemies detected on 8-way radial paths"
+                print(f"DQN Guard: Shoot action (9) requested but {reason}. Overwriting to Random Move ({action}).")
         elif action == 8 and self.loaded_ammo >= 2:
             import random
             action = random.randint(0, 7)
@@ -332,16 +374,31 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 target_row = king_row + row_offset
                 target_col = king_col + col_offset
                 
-                # Ensure within board boundary
+                # Out-of-bounds safety check and replacement loop
+                attempts = 0
+                while not (0 <= target_row < 8 and 0 <= target_col < 8) and attempts < 15:
+                    import random
+                    action = random.randint(0, 7)
+                    row_offset, col_offset = direction_diffs[action]
+                    target_row = king_row + row_offset
+                    target_col = king_col + col_offset
+                    attempts += 1
+                
                 if 0 <= target_row < 8 and 0 <= target_col < 8:
                     # Precise board cell calculation based on standard coordinates:
                     # x_start=380, y_start=120, cell_size=65
                     x = 380 + target_col * 65 + 32
                     y = 120 + target_row * 65 + 32
-                    print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y})")
+                    print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
                     click_relative_in_window(self.window_title, x, y)
                 else:
-                    print(f"Target coordinate ({target_row}, {target_col}) out of bounds. Action bypassed.")
+                    # Absolute fallback clipping if loop somehow fails to find inside direction
+                    target_row = max(0, min(7, target_row))
+                    target_col = max(0, min(7, target_col))
+                    x = 380 + target_col * 65 + 32
+                    y = 120 + target_row * 65 + 32
+                    print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
+                    click_relative_in_window(self.window_title, x, y)
             else:
                 print("King not found in board_state. Bypassing click action and waiting for turn stabilization...")
                 time.sleep(1.0)
@@ -394,7 +451,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                         else:
                             break
                 
-                if best_diff is not None:
+                if best_diff is not None and min_dist <= self.range_limit:
                     r_diff, c_diff = best_diff
                     # 1-tile distance check: If target is 1-tile away, clicking it moves the King.
                     # Bypassed by shooting 2-tiles away in the same trajectory.
@@ -409,9 +466,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     print(f"Intel Shoot: Found enemy at dist {min_dist} (dir: {best_diff}). Aiming at ({target_row}, {target_col}) -> ({x}, {y})")
                     click_relative_in_window(self.window_title, x, y)
                 else:
-                    # Fallback to standard center click if no enemies on 8-way paths
-                    print("Intel Shoot: No enemies detected on 8-way radial paths. Firing at center.")
-                    click_relative_in_window(self.window_title, 640, 360)
+                    # Fallback if target is out of range or missing (normally filtered by action guard)
+                    print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
             else:
                 print("Intel Shoot: King missing from state. Bypassing shoot click and waiting for turn stabilization...")
                 time.sleep(1.0)
