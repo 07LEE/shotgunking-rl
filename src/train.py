@@ -27,8 +27,8 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
     env = ShotgunKingEnv(window_title="Shotgun King", max_steps=max_steps_per_episode)
     
     print("Initializing DQN Agent...")
-    # 8x8 input flattened is 64, discrete action space is 10
-    agent = DQNAgent(state_size=128, action_size=10, lr=1e-3)
+    # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130
+    agent = DQNAgent(state_size=130, action_size=10, lr=1e-3)
     
     # Auto-load existing model weights if available to resume continuous learning
     agent.load("data/model.pth")
@@ -62,10 +62,13 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
                 next_state, reward, term, trunc, info = env.step(action)
                 done = term or trunc
                 
+                # Use corrected action from env guard if available
+                actual_action = info.get("action", action)
+                
                 episode_reward += reward
                 
                 # Store experience in replay memory
-                agent.remember(state, action, reward, next_state, done)
+                agent.remember(state, actual_action, reward, next_state, done)
                 
                 # Perform optimization step via replay
                 loss = agent.replay(batch_size=batch_size)
