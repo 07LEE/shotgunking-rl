@@ -53,35 +53,70 @@ def classify_patch(patch):
 
     Returns:
         An integer representing the cell state:
-        0: Empty, 1: Black King (Player), 2: White Piece (Enemy).
+        0: Empty, 1: Black King (Player),
+        2: Pawn, 3: Knight, 4: Bishop, 5: Rook, 6: Queen/King.
     """
     if patch is None or cv2 is None or np is None:
         return 0
 
     try:
-        gray = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY)
+        # Crop outer boundaries to eliminate grid division lines (65x65 -> 55x55)
+        cropped = patch[5:60, 5:60]
+        gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
         
-        # Focus on the center area of the patch (45x45 pixels) to bypass boundary lines
-        center_patch = gray[10:55, 10:55]
+        # 1. Detect Black King (Player, dark intensity)
+        _, thresh_black = cv2.threshold(gray, 75, 255, cv2.THRESH_BINARY_INV)
+        contours_black, _ = cv2.findContours(thresh_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
-        # Calculate pixel variance in the center area
-        # Empty cells have very low variance (either uniform yellow or uniform purple)
-        # Cells with pieces have high variance due to diverse details and outlines
-        variance = np.var(center_patch)
-        
-        # Threshold for detecting presence of any piece
-        if variance > 250.0:
-            # Detect whether it is the Black King or a White Piece
-            # Black King is predominantly dark gray/black with a high amount of low-intensity pixels
-            # White pieces have predominantly high-intensity pixels and far fewer dark pixels
-            dark_pixels = np.sum(center_patch < 80)
-            
-            if dark_pixels >= 350:
+        if len(contours_black) > 0:
+            c_black = max(contours_black, key=cv2.contourArea)
+            area_black = cv2.contourArea(c_black)
+            if area_black > 180.0:
                 # Black King (Player)
                 return 1
-            else:
-                # White Enemy Piece
-                return 2
+                
+        # 2. Detect White Pieces (Enemies, bright intensity)
+        _, thresh_white = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+        contours_white, _ = cv2.findContours(thresh_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if len(contours_white) > 0:
+            c_white = max(contours_white, key=cv2.contourArea)
+            area_white = cv2.contourArea(c_white)
+            
+            if area_white > 75.0:
+                x, y, w, h = cv2.boundingRect(c_white)
+                
+                # Calculate horizontal centroid bias for Knight (asymmetry check)
+                M = cv2.moments(c_white)
+                if M["m00"] != 0:
+                    cx = M["m10"] / M["m00"]
+                else:
+                    cx = x + w / 2.0
+                
+                box_center = x + w / 2.0
+                bias = abs(cx - box_center)
+                
+                # Piece Classification Rules
+                if h >= 36:
+                    # Queen / King (Largest pieces)
+                    return 6
+                elif h <= 25:
+                    # Pawn (Smallest pieces)
+                    return 2
+                elif bias >= 2.0:
+                    # Knight (Asymmetric horse head shape)
+                    return 3
+                elif w / float(h) >= 0.82:
+                    # Rook (Wide, fortress castle shape)
+                    return 5
+                elif 26 <= h <= 35:
+                    # Bishop (Symmetric tall hat shape)
+                    return 4
+                else:
+                    # Fallback for unrecognized custom/special pieces (safe-tag as Queen)
+                    print(f"DQN Analyzer Guard: Unrecognized special piece detected (w:{w}, h:{h}, area:{area_white}). Safe-tagging as Queen (6).")
+                    return 6
+                    
         return 0
     except Exception as e:
         print(f"Failed to classify patch: {e}")

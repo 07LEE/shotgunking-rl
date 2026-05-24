@@ -128,11 +128,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         """
         threat = np.zeros((8, 8), dtype=np.int32)
         
-        # Directions for radial check rays (Straight Rook/Queen and Diagonal Bishop/Queen)
-        ray_directions = [
-            (-1, 0), (1, 0), (0, -1), (0, 1),      # Straight
-            (-1, -1), (-1, 1), (1, -1), (1, 1)     # Diagonal
-        ]
+        # Directions for check rays
+        straight_directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+        diagonal_directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
         
         # Directions for Knight L-shapes
         knight_offsets = [
@@ -140,35 +138,63 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             (1, -2), (1, 2), (2, -1), (2, 1)
         ]
         
-        enemy_positions = np.argwhere(state == 2)
-        
-        for er, ec in enemy_positions:
-            # 1. Project radial check rays
-            for dr, dc in ray_directions:
-                for dist in range(1, 8):
-                    tr = er + dr * dist
-                    tc = ec + dc * dist
-                    if 0 <= tr < 8 and 0 <= tc < 8:
-                        threat[tr, tc] = 1
-                        if state[tr, tc] != 0:
-                            break
-                    else:
-                        break
-            
-            # 2. Mark Knight attack zones
-            for dr, dc in knight_offsets:
-                tr = er + dr
-                tc = ec + dc
-                if 0 <= tr < 8 and 0 <= tc < 8:
-                    threat[tr, tc] = 1
+        # Scan the board for all enemy pieces (values >= 2 represent different enemy types)
+        for er in range(8):
+            for ec in range(8):
+                piece = state[er, ec]
+                if piece < 2:
+                    continue
                     
-            # 3. Mark Pawn threat zones (Diagonally down, which is down on screen)
-            for dc in [-1, 1]:
-                tr = er + 1
-                tc = ec + dc
-                if 0 <= tr < 8 and 0 <= tc < 8:
-                    threat[tr, tc] = 1
-                    
+                # 1. Pawn (2): Attacks diagonally down by 1 tile (which is row + 1 on screen)
+                if piece == 2:
+                    for dc in [-1, 1]:
+                        tr, tc = er + 1, ec + dc
+                        if 0 <= tr < 8 and 0 <= tc < 8:
+                            threat[tr, tc] = 1
+                            
+                # 2. Knight (3): Attacks 8 L-shape coordinates
+                elif piece == 3:
+                    for dr, dc in knight_offsets:
+                        tr, tc = er + dr, ec + dc
+                        if 0 <= tr < 8 and 0 <= tc < 8:
+                            threat[tr, tc] = 1
+                            
+                # 3. Bishop (4): Radial diagonal rays (blocked by any piece)
+                elif piece == 4:
+                    for dr, dc in diagonal_directions:
+                        for dist in range(1, 8):
+                            tr, tc = er + dr * dist, ec + dc * dist
+                            if 0 <= tr < 8 and 0 <= tc < 8:
+                                threat[tr, tc] = 1
+                                if state[tr, tc] != 0:
+                                    break
+                            else:
+                                break
+                                
+                # 4. Rook (5): Radial straight rays (blocked by any piece)
+                elif piece == 5:
+                    for dr, dc in straight_directions:
+                        for dist in range(1, 8):
+                            tr, tc = er + dr * dist, ec + dc * dist
+                            if 0 <= tr < 8 and 0 <= tc < 8:
+                                threat[tr, tc] = 1
+                                if state[tr, tc] != 0:
+                                    break
+                            else:
+                                break
+                                
+                # 5. Queen / King (6): Both straight and diagonal rays (blocked by any piece)
+                elif piece == 6:
+                    for dr, dc in straight_directions + diagonal_directions:
+                        for dist in range(1, 8):
+                            tr, tc = er + dr * dist, ec + dc * dist
+                            if 0 <= tr < 8 and 0 <= tc < 8:
+                                threat[tr, tc] = 1
+                                if state[tr, tc] != 0:
+                                    break
+                            else:
+                                break
+                                
         return threat
 
     def _get_obs(self):
@@ -225,6 +251,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 time.sleep(2.5)
         
         obs = self._get_obs()
+        
+        # In-game Start Sync Guard: Poll until Player King (1) is detected on the board
+        while True:
+            self._check_emergency_stop()
+            board_state = obs[:64].reshape(8, 8)
+            if np.any(board_state == 1):
+                print("In-game Sync: Player King detected. Game play has officially started!")
+                break
+            print("In-game Sync: Waiting for game play to start (King not found on board)...")
+            time.sleep(1.0)
+            obs = self._get_obs()
+            
         self.current_state = obs
         info = {}
         return obs, info
@@ -250,7 +288,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         threat_state = self.current_state[64:128].reshape(8, 8)
 
         # Count enemies before action execution
-        prev_enemies = np.sum(board_state == 2)
+        prev_enemies = np.sum(board_state >= 2)
 
         # Ammo Action Guard & Replacement Mechanism
         if action == 9 and self.loaded_ammo <= 0:
@@ -305,10 +343,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 else:
                     print(f"Target coordinate ({target_row}, {target_col}) out of bounds. Action bypassed.")
             else:
-                # Fallback to predefined absolute center offsets if King is missing
-                print("King not found in current state matrix. Using fallback fixed offsets.")
-                rel_x, rel_y = self.direction_offsets[action]
-                click_relative_in_window(self.window_title, rel_x, rel_y)
+                print("King not found in board_state. Bypassing click action and waiting for turn stabilization...")
+                time.sleep(1.0)
 
             # Move Rule: Automatically reload loaded_ammo from reserve_ammo when King moves
             needed = 2 - self.loaded_ammo
@@ -348,7 +384,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                         tr = king_row + r_diff * dist
                         tc = king_col + c_diff * dist
                         if 0 <= tr < 8 and 0 <= tc < 8:
-                            if board_state[tr, tc] == 2:
+                            if board_state[tr, tc] >= 2:
                                 if dist < min_dist:
                                     min_dist = dist
                                     best_diff = (r_diff, c_diff)
@@ -377,8 +413,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     print("Intel Shoot: No enemies detected on 8-way radial paths. Firing at center.")
                     click_relative_in_window(self.window_title, 640, 360)
             else:
-                print("Intel Shoot: King missing from state. Firing at center.")
-                click_relative_in_window(self.window_title, 640, 360)
+                print("Intel Shoot: King missing from state. Bypassing shoot click and waiting for turn stabilization...")
+                time.sleep(1.0)
 
             self.loaded_ammo = max(0, self.loaded_ammo - 1)
             print(f"Ammo System: Shot fired. Loaded ammo consumed. (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
@@ -392,7 +428,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         curr_threat = self.current_state[64:128].reshape(8, 8)
 
         # Calculate reward metrics
-        curr_enemies = np.sum(curr_board == 2)
+        curr_enemies = np.sum(curr_board >= 2)
         killed_enemies = max(0, prev_enemies - curr_enemies)
         
         # Base step reward (slight survival incentive)
