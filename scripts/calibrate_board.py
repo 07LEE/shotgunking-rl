@@ -68,23 +68,41 @@ def find_board_roi(img):
     inner_w = x2_inner - x1_inner
     inner_h = y2_inner - y1_inner
 
-    # Divide by 8 or 7 to select more accurate value
-    cell_w8 = inner_w / 8.0
-    cell_h8 = inner_h / 8.0
+    # Estimate cell size based on typical ~63px size for 1280x720 screen
+    cell_w = inner_w / 7.0 if abs(inner_w/7.0 - 63) < abs(inner_w/8.0 - 63) else inner_w / 8.0
+    cell_h = inner_h / 7.0 if abs(inner_h/7.0 - 63) < abs(inner_h/8.0 - 63) else inner_h / 8.0
 
-    # Actual cell size (integer)
-    cw = round(cell_w8)
-    ch = round(cell_h8)
+    cw = round(cell_w)
+    ch = round(cell_h)
 
     print(f"[Estimated Cell Size] {cw}w x {ch}h px")
 
-    # Check if inner boundaries already cover 8 cells.
-    # Since x1_inner is the first inner green line position,
-    # board starts at x1_inner - cw (one more cell to the left).
-    x1 = max(0, x1_inner - cw)
-    x2 = min(w, x1_inner + 8 * cw)
-    y1 = max(0, y1_inner)
-    y2 = min(h, y1_inner + 8 * ch)
+    expected_cx = 640
+    expected_cy = 371
+
+    # Horizontal expansion
+    if abs(inner_w / cw - 8) < 0.5:
+        x1, x2 = x1_inner, x2_inner
+    else:
+        cx_detected = (x1_inner + x2_inner) / 2.0
+        if cx_detected > expected_cx:
+            x1 = max(0, x1_inner - cw)
+            x2 = x1_inner + 7 * cw
+        else:
+            x1 = x1_inner
+            x2 = min(w, x2_inner + cw)
+
+    # Vertical expansion
+    if abs(inner_h / ch - 8) < 0.5:
+        y1, y2 = y1_inner, y2_inner
+    else:
+        cy_detected = (y1_inner + y2_inner) / 2.0
+        if cy_detected > expected_cy:
+            y1 = max(0, y1_inner - ch)
+            y2 = y1_inner + 7 * ch
+        else:
+            y1 = y1_inner
+            y2 = min(h, y2_inner + ch)
 
     # Verification: Check if size is reasonable (between 200 and 800px)
     if not (200 < x2-x1 < 800 and 200 < y2-y1 < 800):

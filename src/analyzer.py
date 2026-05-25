@@ -16,34 +16,47 @@ except ImportError:
 # Piece template paths and cache
 # If template file is missing, fallback to geometry classification
 TEMPLATES_DIR = "data/templates"
-_TEMPLATES = {}   # {piece_id: 45x45 uint8 grayscale signal}
+_TEMPLATES = {}   # {piece_id: list of 45x45 uint8 grayscale signals}
 _TEMPLATES_LOADED = False
-
-# Mapping from piece_id to template filename
-_TEMPLATE_FILES = {
-    1: "king_1.png",
-    2: "pawn_2.png",
-    3: "knight_3.png",
-    4: "bishop_4.png",
-    5: "rook_5.png",
-    6: "queen_6.png",
-}
 
 
 def _load_templates():
-    """Load piece template PNGs once and cache them in a module-level dictionary."""
+    """Load all matching piece template PNGs from templates directory to allow multi-template matching."""
     global _TEMPLATES, _TEMPLATES_LOADED
     if _TEMPLATES_LOADED:
         return
     _TEMPLATES_LOADED = True
     if cv2 is None or np is None:
         return
-    for piece_id, filename in _TEMPLATE_FILES.items():
-        path = os.path.join(TEMPLATES_DIR, filename)
-        if os.path.exists(path):
-            img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-            if img is not None:
-                _TEMPLATES[piece_id] = cv2.resize(img, (45, 45))
+
+    # Initialize lists for each piece ID
+    for piece_id in range(1, 7):
+        _TEMPLATES[piece_id] = []
+
+    if not os.path.exists(TEMPLATES_DIR):
+        return
+
+    try:
+        # Scan directory for all PNG files matching patterns like 'pawn_2*.png'
+        for filename in os.listdir(TEMPLATES_DIR):
+            if not filename.endswith(".png"):
+                continue
+            # Parse piece_id safely by splitting filename with underscore (e.g. 'bishop_4_1.png' -> parts[1] is '4')
+            parts = filename.replace(".png", "").split("_")
+            if len(parts) >= 2:
+                try:
+                    piece_id = int(parts[1])
+                    if 1 <= piece_id <= 6:
+                        path = os.path.join(TEMPLATES_DIR, filename)
+                        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+                        if img is not None:
+                            _TEMPLATES[piece_id].append(cv2.resize(img, (45, 45)))
+                except ValueError:
+                    pass
+        for pid in range(1, 7):
+            print(f"Piece ID {pid}: loaded {len(_TEMPLATES[pid])} templates")
+    except Exception as e:
+        print(f"Failed to load templates: {e}")
 
 
 def _extract_signal(patch):
@@ -67,7 +80,8 @@ def _extract_signal(patch):
     bg_mean = np.mean([c.mean() for c in corners])
     signal = np.abs(gray - bg_mean)
     max_val = signal.max()
-    if max_val > 1e-3:
+    # Reject normalization if the signal strength is too weak to filter out empty tile noise
+    if max_val > 20.0:
         signal = (signal / max_val * 255.0).clip(0, 255).astype(np.uint8)
     else:
         signal = np.zeros((45, 45), dtype=np.uint8)
@@ -167,8 +181,7 @@ def _detect_board_roi(img):
 def crop_chessboard(img):
     """Crops the primary chessboard area from the full 1280x720 game screen.
 
-    Prioritize disk cache; if not found, detect green border lines and save to disk.
-    Fallback to hardcoded defaults on detection failure.
+    Uses calibrated fixed coordinates for consistent 8x8 slicing.
 
     Args:
         img: A numpy array representing the 1280x720 BGR image.
@@ -176,8 +189,6 @@ def crop_chessboard(img):
     Returns:
         A resized 520x520 BGR image of the chessboard, or None if crop fails.
     """
-    global _BOARD_ROI
-
     if img is None:
         return None
 
@@ -186,22 +197,8 @@ def crop_chessboard(img):
         img = cv2.resize(img, (1280, 720))
 
     try:
-        if _BOARD_ROI is None:
-            # 1. Load disk cache
-            cached = _load_roi()
-            if cached:
-                _BOARD_ROI = cached
-            else:
-                # 2. Detect green border
-                detected = _detect_board_roi(img)
-                if detected:
-                    _BOARD_ROI = detected
-                    _save_roi(detected)  # Save for future runs
-                else:
-                    # 3. Fallback: hardcoded default coordinates
-                    _BOARD_ROI = (70, 574, 377, 881)
-
-        y1, y2, x1, x2 = _BOARD_ROI
+        # Enforce calibrated fixed coordinates to prevent miscalibration due to restricted green line range
+        y1, y2, x1, x2 = 119, 631, 383, 895
         chessboard_roi = img[y1:y2, x1:x2]
 
         # Resize to exactly 520x520 for robust 8x8 slicing (520 / 8 = 65 pixels per cell)
@@ -235,16 +232,24 @@ def classify_patch(patch):
         gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
 
         # -- 1. Player King detection (dark piece) --
-        if 1 in _TEMPLATES:
+        if 1 in _TEMPLATES and _TEMPLATES[1]:
             signal = _extract_signal(patch)
-            tmpl = _TEMPLATES[1]
-            res = cv2.matchTemplate(
-                signal.astype(np.float32),
-                tmpl.astype(np.float32),
-                cv2.TM_CCOEFF_NORMED,
-            )
-            if float(res[0][0]) >= 0.55:
-                return 1
+            patch_f = signal.astype(np.float32)
+            max_score = -1.0
+            for tmpl in _TEMPLATES[1]:
+                res = cv2.matchTemplate(
+                    patch_f,
+                    tmpl.astype(np.float32),
+                    cv2.TM_CCOEFF_NORMED,
+                )
+                score = float(res[0][0])
+                if score > max_score:
+                    max_score = score
+            if max_score >= 0.55:
+                # Color Guard: Player King is dark, reject if the detected region is too bright (white pieces)
+                piece_pixels = gray[signal > 100]
+                if len(piece_pixels) > 0 and np.mean(piece_pixels) < 110.0:
+                    return 1
         else:
             # geometry fallback: based on dark contour area
             _, thresh_black = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
@@ -275,28 +280,32 @@ def classify_patch(patch):
             return 0
 
         # -- 3. Template matching (loaded pieces only) --
-        if _TEMPLATES:
+        has_any_template = any(len(_TEMPLATES[piece_id]) > 0 for piece_id in range(2, 7))
+        if has_any_template:
             signal = _extract_signal(patch)
             patch_f = signal.astype(np.float32)
 
             best_score = -1.0
             best_piece = 6  # fallback to Queen if matching fails
 
-            for piece_id, tmpl in _TEMPLATES.items():
-                if piece_id == 1:       # player King is handled above
-                    continue
-                res = cv2.matchTemplate(
-                    patch_f,
-                    tmpl.astype(np.float32),
-                    cv2.TM_CCOEFF_NORMED,
-                )
-                score = float(res[0][0])
-                if score > best_score:
-                    best_score = score
-                    best_piece = piece_id
+            for piece_id in range(2, 7):
+                templates = _TEMPLATES[piece_id]
+                for tmpl in templates:
+                    res = cv2.matchTemplate(
+                        patch_f,
+                        tmpl.astype(np.float32),
+                        cv2.TM_CCOEFF_NORMED,
+                    )
+                    score = float(res[0][0])
+                    if score > best_score:
+                        best_score = score
+                        best_piece = piece_id
 
             if best_score >= 0.50:      # confidence threshold
+                print(f"  [Template Match] Found piece {best_piece} with score {best_score:.3f}")
                 return best_piece
+            else:
+                print(f"  [Template Match Failed] Best guess was {best_piece} with score {best_score:.3f}. Fallback to geometry.")
 
         # -- 4. Geometry fallback (missing templates or low confidence) --
         x, y, w, h = cv2.boundingRect(c_white)
