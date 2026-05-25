@@ -612,8 +612,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if action != 9:
             killed_enemies = 0
         
-        # Base step reward (slight survival incentive)
-        reward = 0.02
+        # Base step penalty (discourage wasting turns)
+        reward = -0.1
         
         # Major reward for killing enemies
         if killed_enemies > 0:
