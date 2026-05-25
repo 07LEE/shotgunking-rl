@@ -6,6 +6,7 @@ perform initial image analysis using OpenCV.
 """
 
 import os
+import subprocess
 import time
 
 try:
@@ -29,6 +30,9 @@ except ImportError:
 def find_window_geometry(title="Shotgun King"):
     """Finds the bounding box coordinates of a window matching the given title.
 
+    First try using pywinctl, and fallback to wmctrl if it fails.
+    Returns accurate window coordinates even in Linux multi-monitor setups.
+
     Args:
         title: Part of or full title of the target window.
 
@@ -36,41 +40,42 @@ def find_window_geometry(title="Shotgun King"):
         A dictionary containing {'left': x, 'top': y, 'width': w, 'height': h}
         if the window is found, None otherwise.
     """
-    if pwc is None:
-        print("Warning: 'pywinctl' is not installed. Bypassing window detection.")
-        return None
+    # 1. Try pywinctl
+    if pwc is not None:
+        try:
+            windows = pwc.getAllWindows()
+            for win in windows:
+                if win.title and title.lower() in win.title.lower():
+                    try:
+                        win.activate()
+                    except Exception:
+                        pass
+                    rect = win.box
+                    return {
+                        "top": int(rect.top),
+                        "left": int(rect.left),
+                        "width": int(rect.width),
+                        "height": int(rect.height),
+                    }
+        except Exception:
+            pass
 
+    # 2. Fallback to wmctrl (Linux)
     try:
-        # Search for windows containing the specified title (case-insensitive)
-        windows = pwc.getAllWindows()
-        target_window = None
-        
-        for win in windows:
-            if win.title and title.lower() in win.title.lower():
-                target_window = win
-                break
-                
-        if target_window is not None:
-            # Activate window if possible (optional, but ensures it's on screen)
-            try:
-                target_window.activate()
-            except Exception:
-                pass
-                
-            rect = target_window.box
-            print(f"Found target window '{target_window.title}' at: left={rect.left}, top={rect.top}, width={rect.width}, height={rect.height}")
-            return {
-                "top": int(rect.top),
-                "left": int(rect.left),
-                "width": int(rect.width),
-                "height": int(rect.height)
-            }
-        else:
-            print(f"Warning: No window containing '{title}' was found.")
-            return None
-    except Exception as e:
-        print(f"Failed to find window geometry: {e}")
-        return None
+        result = subprocess.run(
+            ["wmctrl", "-lG"],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            if title.lower() in line.lower():
+                parts = line.split()
+                x, y, w, h = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
+                return {"left": x, "top": y, "width": w, "height": h}
+    except Exception:
+        pass
+
+    print(f"Warning: No window containing '{title}' was found.")
+    return None
 
 
 def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King"):
@@ -117,7 +122,7 @@ def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
                 img.save(output_path)
             
-            print(f"Screen successfully captured and saved to {output_path}")
+            # print(f"Screen successfully captured and saved to {output_path}")
             return True
     except Exception as e:
         print(f"Failed to capture screen: {e}")

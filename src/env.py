@@ -99,13 +99,13 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 raise KeyboardInterrupt("DQN Emergency Stop: User swept mouse to the corner (0, 0).")
 
     def _wait_for_equilibrium(self, max_wait=5.0):
-        """적의 턴 애니메이션이 완료되고 체스판 상태가 완전히 고정되어 플레이어 턴이 정착될 때까지 대기합니다.
+        """Wait until the enemy's turn animation is complete and the chessboard state stabilizes for the player's turn.
 
         Args:
-            max_wait: 최대 대기 시간(초).
+            max_wait: Maximum wait time in seconds.
 
         Returns:
-            정적 평형에 도달한 최종 8x8 상태 행렬.
+            The final 8x8 state matrix in static equilibrium.
         """
         start_time = time.time()
         prev_state = self._get_obs()
@@ -114,7 +114,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             time.sleep(0.2)
             curr_state = self._get_obs()
             
-            # 연속된 2개의 캡처본 매트릭스가 완벽히 일치하여 정지 상태에 도달했을 때
+            # When two consecutive capture matrices are identical, indicating static state
             if np.array_equal(prev_state, curr_state):
                 return curr_state
                 
@@ -217,6 +217,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 # Call state extractor to return 8x8 chessboard array
                 state = get_state_matrix(img).astype(np.float32)
                 threat = self._get_threat_matrix(state).astype(np.float32)
+                
+                # Real-time ammo sync from screenshot UI
+                from analyzer import extract_ammo_count
+                self.loaded_ammo, self.reserve_ammo = extract_ammo_count(img)
+                # print(f"Ammo Sync: Real-time UI scan matched (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
+
                 flat_obs = np.concatenate([state.flatten(), threat.flatten()])
                 ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
                 weapon_obs = np.array([self.damage, self.range_limit, self.spread], dtype=np.float32)
@@ -287,6 +293,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_step += 1
         print(f"Step {self.current_step} - Executing action: {action}")
 
+        original_action = action
+        has_valid_target = False
+
         if self.current_state is None:
             self.current_state = self._get_obs()
 
@@ -303,6 +312,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             king_positions = np.argwhere(board_state == 1)
             has_valid_target = False
             min_dist = 99
+            best_is_threat = False
             
             if len(king_positions) > 0:
                 king_row, king_col = king_positions[0]
@@ -317,9 +327,31 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                         tr = king_row + r_diff * dist
                         tc = king_col + c_diff * dist
                         if 0 <= tr < 8 and 0 <= tc < 8:
-                            if board_state[tr, tc] >= 2:
-                                if dist < min_dist:
+                            piece = board_state[tr, tc]
+                            if piece >= 2:
+                                is_threat = False
+                                is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
+                                is_straight = (r_diff == 0 or c_diff == 0)
+                                
+                                if piece == 2:  # Pawn: attacks diagonally down
+                                    if r_diff == -1 and is_diagonal and dist == 1:
+                                        is_threat = True
+                                elif piece == 4:  # Bishop: diagonal threat
+                                    if is_diagonal:
+                                        is_threat = True
+                                elif piece == 5:  # Rook: straight threat
+                                    if is_straight:
+                                        is_threat = True
+                                elif piece == 6:  # Queen: straight or diagonal threat
+                                    if is_straight or is_diagonal:
+                                        is_threat = True
+                                
+                                if not best_is_threat and is_threat:
                                     min_dist = dist
+                                    best_is_threat = is_threat
+                                elif is_threat == best_is_threat:
+                                    if dist < min_dist:
+                                        min_dist = dist
                                 break
                             elif board_state[tr, tc] == 1:
                                 break
@@ -404,7 +436,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 time.sleep(1.0)
 
             # Move Rule: Automatically reload loaded_ammo from reserve_ammo when King moves
-            needed = 2 - self.loaded_ammo
+            needed = max(0, 2 - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
             self.loaded_ammo += transfer
             self.reserve_ammo -= transfer
@@ -413,7 +445,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         elif action == 8:
             # Reload
             press_key("r")
-            needed = 2 - self.loaded_ammo
+            needed = max(0, 2 - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
             self.loaded_ammo += transfer
             self.reserve_ammo -= transfer
@@ -435,16 +467,45 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 
                 min_dist = 99
                 best_diff = None
+                best_is_threat = False
                 
                 for r_diff, c_diff in directions:
                     for dist in range(1, 8):
                         tr = king_row + r_diff * dist
                         tc = king_col + c_diff * dist
                         if 0 <= tr < 8 and 0 <= tc < 8:
-                            if board_state[tr, tc] >= 2:
-                                if dist < min_dist:
+                            piece = board_state[tr, tc]
+                            if piece >= 2:
+                                is_threat = False
+                                is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
+                                is_straight = (r_diff == 0 or c_diff == 0)
+                                
+                                if piece == 2:  # Pawn: attacks diagonally down
+                                    if r_diff == -1 and is_diagonal and dist == 1:
+                                        is_threat = True
+                                elif piece == 4:  # Bishop: diagonal threat
+                                    if is_diagonal:
+                                        is_threat = True
+                                elif piece == 5:  # Rook: straight threat
+                                    if is_straight:
+                                        is_threat = True
+                                elif piece == 6:  # Queen: straight or diagonal threat
+                                    if is_straight or is_diagonal:
+                                        is_threat = True
+                                
+                                if best_diff is None:
                                     min_dist = dist
                                     best_diff = (r_diff, c_diff)
+                                    best_is_threat = is_threat
+                                else:
+                                    if is_threat and not best_is_threat:
+                                        min_dist = dist
+                                        best_diff = (r_diff, c_diff)
+                                        best_is_threat = is_threat
+                                    elif is_threat == best_is_threat:
+                                        if dist < min_dist:
+                                            min_dist = dist
+                                            best_diff = (r_diff, c_diff)
                                 break  # Closest enemy on this ray found
                             elif board_state[tr, tc] == 1:
                                 break
@@ -465,6 +526,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     y = 120 + target_row * 65 + 32
                     print(f"Intel Shoot: Found enemy at dist {min_dist} (dir: {best_diff}). Aiming at ({target_row}, {target_col}) -> ({x}, {y})")
                     click_relative_in_window(self.window_title, x, y)
+                    time.sleep(0.8)
                 else:
                     # Fallback if target is out of range or missing (normally filtered by action guard)
                     print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
@@ -487,6 +549,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         curr_enemies = np.sum(curr_board >= 2)
         killed_enemies = max(0, prev_enemies - curr_enemies)
         
+        # Mask out any non-shooting kills to prevent credit assignment confusion
+        if action != 9:
+            killed_enemies = 0
+        
         # Base step reward (slight survival incentive)
         reward = 0.02
         
@@ -495,10 +561,20 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             reward += killed_enemies * 2.0
             print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{killed_enemies * 2.0}")
             
-        # Waste-shooting penalty (fired shoot action but killed no enemies)
-        if action == 9 and killed_enemies == 0:
-            reward -= 0.8
-            print("DQN Penalty: Fired shoot action but killed no enemies. Subtracted -0.8")
+        # Waste-shooting penalty / Encouragement reward
+        if action == 9:
+            if killed_enemies == 0:
+                if has_valid_target:
+                    reward += 0.1
+                    print("DQN Reward: Fired shoot action at a target but killed no enemies (Encouragement). Added +0.1")
+                else:
+                    reward -= 0.8
+                    print("DQN Penalty: Fired shoot action but no target was in range. Subtracted -0.8")
+        elif original_action == 9 and action != 9:
+            # Attempted to shoot but got overridden by DQN Guard (e.g. out of range / spread issues)
+            if not has_valid_target:
+                reward -= 0.8
+                print("DQN Penalty: Attempted shoot action but no target was in range (Action Guarded). Subtracted -0.8")
 
         # Threat exposure evaluation (impose penalty if King stands inside enemy check lines)
         king_positions = np.argwhere(curr_board == 1)
