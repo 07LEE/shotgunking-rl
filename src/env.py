@@ -109,6 +109,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         Returns:
             The final 8x8 state matrix in static equilibrium.
         """
+        # Minimum delay to ensure enemy turn triggers and state changes before polling
+        time.sleep(0.3)
         start_time = time.time()
         prev_state = self._get_obs()
         
@@ -233,6 +235,29 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Fallback dummy observation if loading fails
         return np.zeros((133,), dtype=np.float32)
 
+    def _get_yes_button_coords(self, img):
+        """Finds the precise (x, y) coordinates of the active YES button on the retry screen dynamically."""
+        if img is None or cv2 is None or np is None:
+            return (540, 410)
+        try:
+            height, width, _ = img.shape
+            if height != 720 or width != 1280:
+                img = cv2.resize(img, (1280, 720))
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            # Crop YES button region (Y: 380-440, X: 500-580)
+            y1, y2, x1, x2 = 380, 440, 500, 580
+            patch = gray[y1:y2, x1:x2]
+            _, thresh = cv2.threshold(patch, 180, 255, cv2.THRESH_BINARY)
+            M = cv2.moments(thresh)
+            if M["m00"] > 0:
+                cx = int(M["m10"] / M["m00"])
+                cy = int(M["m01"] / M["m00"])
+                return (x1 + cx, y1 + cy)
+            return (540, 410)
+        except Exception as e:
+            print(f"Failed to find YES button coordinates dynamically: {e}")
+            return (540, 410)
+
     def reset(self, seed=None, options=None):
         self._check_emergency_stop()
         """Resets the environment for a new episode.
@@ -266,21 +291,27 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             time.sleep(0.5)
             
         if popup_detected:
-            print("DQN Penalty: Detected retry popup during reset. Clicking YES button (Multi-point click enabled).")
-            # 5-point safety click to offset window scaling/borders
-            for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
-                self._check_emergency_stop()
-                click_relative_in_window(self.window_title, dx, dy)
-                time.sleep(0.05)
+            print("DQN Penalty: Detected retry popup during reset. Clicking YES button (dynamic coordinates enabled).")
+            img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+            tx, ty = self._get_yes_button_coords(img)
+            self._check_emergency_stop()
+            click_relative_in_window(self.window_title, tx, ty)
             time.sleep(2.5)
         else:
-            # Fallback Force Click: If King is missing from the board state, perform force retry YES click
-            # to break out of potential infinite loading sync loop
-            print("DQN Reset Warning: Retry popup not verified by pixel variance, but King might be missing. Performing force YES click to prevent lockup.")
-            for dx, dy in [(540, 410)]:
+            # Check if King is already present before attempting fallback force click
+            initial_obs = self._get_obs()
+            initial_board = initial_obs[:64].reshape(8, 8)
+            if np.any(initial_board == 1):
+                print("DQN Reset: Retry popup not detected, but Player King is already present. Bypassing force click.")
+            else:
+                # Fallback Force Click: If King is missing from the board state, perform force retry YES click
+                # to break out of potential infinite loading sync loop
+                print("DQN Reset Warning: Retry popup not verified by pixel variance, and King is missing. Performing force YES click (dynamic coordinates enabled).")
+                img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+                tx, ty = self._get_yes_button_coords(img)
                 self._check_emergency_stop()
-                click_relative_in_window(self.window_title, dx, dy)
-            time.sleep(2.5)
+                click_relative_in_window(self.window_title, tx, ty)
+                time.sleep(2.5)
         
         obs = self._get_obs()
         
@@ -445,7 +476,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
                     self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
-                    time.sleep(0.5)
+                    time.sleep(1.8)
                 else:
                     # Absolute fallback clipping if loop somehow fails to find inside direction
                     target_row = max(0, min(7, target_row))
@@ -455,7 +486,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
                     self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
-                    time.sleep(0.5)
+                    time.sleep(1.8)
             else:
                 print("King not found in board_state. Bypassing click action and waiting for turn stabilization...")
                 time.sleep(1.0)
@@ -470,6 +501,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         elif action == 8:
             # Reload
             press_key("r")
+            time.sleep(1.2)
             needed = max(0, 2 - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
             self.loaded_ammo += transfer
@@ -553,7 +585,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     time.sleep(0.4)
                     self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
-                    time.sleep(0.8)
+                    time.sleep(1.8)
                 else:
                     # Fallback if target is out of range or missing (normally filtered by action guard)
                     print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
@@ -626,12 +658,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if is_popup:
             reward = -15.0
             terminated = True
-            print("DQN Penalty: Detected retry popup via screen analysis! Subtracted -15.0. Clicking YES button (Multi-point click enabled).")
-            # 5-point safety click to offset window scaling/borders
-            for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
-                self._check_emergency_stop()
-                click_relative_in_window(self.window_title, dx, dy)
-                time.sleep(0.05)
+            print("DQN Penalty: Detected retry popup via screen analysis! Subtracted -15.0. Clicking YES button (dynamic coordinates enabled).")
+            img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+            tx, ty = self._get_yes_button_coords(img)
+            self._check_emergency_stop()
+            click_relative_in_window(self.window_title, tx, ty)
             time.sleep(2.5)
         elif curr_enemies == 0:
             reward += 10.0

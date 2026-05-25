@@ -88,7 +88,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
                 if done:
                     break
                     
-                time.sleep(0.5)
+                time.sleep(3.0)
                 
             # Decay exploration factor
             epsilon = max(epsilon_min, epsilon * epsilon_decay)
