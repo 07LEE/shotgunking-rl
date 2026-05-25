@@ -53,8 +53,8 @@ def _load_templates():
                             _TEMPLATES[piece_id].append(cv2.resize(img, (45, 45)))
                 except ValueError:
                     pass
-        for pid in range(1, 7):
-            print(f"Piece ID {pid}: loaded {len(_TEMPLATES[pid])} templates")
+        # for pid in range(1, 7):
+        #     print(f"Piece ID {pid}: loaded {len(_TEMPLATES[pid])} templates")
     except Exception as e:
         print(f"Failed to load templates: {e}")
 
@@ -80,7 +80,7 @@ def _extract_signal(patch):
     bg_mean = np.mean([c.mean() for c in corners])
     signal = np.abs(gray - bg_mean)
     max_val = signal.max()
-    # Reject normalization if the signal strength is too weak to filter out empty tile noise
+    # print(f"  [DEBUG extract] max_val: {max_val}")
     if max_val > 20.0:
         signal = (signal / max_val * 255.0).clip(0, 255).astype(np.uint8)
     else:
@@ -263,8 +263,14 @@ def classify_patch(patch):
                 if area_black > 50.0:
                     return 1
 
-        # -- 2. Check presence of white pieces in advance --
-        _, thresh_white = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+        # Check signal strength to bypass empty tiles regardless of background tile color
+        signal = _extract_signal(patch)
+        # print(f"  [DEBUG check] signal max: {signal.max()}")
+        if signal.max() == 0:
+            return 0
+
+        # Use background-subtracted signal image for contour extraction to eliminate tile color interference
+        _, thresh_white = cv2.threshold(signal, 100, 255, cv2.THRESH_BINARY)
         contours_white, _ = cv2.findContours(
             thresh_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
@@ -274,9 +280,8 @@ def classify_patch(patch):
         c_white = max(contours_white, key=cv2.contourArea)
         area_white = cv2.contourArea(c_white)
 
-        if area_white > 1700.0:   # empty light tile
-            return 0
-        if area_white < 75.0:    # noise
+        # Empty tile is already filtered by signal.max() == 0, check only for small noise
+        if area_white < 30.0:    # noise
             return 0
 
         # -- 3. Template matching (loaded pieces only) --
@@ -302,10 +307,10 @@ def classify_patch(patch):
                         best_piece = piece_id
 
             if best_score >= 0.50:      # confidence threshold
-                print(f"  [Template Match] Found piece {best_piece} with score {best_score:.3f}")
+                # print(f"  [Template Match] Found piece {best_piece} with score {best_score:.3f}")
                 return best_piece
-            else:
-                print(f"  [Template Match Failed] Best guess was {best_piece} with score {best_score:.3f}. Fallback to geometry.")
+            # else:
+            #     print(f"  [Template Match Failed] Best guess was {best_piece} with score {best_score:.3f}. Fallback to geometry.")
 
         # -- 4. Geometry fallback (missing templates or low confidence) --
         x, y, w, h = cv2.boundingRect(c_white)

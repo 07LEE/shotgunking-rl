@@ -93,10 +93,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             KeyboardInterrupt: If the mouse cursor is at or near (0,0).
         """
         if pyautogui is not None:
+            # Enforce pyautogui failsafe override configurations
+            pyautogui.FAILSAFE = True
             mx, my = pyautogui.position()
-            if mx <= 10 and my <= 10:
+            if mx <= 30 and my <= 30:
                 print("\n=== DQN Emergency Stop: Mouse corner sweep detected! Halting training immediately. ===")
-                raise KeyboardInterrupt("DQN Emergency Stop: User swept mouse to the corner (0, 0).")
+                raise KeyboardInterrupt("DQN Emergency Stop: User swept mouse to the corner.")
 
     def _wait_for_equilibrium(self, max_wait=5.0):
         """Wait until the enemy's turn animation is complete and the chessboard state stabilizes for the player's turn.
@@ -259,6 +261,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 print("DQN Penalty: Detected retry popup during reset. Clicking YES button (Multi-point click enabled).")
                 # 5-point safety click to offset window scaling/borders
                 for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
+                    self._check_emergency_stop()
                     click_relative_in_window(self.window_title, dx, dy)
                     time.sleep(0.05)
                 time.sleep(2.5)
@@ -418,18 +421,22 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 
                 if 0 <= target_row < 8 and 0 <= target_col < 8:
                     # Precise board cell calculation based on standard coordinates:
-                    # x_start=380, y_start=120, cell_size=65
-                    x = 380 + target_col * 65 + 32
-                    y = 120 + target_row * 65 + 32
+                    # x_start=390, y_start=127, cell_size=62.5
+                    x = int(390 + target_col * 62.5 + 31.25)
+                    y = int(127 + target_row * 62.5 + 31.25)
                     print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
+                    time.sleep(0.4)
+                    self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
                 else:
                     # Absolute fallback clipping if loop somehow fails to find inside direction
                     target_row = max(0, min(7, target_row))
                     target_col = max(0, min(7, target_col))
-                    x = 380 + target_col * 65 + 32
-                    y = 120 + target_row * 65 + 32
+                    x = int(390 + target_col * 62.5 + 31.25)
+                    y = int(127 + target_row * 62.5 + 31.25)
                     print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
+                    time.sleep(0.4)
+                    self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
             else:
                 print("King not found in board_state. Bypassing click action and waiting for turn stabilization...")
@@ -522,9 +529,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     target_col = king_col + c_diff * shoot_dist
                     
                     # Precise absolute pixel conversion
-                    x = 380 + target_col * 65 + 32
-                    y = 120 + target_row * 65 + 32
+                    x = int(390 + target_col * 62.5 + 31.25)
+                    y = int(127 + target_row * 62.5 + 31.25)
                     print(f"Intel Shoot: Found enemy at dist {min_dist} (dir: {best_diff}). Aiming at ({target_row}, {target_col}) -> ({x}, {y})")
+                    time.sleep(0.4)
+                    self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
                     time.sleep(0.8)
                 else:
@@ -602,6 +611,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             print("DQN Penalty: Detected retry popup via screen analysis! Subtracted -5.0. Clicking YES button (Multi-point click enabled).")
             # 5-point safety click to offset window scaling/borders
             for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
+                self._check_emergency_stop()
                 click_relative_in_window(self.window_title, dx, dy)
                 time.sleep(0.05)
             time.sleep(2.5)

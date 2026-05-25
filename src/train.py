@@ -31,7 +31,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
     agent = DQNAgent(state_size=133, action_size=10, lr=1e-3)
     
     # Auto-load existing model weights if available to resume continuous learning
-    agent.load("data/model.pth")
+    agent.load("data/models/model.pth")
     
     # Exploration parameters
     epsilon = 1.0
@@ -95,15 +95,15 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
             print(f"Episode {ep} Finished. Total Reward Collected: {episode_reward:.2f}")
             
             # Save model weights at the end of every episode for safety
-            agent.save("data/model.pth")
+            agent.save("data/models/model.pth")
             
     except KeyboardInterrupt:
         print("\nTraining interrupted by user. Saving current model weights before exiting...")
-        agent.save("data/model.pth")
+        agent.save("data/models/model.pth")
         print("Model weights successfully saved after emergency interruption.")
     except Exception as e:
         print(f"\nUnexpected error occurred: {e}. Saving model weights before crash...")
-        agent.save("data/model.pth")
+        agent.save("data/models/model.pth")
         raise e
         
     print("\n=== SHOTGUN KING DQN TRAINING COMPLETED ===")

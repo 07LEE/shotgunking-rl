@@ -29,8 +29,9 @@ except ImportError:
 # Import dynamic board detection function from analyzer
 try:
     import analyzer as _analyzer
+    from capture import capture_screen
 except ImportError as e:
-    print(f"[Error] Failed to load analyzer module: {e}")
+    print(f"[Error] Failed to load analyzer/capture module: {e}")
     sys.exit(1)
 
 TEMPLATES_DIR = "data/templates"
@@ -38,53 +39,7 @@ CELL_SIZE = 65          # 520 / 8
 CROP_INNER = (10, 55)   # Crop inner piece (remove grid lines)
 
 
-def find_game_window():
-    """Get position (x,y) and size (w,h) of Shotgun King window using wmctrl -lG.
-
-    wmctrl -lG output format:
-        WID  DT  X  Y  W  H  HOST  TITLE
-
-    Returns:
-        (x, y, w, h) or None if detection fails.
-    """
-    try:
-        result = subprocess.run(
-            ["wmctrl", "-lG"],
-            capture_output=True, text=True, timeout=5
-        )
-        for line in result.stdout.splitlines():
-            if "Shotgun King" in line or "shotgun_king" in line.lower():
-                parts = line.split()
-                # parts: [WID, DT, X, Y, W, H, HOST, ...]
-                x, y, w, h = int(parts[2]), int(parts[3]), int(parts[4]), int(parts[5])
-                return x, y, w, h
-    except Exception as e:
-        print(f"  [Warning] Failed to detect window with wmctrl: {e}")
-    return None
-
-
-def capture_game_window():
-    """Capture Shotgun King window region and return 1280x720 BGR image."""
-    info = find_game_window()
-
-    with mss.MSS() as sct:
-        if info:
-            x, y, w, h = info
-            print(f"  Detected game window: X={x}, Y={y}, {w}x{h}")
-            region = {"left": x, "top": y, "width": w, "height": h}
-            raw = sct.grab(region)
-        else:
-            print("  [Warning] Failed to detect window automatically -> using first monitor on full screen")
-            raw = sct.grab(sct.monitors[1])
-
-        img = np.array(raw)[:, :, :3]
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-    # Always normalize to 1280x720
-    if img.shape[:2] != (720, 1280):
-        img = cv2.resize(img, (1280, 720))
-
-    return img
+# Window capture helper functions removed in favor of src/capture.py reuse.
 
 
 def crop_board(img):
@@ -174,8 +129,14 @@ def main():
         time.sleep(1)
     print()
 
-    img = capture_game_window()
-    cv2.imwrite("data/screenshot.png", img)
+    success = capture_screen("data/screenshot.png", "Shotgun King")
+    if not success:
+        print("[Error] Failed to capture game window.")
+        sys.exit(1)
+    img = cv2.imread("data/screenshot.png")
+    if img is None:
+        print("[Error] Failed to read captured screenshot.")
+        sys.exit(1)
     print(f"Screenshot saved: data/screenshot.png ({img.shape[1]}x{img.shape[0]})")
 
     board = crop_board(img)
@@ -194,12 +155,17 @@ def main():
     print("After saving, visually check PNG files and rename them to correct piece names.")
     print()
     print("  Piece ID Guide:")
-    print("    1: king_1.png    (Player Black King)")
-    print("    2: pawn_2.png    (White Pawn)")
-    print("    3: knight_3.png  (White Knight)")
-    print("    4: bishop_4.png  (White Bishop)")
-    print("    5: rook_5.png    (White Rook)")
-    print("    6: queen_6.png   (White Queen)")
+    print("    1: king_1*.png    (Player Black King, e.g. king_1_0.png, king_1_1.png)")
+    print("    2: pawn_2*.png    (White Pawn, e.g. pawn_2_0.png, pawn_2_1.png)")
+    print("    3: knight_3*.png  (White Knight, e.g. knight_3_0.png, knight_3_1.png)")
+    print("    4: bishop_4*.png  (White Bishop, e.g. bishop_4_0.png, bishop_4_1.png)")
+    print("    5: rook_5*.png    (White Rook, e.g. rook_5_0.png, rook_5_1.png)")
+    print("    6: queen_6*.png   (White Queen, e.g. queen_6_0.png, queen_6_1.png)")
+    print()
+    print("  Use the command below to copy candidate files as templates:")
+    print("    cp data/templates/<candidate_file> data/templates/pawn_2_0.png")
+    print("    cp data/templates/<candidate_file> data/templates/knight_3_0.png")
+    print("    ... etc. (Use suffixes like _0, _1, _2 to maintain multiple templates)")
     print()
 
     saved = {}
