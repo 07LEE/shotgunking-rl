@@ -253,18 +253,34 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         
         # Trigger an active retry only if the Game Over screen is actually detected
         image_path = "data/screenshot.png"
-        capture_screen(output_path=image_path, window_title=self.window_title)
         
-        if cv2 is not None and os.path.exists(image_path):
-            img = cv2.imread(image_path)
-            if check_retry_popup(img):
-                print("DQN Penalty: Detected retry popup during reset. Clicking YES button (Multi-point click enabled).")
-                # 5-point safety click to offset window scaling/borders
-                for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
-                    self._check_emergency_stop()
-                    click_relative_in_window(self.window_title, dx, dy)
-                    time.sleep(0.05)
-                time.sleep(2.5)
+        # Poll for retry popup up to 10 attempts (5 seconds total)
+        popup_detected = False
+        for attempt in range(10):
+            capture_screen(output_path=image_path, window_title=self.window_title)
+            if cv2 is not None and os.path.exists(image_path):
+                img = cv2.imread(image_path)
+                if check_retry_popup(img):
+                    popup_detected = True
+                    break
+            time.sleep(0.5)
+            
+        if popup_detected:
+            print("DQN Penalty: Detected retry popup during reset. Clicking YES button (Multi-point click enabled).")
+            # 5-point safety click to offset window scaling/borders
+            for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
+                self._check_emergency_stop()
+                click_relative_in_window(self.window_title, dx, dy)
+                time.sleep(0.05)
+            time.sleep(2.5)
+        else:
+            # Fallback Force Click: If King is missing from the board state, perform force retry YES click
+            # to break out of potential infinite loading sync loop
+            print("DQN Reset Warning: Retry popup not verified by pixel variance, but King might be missing. Performing force YES click to prevent lockup.")
+            for dx, dy in [(540, 410)]:
+                self._check_emergency_stop()
+                click_relative_in_window(self.window_title, dx, dy)
+            time.sleep(2.5)
         
         obs = self._get_obs()
         
@@ -274,6 +290,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             board_state = obs[:64].reshape(8, 8)
             if np.any(board_state == 1):
                 print("In-game Sync: Player King detected. Game play has officially started!")
+                time.sleep(1.5)  # Allow turn intro animation to fully finish before first step
+                obs = self._get_obs()
                 break
             print("In-game Sync: Waiting for game play to start (King not found on board)...")
             time.sleep(1.0)
@@ -425,9 +443,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     x = int(390 + target_col * 62.5 + 31.25)
                     y = int(127 + target_row * 62.5 + 31.25)
                     print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
-                    time.sleep(0.4)
                     self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
+                    time.sleep(0.5)
                 else:
                     # Absolute fallback clipping if loop somehow fails to find inside direction
                     target_row = max(0, min(7, target_row))
@@ -435,9 +453,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     x = int(390 + target_col * 62.5 + 31.25)
                     y = int(127 + target_row * 62.5 + 31.25)
                     print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
-                    time.sleep(0.4)
                     self._check_emergency_stop()
                     click_relative_in_window(self.window_title, x, y)
+                    time.sleep(0.5)
             else:
                 print("King not found in board_state. Bypassing click action and waiting for turn stabilization...")
                 time.sleep(1.0)
@@ -590,8 +608,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if len(king_positions) > 0:
             king_row, king_col = king_positions[0]
             if curr_threat[king_row, king_col] == 1:
-                reward -= 0.5
-                print("DQN Penalty: Exposed to enemy checkmate threat zone! Subtracted -0.5")
+                reward -= 1.5
+                print("DQN Penalty: Exposed to enemy checkmate threat zone! Subtracted -1.5")
 
         # Threat Exposure Evaluation
         terminated = False
@@ -606,9 +624,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 is_popup = True
 
         if is_popup:
-            reward = -5.0
+            reward = -15.0
             terminated = True
-            print("DQN Penalty: Detected retry popup via screen analysis! Subtracted -5.0. Clicking YES button (Multi-point click enabled).")
+            print("DQN Penalty: Detected retry popup via screen analysis! Subtracted -15.0. Clicking YES button (Multi-point click enabled).")
             # 5-point safety click to offset window scaling/borders
             for dx, dy in [(530, 410), (540, 410), (550, 410), (540, 400), (540, 420)]:
                 self._check_emergency_stop()
@@ -620,7 +638,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             terminated = True
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
         elif not king_present:
-            reward = -5.0
+            reward = -15.0
             terminated = True
             print("DQN Penalty: Player King missing but retry popup not yet detected. Postponing click to reset.")
 
