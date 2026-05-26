@@ -29,6 +29,7 @@ except ImportError:
 from capture import capture_screen
 from input import click_relative_in_window, press_key
 from analyzer import get_state_matrix, check_retry_popup
+from weapons import WEAPON_PRESETS
 
 
 class ShotgunKingEnv(gym.Env if gym is not None else object):
@@ -36,12 +37,13 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": ["human"], "render_fps": 5}
 
-    def __init__(self, window_title="Shotgun King", max_steps=100):
+    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0):
         """Initializes the environment state and spaces.
 
         Args:
             window_title: Title of the target game window.
             max_steps: Maximum steps allowed per episode before truncation.
+            weapon_type: Integer ID representing registered weapon spec presets.
         """
         super().__init__()
         self.window_title = window_title
@@ -61,9 +63,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.reserve_ammo = 8
 
         # Weapon Specifications
-        self.damage = 4.0
-        self.range_limit = 3.0
-        self.spread = 34.0
+        preset = WEAPON_PRESETS.get(weapon_type, WEAPON_PRESETS[0])
+        self.damage = preset["damage"]
+        self.range_limit = preset["range_limit"][1]
+        self.spread = preset["spread"]
+        self.weapon_type = weapon_type
 
         # Define Action Space: Discrete actions
         # 0: Move Up-Left,  1: Move Up,    2: Move Up-Right
@@ -101,31 +105,60 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 raise KeyboardInterrupt("DQN Emergency Stop: User swept mouse to the corner.")
 
     def _wait_for_equilibrium(self, max_wait=5.0):
-        """Wait until the enemy's turn animation is complete and the chessboard state stabilizes for the player's turn.
+        """Wait until the enemy's turn animation starts and fully stabilizes visually.
 
         Args:
             max_wait: Maximum wait time in seconds.
 
         Returns:
-            The final 8x8 state matrix in static equilibrium.
+            The final 133-dimensional observation vector in static equilibrium.
         """
-        # Minimum delay to ensure enemy turn triggers and state changes before polling
-        time.sleep(0.3)
+        time.sleep(0.1)
         start_time = time.time()
-        prev_state = self._get_obs()
+        
+        img_path = "data/screenshot.png"
+        capture_screen(output_path=img_path, window_title=self.window_title)
+        if not os.path.exists(img_path) or cv2 is None:
+            return self._get_obs()
+            
+        img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return self._get_obs()
+            
+        # Crop to board ROI to focus on gameplay animations
+        y1, y2, x1, x2 = 119, 631, 383, 895
+        prev_roi = img[y1:y2, x1:x2]
+        
+        has_changed = False
         
         while time.time() - start_time < max_wait:
-            time.sleep(0.2)
-            curr_state = self._get_obs()
+            time.sleep(0.15)
+            capture_screen(output_path=img_path, window_title=self.window_title)
+            if not os.path.exists(img_path):
+                continue
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            curr_roi = img[y1:y2, x1:x2]
             
-            # When two consecutive capture matrices are identical, indicating static state
-            if np.array_equal(prev_state, curr_state):
-                return curr_state
-                
-            prev_state = curr_state
+            diff = cv2.absdiff(prev_roi, curr_roi)
+            mean_diff = np.mean(diff)
             
-        print("Warning: Turn equilibrium detection timed out. Proceeding with current observation.")
-        return prev_state
+            # Check for visual transitions (animation start and end)
+            if not has_changed:
+                if mean_diff > 1.5:
+                    has_changed = True
+                elif time.time() - start_time > 0.6:
+                    # Early exit if no animation starts after 0.6 seconds (e.g. invalid action or already game over)
+                    break
+            else:
+                if mean_diff < 0.5:
+                    break
+                    
+            prev_roi = curr_roi
+            
+        time.sleep(0.2)
+        return self._get_obs()
 
     def _get_threat_matrix(self, state):
         """Calculates an 8x8 binary threat matrix projecting all enemy check line rays.
@@ -208,8 +241,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         return threat
 
     def _get_obs(self):
+        """Captures screen and returns a 133-dimensional flat observation vector.
+
+        Returns:
+            A 133-dimensional numpy float32 observation vector.
+        """
         self._check_emergency_stop()
-        """Captures screen and returns a 133-dimensional flat observation vector."""
         image_path = "data/screenshot.png"
         
         # Ensure fresh screen capture
@@ -236,7 +273,14 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         return np.zeros((133,), dtype=np.float32)
 
     def _get_yes_button_coords(self, img):
-        """Finds the precise (x, y) coordinates of the active YES button on the retry screen dynamically."""
+        """Finds the precise (x, y) coordinates of the active YES button on the retry screen dynamically.
+
+        Args:
+            img: Full 1280x720 BGR game screen screenshot.
+
+        Returns:
+            A tuple of (x, y) relative pixel coordinates of the YES button centroid.
+        """
         if img is None or cv2 is None or np is None:
             return (540, 410)
         try:
@@ -259,12 +303,16 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             return (540, 410)
 
     def reset(self, seed=None, options=None):
-        self._check_emergency_stop()
         """Resets the environment for a new episode.
+
+        Args:
+            seed: Random seed for reproducibility.
+            options: Optional environment configuration options.
 
         Returns:
             A tuple containing (observation, info).
         """
+        self._check_emergency_stop()
         if gym is not None:
             super().reset(seed=seed)
         
@@ -333,7 +381,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         return obs, info
 
     def step(self, action):
-        self._check_emergency_stop()
         """Executes a single step in the environment by applying the action.
 
         Args:
@@ -342,6 +389,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         Returns:
             A tuple of (observation, reward, terminated, truncated, info).
         """
+        self._check_emergency_stop()
         self.current_step += 1
         print(f"Step {self.current_step} - Executing action: {action}")
 
