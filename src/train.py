@@ -55,8 +55,43 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 step_idx += 1
                 total_step_count += 1
                 
+                # Direction diffs mapping: row_offset, col_offset
+                direction_diffs = {
+                    0: (-1, -1), 1: (-1, 0), 2: (-1, 1),
+                    3: (0, -1),             4: (0, 1),
+                    5: (1, -1),  6: (1, 0),  7: (1, 1)
+                }
+
+                def is_action_valid(act):
+                    if act in range(8):
+                        row_offset, col_offset = direction_diffs[act]
+                        target_row = env.king_row + row_offset
+                        target_col = env.king_col + col_offset
+                        return 0 <= target_row < 8 and 0 <= target_col < 8
+                    return True
+
                 # Select action
                 action = agent.act(state, epsilon=epsilon)
+
+                # Verify and filter AI choice to ensure no out-of-bounds move
+                if not is_action_valid(action):
+                    import random
+                    if random.random() < epsilon or agent.policy_net is None:
+                        # Find all valid actions
+                        valid_actions = [a for a in range(10) if is_action_valid(a)]
+                        action = random.choice(valid_actions)
+                    else:
+                        # Select best valid action by ranking Q-values
+                        import torch
+                        state_tensor = torch.tensor(state.astype(np.float32)).unsqueeze(0).to(agent.device)
+                        with torch.no_grad():
+                            q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
+                        # Sort indices by Q-value descending
+                        ranked_actions = np.argsort(q_values)[::-1]
+                        for act in ranked_actions:
+                            if is_action_valid(act):
+                                action = int(act)
+                                break
 
                 # Handle decision suggestion and override in suggest mode
                 if mode == "suggest" and agent.policy_net is not None:
@@ -72,16 +107,18 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         8: "Reload", 9: "Shoot"
                     }
                     
-                    top_actions = np.argsort(q_values)[::-1][:3]
+                    # Sort Q-values descending for suggestions, filtering out invalid moves
+                    top_actions = []
+                    ranked_actions = np.argsort(q_values)[::-1]
+                    for act_idx in ranked_actions:
+                        if is_action_valid(act_idx):
+                            top_actions.append(act_idx)
+                            if len(top_actions) == 3:
+                                break
+                                
                     print("\n=== AI Decision Suggestion ===")
                     for rank, act_idx in enumerate(top_actions, 1):
                         print(f"Rank {rank}: {action_names[act_idx]} (Q-value: {q_values[act_idx]:.4f})")
-                    
-                    user_choice = input(f"Recommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad): ").strip()
-                    if user_choice == ".":
-                        print("User flagged defeat. Forcing episode termination...")
-                        agent.remember(state, action, -15.0, state, True)
-                        break
                     
                     # Convert Numpad inputs to internal action index
                     numpad_map = {
@@ -90,14 +127,48 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         "1": 5, "2": 6, "3": 7,
                         "0": 9
                     }
-                    if user_choice in numpad_map:
-                        action = numpad_map[user_choice]
-                        print(f"Action overridden by user to: {action_names[action]} (Numpad input: {user_choice})")
-                    elif user_choice.isdigit() and int(user_choice) in range(10):
-                        action = int(user_choice)
-                        print(f"Action overridden by user to: {action_names[action]}")
-                    else:
-                        print(f"Executing recommended action: {action_names[action]}")
+
+                    # Validation loop for user choice
+                    while True:
+                        user_choice = input(f"Recommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad): ").strip()
+                        if user_choice == ".":
+                            print("User flagged defeat. Forcing episode termination...")
+                            agent.remember(state, action, -15.0, state, True)
+                            break
+                        
+                        temp_action = action
+                        if user_choice in numpad_map:
+                            temp_action = numpad_map[user_choice]
+                        elif user_choice.isdigit() and int(user_choice) in range(10):
+                            temp_action = int(user_choice)
+                        elif user_choice == "":
+                            # Use recommended action
+                            temp_action = action
+                        else:
+                            print("Invalid input. Please enter 0-9, Numpad keys, or '.' to exit.")
+                            continue
+
+                        # Wall boundary check
+                        if not is_action_valid(temp_action):
+                            row_offset, col_offset = direction_diffs[temp_action]
+                            target_row = env.king_row + row_offset
+                            target_col = env.king_col + col_offset
+                            print(f"Move blocked by wall! Target ({target_row}, {target_col}) is out of bounds. Current King: ({env.king_row}, {env.king_col}). Choose another action.")
+                            continue
+                            
+                        # If validation passed
+                        action = temp_action
+                        if user_choice != "":
+                            if user_choice in numpad_map:
+                                print(f"Action overridden by user to: {action_names[action]} (Numpad input: {user_choice})")
+                            else:
+                                print(f"Action overridden by user to: {action_names[action]}")
+                        else:
+                            print(f"Executing recommended action: {action_names[action]}")
+                        break
+                        
+                    if user_choice == ".":
+                        break
                 
                 # Perform action in game environment
                 next_state, reward, term, trunc, info = env.step(action)
