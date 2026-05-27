@@ -11,3 +11,6 @@ wheels/
 
 # 
 data/
+
+# Trained models
+models/

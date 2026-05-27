@@ -89,6 +89,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             6: (640, 460),  # Down
             7: (740, 460),  # Down-Right
         }
+        self.king_row = 7
+        self.king_col = 4
 
     def _check_emergency_stop(self):
         """Checks if the mouse cursor is located in the top-left corner (0,0) of the screen.
@@ -371,6 +373,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 print("In-game Sync: Player King detected. Game play has officially started!")
                 time.sleep(1.5)  # Allow turn intro animation to fully finish before first step
                 obs = self._get_obs()
+                fresh_board = obs[:64].reshape(8, 8)
+                king_positions = np.argwhere(fresh_board == 1)
+                if len(king_positions) > 0:
+                    self.king_row, self.king_col = int(king_positions[0][0]), int(king_positions[0][1])
                 break
             print("In-game Sync: Waiting for game play to start (King not found on board)...")
             time.sleep(1.0)
@@ -396,12 +402,21 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         original_action = action
         has_valid_target = False
 
-        if self.current_state is None:
-            self.current_state = self._get_obs()
+        # Force fresh observation update before computing action parameters
+        self.current_state = self._get_obs()
 
         # Reconstruct 8x8 matrices from 133-dimensional flat state
         board_state = self.current_state[:64].reshape(8, 8)
         threat_state = self.current_state[64:128].reshape(8, 8)
+
+        # Determine Player King position (either detected or logical backup)
+        king_positions = np.argwhere(board_state == 1)
+        if len(king_positions) > 0:
+            king_row, king_col = int(king_positions[0][0]), int(king_positions[0][1])
+            self.king_row, self.king_col = king_row, king_col
+        else:
+            king_row, king_col = self.king_row, self.king_col
+            print(f"King missing in board_state. Using logical tracked position: ({king_row}, {king_col})")
 
         # Count enemies before action execution
         prev_enemies = np.sum(board_state >= 2)
@@ -409,19 +424,16 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Ammo, Range & Target Validations for Shoot Guard
         if action == 9:
             # Check range limit and target existence
-            king_positions = np.argwhere(board_state == 1)
             has_valid_target = False
             min_dist = 99
             best_is_threat = False
             
-            if len(king_positions) > 0:
-                king_row, king_col = king_positions[0]
-                # 8 directions to sweep radially for enemies
-                directions = [
-                    (-1, -1), (-1, 0), (-1, 1),
-                    (0, -1),           (0, 1),
-                    (1, -1),  (1, 0),  (1, 1)
-                ]
+            # 8 directions to sweep radially for enemies
+            directions = [
+                (-1, -1), (-1, 0), (-1, 1),
+                (0, -1),           (0, 1),
+                (1, -1),  (1, 0),  (1, 1)
+            ]
                 for r_diff, c_diff in directions:
                     for dist in range(1, 8):
                         tr = king_row + r_diff * dist
@@ -484,60 +496,55 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         # Execute action simulation
         if action in range(8):
-            # Target direction calculations based on King's real coordinate (value 1)
-            king_positions = np.argwhere(board_state == 1)
+            # Direction diffs mapping: row_offset, col_offset
+            direction_diffs = {
+                0: (-1, -1),  # Up-Left
+                1: (-1, 0),   # Up
+                2: (-1, 1),   # Up-Right
+                3: (0, -1),   # Left
+                4: (0, 1),    # Right
+                5: (1, -1),   # Down-Left
+                6: (1, 0),    # Down
+                7: (1, 1),    # Down-Right
+            }
             
-            if len(king_positions) > 0:
-                king_row, king_col = king_positions[0]
-                
-                # Direction diffs mapping: row_offset, col_offset
-                direction_diffs = {
-                    0: (-1, -1),  # Up-Left
-                    1: (-1, 0),   # Up
-                    2: (-1, 1),   # Up-Right
-                    3: (0, -1),   # Left
-                    4: (0, 1),    # Right
-                    5: (1, -1),   # Down-Left
-                    6: (1, 0),    # Down
-                    7: (1, 1),    # Down-Right
-                }
-                
+            row_offset, col_offset = direction_diffs[action]
+            target_row = king_row + row_offset
+            target_col = king_col + col_offset
+            
+            # Out-of-bounds safety check and replacement loop
+            attempts = 0
+            while not (0 <= target_row < 8 and 0 <= target_col < 8) and attempts < 15:
+                import random
+                action = random.randint(0, 7)
                 row_offset, col_offset = direction_diffs[action]
                 target_row = king_row + row_offset
                 target_col = king_col + col_offset
-                
-                # Out-of-bounds safety check and replacement loop
-                attempts = 0
-                while not (0 <= target_row < 8 and 0 <= target_col < 8) and attempts < 15:
-                    import random
-                    action = random.randint(0, 7)
-                    row_offset, col_offset = direction_diffs[action]
-                    target_row = king_row + row_offset
-                    target_col = king_col + col_offset
-                    attempts += 1
-                
-                if 0 <= target_row < 8 and 0 <= target_col < 8:
-                    # Precise board cell calculation based on standard coordinates:
-                    # x_start=390, y_start=127, cell_size=62.5
-                    x = int(390 + target_col * 62.5 + 31.25)
-                    y = int(127 + target_row * 62.5 + 31.25)
-                    print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
-                    self._check_emergency_stop()
-                    click_relative_in_window(self.window_title, x, y)
-                    time.sleep(1.8)
-                else:
-                    # Absolute fallback clipping if loop somehow fails to find inside direction
-                    target_row = max(0, min(7, target_row))
-                    target_col = max(0, min(7, target_col))
-                    x = int(390 + target_col * 62.5 + 31.25)
-                    y = int(127 + target_row * 62.5 + 31.25)
-                    print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
-                    self._check_emergency_stop()
-                    click_relative_in_window(self.window_title, x, y)
-                    time.sleep(1.8)
+                attempts += 1
+            
+            if 0 <= target_row < 8 and 0 <= target_col < 8:
+                # Precise board cell calculation based on standard coordinates:
+                # x_start=390, y_start=127, cell_size=62.5
+                x = int(390 + target_col * 62.5 + 31.25)
+                y = int(127 + target_row * 62.5 + 31.25)
+                print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
+                self._check_emergency_stop()
+                click_relative_in_window(self.window_title, x, y)
+                time.sleep(1.8)
             else:
-                print("King not found in board_state. Bypassing click action and waiting for turn stabilization...")
-                time.sleep(1.0)
+                # Absolute fallback clipping if loop somehow fails to find inside direction
+                target_row = max(0, min(7, target_row))
+                target_col = max(0, min(7, target_col))
+                x = int(390 + target_col * 62.5 + 31.25)
+                y = int(127 + target_row * 62.5 + 31.25)
+                print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
+                self._check_emergency_stop()
+                click_relative_in_window(self.window_title, x, y)
+                time.sleep(1.8)
+
+            # Update tracked position internally
+            self.king_row = target_row
+            self.king_col = target_col
 
             # Move Rule: Automatically reload loaded_ammo from reserve_ammo when King moves
             needed = max(0, 2 - self.loaded_ammo)
@@ -558,18 +565,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             
         elif action == 9:
             # Shoot (Intel aimed click bypassing the 1-tile move physics rule)
-            king_positions = np.argwhere(board_state == 1)
-            
-            if len(king_positions) > 0:
-                king_row, king_col = king_positions[0]
-                
-                # 8 directions to sweep radially for enemies
-                directions = [
-                    (-1, -1), (-1, 0), (-1, 1),
-                    (0, -1),           (0, 1),
-                    (1, -1),  (1, 0),  (1, 1)
-                ]
-                
                 min_dist = 99
                 best_diff = None
                 best_is_threat = False

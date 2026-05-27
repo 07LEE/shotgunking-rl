@@ -201,14 +201,14 @@ class DQNAgent:
         
         return float(loss.item())
 
-    def save(self, filepath="data/models/model.pth"):
+    def save(self, filepath="models/model.pth"):
         """Saves the policy network weights to the specified file path."""
         if torch is not None and self.policy_net is not None:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             torch.save(self.policy_net.state_dict(), filepath)
             print(f"Successfully saved agent model weights to: '{filepath}'")
 
-    def load(self, filepath="data/models/model.pth"):
+    def load(self, filepath="models/model.pth"):
         """Loads the policy network weights from the specified file path."""
         if torch is not None and self.policy_net is not None and os.path.exists(filepath):
             try:

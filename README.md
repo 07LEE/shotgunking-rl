@@ -5,6 +5,7 @@ This project implements an automated gameplay and reinforcement learning system 
 ## Project Architecture
 
 The system operates in a closed loop across four main phases:
+
 1. Capture: Active screen capture of the window using mss.
 2. Analyze: Slicing the chessboard area, detecting pieces, and reading UI status.
 3. Decide: DQN agent inputs the processed state vector and outputs an action.
@@ -27,6 +28,7 @@ The custom environment ShotgunKingEnv maps game frames to the OpenAI Gymnasium s
 ## Image Processing Pipeline
 
 The analyzer module extracts state vectors from raw BGR screenshots.
+
 - Board Localization: Crops the chessboard area using fixed screen coordinates and resizes the region to 520x520 pixels.
 - Cell Slicing: Divides the board into 64 unique 65x65 pixel cell patches.
 - Feature Classification: Employs template matching (resized to 45x45 grayscale signals) for high-accuracy piece identification. Falls back to contour-based geometry analysis when templates are missing.

@@ -15,7 +15,7 @@ from env import ShotgunKingEnv
 from agent import DQNAgent
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous"):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
@@ -31,7 +31,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
     agent = DQNAgent(state_size=133, action_size=10, lr=1e-3)
     
     # Auto-load existing model weights if available to resume continuous learning
-    agent.load("data/models/model.pth")
+    agent.load("models/model.pth")
     
     # Exploration parameters
     epsilon = 1.0
@@ -57,6 +57,47 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
                 
                 # Select action
                 action = agent.act(state, epsilon=epsilon)
+
+                # Handle decision suggestion and override in suggest mode
+                if mode == "suggest" and agent.policy_net is not None:
+                    import torch
+                    state_tensor = torch.tensor(state.astype(np.float32)).unsqueeze(0).to(agent.device)
+                    with torch.no_grad():
+                        q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
+                    
+                    action_names = {
+                        0: "Move Up-Left", 1: "Move Up", 2: "Move Up-Right",
+                        3: "Move Left", 4: "Move Right",
+                        5: "Move Down-Left", 6: "Move Down", 7: "Move Down-Right",
+                        8: "Reload", 9: "Shoot"
+                    }
+                    
+                    top_actions = np.argsort(q_values)[::-1][:3]
+                    print("\n=== AI Decision Suggestion ===")
+                    for rank, act_idx in enumerate(top_actions, 1):
+                        print(f"Rank {rank}: {action_names[act_idx]} (Q-value: {q_values[act_idx]:.4f})")
+                    
+                    user_choice = input(f"Recommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad): ").strip()
+                    if user_choice == ".":
+                        print("User flagged defeat. Forcing episode termination...")
+                        agent.remember(state, action, -15.0, state, True)
+                        break
+                    
+                    # Convert Numpad inputs to internal action index
+                    numpad_map = {
+                        "7": 0, "8": 1, "9": 2,
+                        "4": 3, "5": 8, "6": 4,
+                        "1": 5, "2": 6, "3": 7,
+                        "0": 9
+                    }
+                    if user_choice in numpad_map:
+                        action = numpad_map[user_choice]
+                        print(f"Action overridden by user to: {action_names[action]} (Numpad input: {user_choice})")
+                    elif user_choice.isdigit() and int(user_choice) in range(10):
+                        action = int(user_choice)
+                        print(f"Action overridden by user to: {action_names[action]}")
+                    else:
+                        print(f"Executing recommended action: {action_names[action]}")
                 
                 # Perform action in game environment
                 next_state, reward, term, trunc, info = env.step(action)
@@ -95,23 +136,29 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10):
             print(f"Episode {ep} Finished. Total Reward Collected: {episode_reward:.2f}")
             
             # Save model weights at the end of every episode for safety
-            agent.save("data/models/model.pth")
+            agent.save("models/model.pth")
             
     except KeyboardInterrupt:
         print("\nTraining interrupted by user. Saving current model weights before exiting...")
-        agent.save("data/models/model.pth")
+        agent.save("models/model.pth")
         print("Model weights successfully saved after emergency interruption.")
     except Exception as e:
         print(f"\nUnexpected error occurred: {e}. Saving model weights before crash...")
-        agent.save("data/models/model.pth")
+        agent.save("models/model.pth")
         raise e
         
     print("\n=== SHOTGUN KING DQN TRAINING COMPLETED ===")
 
 
 if __name__ == "__main__":
-    # Run scaled-up reinforcement learning train loop
+    import argparse
+    parser = argparse.ArgumentParser(description="Shotgun King RL Training Loop")
+    parser.add_argument("--mode", type=str, default="autonomous", choices=["autonomous", "suggest"],
+                        help="Execution mode: autonomous control or user-approved suggestion mode")
+    parser.add_argument("--episodes", type=int, default=50, help="Total training episodes")
+    args = parser.parse_args()
+
     if np is not None:
-        train_dqn(episodes=50, batch_size=16, max_steps_per_episode=30)
+        train_dqn(episodes=args.episodes, batch_size=16, max_steps_per_episode=30, mode=args.mode)
     else:
         print("Error: Numpy is not available.")
