@@ -434,43 +434,43 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 (0, -1),           (0, 1),
                 (1, -1),  (1, 0),  (1, 1)
             ]
-                for r_diff, c_diff in directions:
-                    for dist in range(1, 8):
-                        tr = king_row + r_diff * dist
-                        tc = king_col + c_diff * dist
-                        if 0 <= tr < 8 and 0 <= tc < 8:
-                            piece = board_state[tr, tc]
-                            if piece >= 2:
-                                is_threat = False
-                                is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
-                                is_straight = (r_diff == 0 or c_diff == 0)
-                                
-                                if piece == 2:  # Pawn: attacks diagonally down
-                                    if r_diff == -1 and is_diagonal and dist == 1:
+            for r_diff, c_diff in directions:
+                for dist in range(1, 8):
+                    tr = king_row + r_diff * dist
+                    tc = king_col + c_diff * dist
+                    if 0 <= tr < 8 and 0 <= tc < 8:
+                        piece = board_state[tr, tc]
+                        if piece >= 2:
+                            is_threat = False
+                            is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
+                            is_straight = (r_diff == 0 or c_diff == 0)
+                            
+                            if piece == 2:  # Pawn: attacks diagonally down
+                                if r_diff == -1 and is_diagonal and dist == 1:
                                         is_threat = True
-                                elif piece == 4:  # Bishop: diagonal threat
-                                    if is_diagonal:
-                                        is_threat = True
-                                elif piece == 5:  # Rook: straight threat
-                                    if is_straight:
-                                        is_threat = True
-                                elif piece == 6:  # Queen: straight or diagonal threat
-                                    if is_straight or is_diagonal:
-                                        is_threat = True
-                                
-                                if not best_is_threat and is_threat:
+                            elif piece == 4:  # Bishop: diagonal threat
+                                if is_diagonal:
+                                    is_threat = True
+                            elif piece == 5:  # Rook: straight threat
+                                if is_straight:
+                                    is_threat = True
+                            elif piece == 6:  # Queen: straight or diagonal threat
+                                if is_straight or is_diagonal:
+                                    is_threat = True
+                            
+                            if not best_is_threat and is_threat:
+                                min_dist = dist
+                                best_is_threat = is_threat
+                            elif is_threat == best_is_threat:
+                                if dist < min_dist:
                                     min_dist = dist
-                                    best_is_threat = is_threat
-                                elif is_threat == best_is_threat:
-                                    if dist < min_dist:
-                                        min_dist = dist
-                                break
-                            elif board_state[tr, tc] == 1:
-                                break
-                        else:
                             break
-                if min_dist <= self.range_limit:
-                    has_valid_target = True
+                        elif board_state[tr, tc] == 1:
+                            break
+                    else:
+                        break
+            if min_dist <= self.range_limit:
+                has_valid_target = True
 
             if self.loaded_ammo <= 0:
                 if self.reserve_ammo > 0:
@@ -565,76 +565,73 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             
         elif action == 9:
             # Shoot (Intel aimed click bypassing the 1-tile move physics rule)
-                min_dist = 99
-                best_diff = None
-                best_is_threat = False
-                
-                for r_diff, c_diff in directions:
-                    for dist in range(1, 8):
-                        tr = king_row + r_diff * dist
-                        tc = king_col + c_diff * dist
-                        if 0 <= tr < 8 and 0 <= tc < 8:
-                            piece = board_state[tr, tc]
-                            if piece >= 2:
-                                is_threat = False
-                                is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
-                                is_straight = (r_diff == 0 or c_diff == 0)
-                                
-                                if piece == 2:  # Pawn: attacks diagonally down
-                                    if r_diff == -1 and is_diagonal and dist == 1:
-                                        is_threat = True
-                                elif piece == 4:  # Bishop: diagonal threat
-                                    if is_diagonal:
-                                        is_threat = True
-                                elif piece == 5:  # Rook: straight threat
-                                    if is_straight:
-                                        is_threat = True
-                                elif piece == 6:  # Queen: straight or diagonal threat
-                                    if is_straight or is_diagonal:
-                                        is_threat = True
-                                
-                                if best_diff is None:
+            min_dist = 99
+            best_diff = None
+            best_is_threat = False
+            
+            for r_diff, c_diff in directions:
+                for dist in range(1, 8):
+                    tr = king_row + r_diff * dist
+                    tc = king_col + c_diff * dist
+                    if 0 <= tr < 8 and 0 <= tc < 8:
+                        piece = board_state[tr, tc]
+                        if piece >= 2:
+                            is_threat = False
+                            is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
+                            is_straight = (r_diff == 0 or c_diff == 0)
+                            
+                            if piece == 2:  # Pawn: attacks diagonally down
+                                if r_diff == -1 and is_diagonal and dist == 1:
+                                    is_threat = True
+                            elif piece == 4:  # Bishop: diagonal threat
+                                if is_diagonal:
+                                    is_threat = True
+                            elif piece == 5:  # Rook: straight threat
+                                if is_straight:
+                                    is_threat = True
+                            elif piece == 6:  # Queen: straight or diagonal threat
+                                if is_straight or is_diagonal:
+                                    is_threat = True
+                            
+                            if best_diff is None:
+                                min_dist = dist
+                                best_diff = (r_diff, c_diff)
+                                best_is_threat = is_threat
+                            else:
+                                if is_threat and not best_is_threat:
                                     min_dist = dist
                                     best_diff = (r_diff, c_diff)
                                     best_is_threat = is_threat
-                                else:
-                                    if is_threat and not best_is_threat:
+                                elif is_threat == best_is_threat:
+                                    if dist < min_dist:
                                         min_dist = dist
                                         best_diff = (r_diff, c_diff)
-                                        best_is_threat = is_threat
-                                    elif is_threat == best_is_threat:
-                                        if dist < min_dist:
-                                            min_dist = dist
-                                            best_diff = (r_diff, c_diff)
-                                break  # Closest enemy on this ray found
-                            elif board_state[tr, tc] == 1:
-                                break
-                        else:
+                            break  # Closest enemy on this ray found
+                        elif board_state[tr, tc] == 1:
                             break
+                    else:
+                        break
+            
+            if best_diff is not None and min_dist <= self.range_limit:
+                r_diff, c_diff = best_diff
+                # 1-tile distance check: If target is 1-tile away, clicking it moves the King.
+                # Bypassed by shooting 2-tiles away in the same trajectory.
+                shoot_dist = 2 if min_dist == 1 else min_dist
                 
-                if best_diff is not None and min_dist <= self.range_limit:
-                    r_diff, c_diff = best_diff
-                    # 1-tile distance check: If target is 1-tile away, clicking it moves the King.
-                    # Bypassed by shooting 2-tiles away in the same trajectory.
-                    shoot_dist = 2 if min_dist == 1 else min_dist
-                    
-                    target_row = king_row + r_diff * shoot_dist
-                    target_col = king_col + c_diff * shoot_dist
-                    
-                    # Precise absolute pixel conversion
-                    x = int(390 + target_col * 62.5 + 31.25)
-                    y = int(127 + target_row * 62.5 + 31.25)
-                    print(f"Intel Shoot: Found enemy at dist {min_dist} (dir: {best_diff}). Aiming at ({target_row}, {target_col}) -> ({x}, {y})")
-                    time.sleep(0.4)
-                    self._check_emergency_stop()
-                    click_relative_in_window(self.window_title, x, y)
-                    time.sleep(1.8)
-                else:
-                    # Fallback if target is out of range or missing (normally filtered by action guard)
-                    print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
+                target_row = king_row + r_diff * shoot_dist
+                target_col = king_col + c_diff * shoot_dist
+                
+                # Precise absolute pixel conversion
+                x = int(390 + target_col * 62.5 + 31.25)
+                y = int(127 + target_row * 62.5 + 31.25)
+                print(f"Intel Shoot: Found enemy at dist {min_dist} (dir: {best_diff}). Aiming at ({target_row}, {target_col}) -> ({x}, {y})")
+                time.sleep(0.4)
+                self._check_emergency_stop()
+                click_relative_in_window(self.window_title, x, y)
+                time.sleep(1.8)
             else:
-                print("Intel Shoot: King missing from state. Bypassing shoot click and waiting for turn stabilization...")
-                time.sleep(1.0)
+                # Fallback if target is out of range or missing (normally filtered by action guard)
+                print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
 
             self.loaded_ammo = max(0, self.loaded_ammo - 1)
             print(f"Ammo System: Shot fired. Loaded ammo consumed. (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
