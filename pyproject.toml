@@ -12,5 +12,6 @@ dependencies = [
     "pillow>=12.2.0",
     "pyautogui>=0.9.54",
     "pywinctl>=0.4.1",
+    "pyyaml>=6.0.3",
     "torch>=2.12.0",
 ]

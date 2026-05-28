@@ -696,9 +696,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 is_popup = True
 
         if is_popup:
-            reward = -15.0
+            reward = -15.0 - float(curr_enemies)
             terminated = True
-            print("DQN Penalty: Detected retry popup via screen analysis! Subtracted -15.0. Clicking YES button (dynamic coordinates enabled).")
+            print(f"DQN Penalty: Detected retry popup via screen analysis! Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Clicking YES button (dynamic coordinates enabled).")
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
             tx, ty = self._get_yes_button_coords(img)
             self._check_emergency_stop()
@@ -709,9 +709,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             terminated = True
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
         elif not king_present:
-            reward = -15.0
+            reward = -15.0 - float(curr_enemies)
             terminated = True
-            print("DQN Penalty: Player King missing but retry popup not yet detected. Postponing click to reset.")
+            print(f"DQN Penalty: Player King missing but retry popup not yet detected. Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Postponing click to reset.")
 
         truncated = self.current_step >= self.max_steps
         

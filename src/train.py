@@ -15,28 +15,32 @@ from env import ShotgunKingEnv
 from agent import DQNAgent
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous"):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
         episodes: Total number of game episodes to run.
         batch_size: Mini-batch size for DQN experience replay.
         max_steps_per_episode: Maximum steps limit per episode.
+        mode: Game control execution mode.
+        learning_rate: Optimizer parameter for step adjustments.
+        epsilon_decay: Exploration factor multiplier.
+        epsilon_min: Minimum exploration cutoff limit.
     """
     print("Initializing Shotgun King Gymnasium Environment...")
     env = ShotgunKingEnv(window_title="Shotgun King", max_steps=max_steps_per_episode)
     
     print("Initializing DQN Agent...")
     # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130, plus 3 weapon specs is 133
-    agent = DQNAgent(state_size=133, action_size=10, lr=1e-3)
+    agent = DQNAgent(state_size=133, action_size=10, lr=learning_rate)
     
     # Auto-load existing model weights if available to resume continuous learning
     agent.load("models/model.pth")
     
     # Exploration parameters
     epsilon = 1.0
-    epsilon_min = 0.05
-    epsilon_decay = 0.95
+    epsilon_min = epsilon_min
+    epsilon_decay = epsilon_decay
     
     update_target_steps = 10
     total_step_count = 0
@@ -221,15 +225,61 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     print("\n=== SHOTGUN KING DQN TRAINING COMPLETED ===")
 
 
+def load_config(config_path="config.yaml"):
+    """Loads configuration options from a local YAML file.
+
+    Args:
+        config_path: System filesystem location to the configuration.
+    """
+    import os
+    import yaml
+
+    default_config = {
+        "episodes": 50,
+        "batch_size": 16,
+        "max_steps_per_episode": 30,
+        "mode": "suggest",
+        "learning_rate": 0.001,
+        "epsilon_decay": 0.95,
+        "epsilon_min": 0.05
+    }
+
+    if not os.path.exists(config_path):
+        print(f"Configuration file '{config_path}' not found. Using default parameters.")
+        return default_config
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f)
+            if not isinstance(cfg, dict):
+                print("Warning: Configuration file format invalid. Using defaults.")
+                return default_config
+            merged = default_config.copy()
+            merged.update(cfg)
+            print(f"Loaded configuration from '{config_path}': {merged}")
+            return merged
+    except Exception as e:
+        print(f"Error loading configuration '{config_path}': {e}. Using defaults.")
+        return default_config
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Shotgun King RL Training Loop")
-    parser.add_argument("--mode", type=str, default="autonomous", choices=["autonomous", "suggest"],
-                        help="Execution mode: autonomous control or user-approved suggestion mode")
-    parser.add_argument("--episodes", type=int, default=50, help="Total training episodes")
+    parser.add_argument("--config", type=str, default="config.yaml",
+                        help="Path to the training configuration YAML file")
     args = parser.parse_args()
 
     if np is not None:
-        train_dqn(episodes=args.episodes, batch_size=16, max_steps_per_episode=30, mode=args.mode)
+        config = load_config(args.config)
+        train_dqn(
+            episodes=config["episodes"],
+            batch_size=config["batch_size"],
+            max_steps_per_episode=config["max_steps_per_episode"],
+            mode=config["mode"],
+            learning_rate=config["learning_rate"],
+            epsilon_decay=config["epsilon_decay"],
+            epsilon_min=config["epsilon_min"]
+        )
     else:
         print("Error: Numpy is not available.")
