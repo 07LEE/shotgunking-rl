@@ -31,8 +31,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     env = ShotgunKingEnv(window_title="Shotgun King", max_steps=max_steps_per_episode)
     
     print("Initializing DQN Agent...")
-    # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130, plus 3 weapon specs is 133
-    agent = DQNAgent(state_size=133, action_size=10, lr=learning_rate)
+    # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130,
+    # plus 3 weapon specs is 133, plus 20 buffs/debuffs is 153
+    agent = DQNAgent(state_size=153, action_size=10, lr=learning_rate)
     
     # Auto-load existing model weights if available to resume continuous learning
     agent.load("models/model.pth")

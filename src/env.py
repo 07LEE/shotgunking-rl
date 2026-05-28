@@ -51,11 +51,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_step = 0
         self.current_state = None
 
-        # Define Observation Space: 1D flat vector of size 133
+        # Define Observation Space: 1D flat vector of size 153
         # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
-        # and 3 dimensions for weapon specifications (damage, range, spread)
+        # 3 dimensions for weapon specifications, and 20 dimensions for buffs/debuffs
         self.observation_space = spaces.Box(
-            low=0, high=90, shape=(133,), dtype=np.float32
+            low=0, high=90, shape=(153,), dtype=np.float32
         )
 
         # Ammo Tracking
@@ -243,10 +243,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         return threat
 
     def _get_obs(self):
-        """Captures screen and returns a 133-dimensional flat observation vector.
+        """Captures screen and returns a 153-dimensional flat observation vector.
 
         Returns:
-            A 133-dimensional numpy float32 observation vector.
+            A 153-dimensional numpy float32 observation vector.
         """
         self._check_emergency_stop()
         image_path = "data/screenshot.png"
@@ -269,10 +269,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 flat_obs = np.concatenate([state.flatten(), threat.flatten()])
                 ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
                 weapon_obs = np.array([self.damage, self.range_limit, self.spread], dtype=np.float32)
-                return np.concatenate([flat_obs, ammo_obs, weapon_obs])
+                status_obs = np.zeros((20,), dtype=np.float32)
+                return np.concatenate([flat_obs, ammo_obs, weapon_obs, status_obs])
         
         # Fallback dummy observation if loading fails
-        return np.zeros((133,), dtype=np.float32)
+        return np.zeros((153,), dtype=np.float32)
 
     def _get_yes_button_coords(self, img):
         """Finds the precise (x, y) coordinates of the active YES button on the retry screen dynamically.
