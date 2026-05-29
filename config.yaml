@@ -11,3 +11,4 @@ rank: 1
 weapon_type: 0
 buffs:
   melee_kill_extra_turn: false
+  move_range_bonus: 0

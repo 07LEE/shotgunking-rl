@@ -77,7 +77,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             buffs = {}
         self.melee_damage = preset.get("melee_damage", 0.0)
         self.melee_kill_extra_turn = buffs.get("melee_kill_extra_turn", False)
+        self.move_range_bonus = buffs.get("move_range_bonus", 0)
         self.is_extra_turn_active = False
+
+        # Define Action Space dynamically: 10 discrete actions if move_range_bonus is 0,
+        # and 18 discrete actions if move_range_bonus is 1 (enabling 2-tile jump)
+        self.action_space = spaces.Discrete(18 if self.move_range_bonus > 0 else 10)
 
         self.max_ammo = preset.get("max_ammo", 2)
         self.max_reserve_ammo = preset.get("max_reserve_ammo", 8)
@@ -85,14 +90,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Ammo Tracking
         self.loaded_ammo = self.max_ammo
         self.reserve_ammo = self.max_reserve_ammo + (1 if self.rank >= 20 else 0)
-
-        # Define Action Space: Discrete actions
-        # 0: Move Up-Left,  1: Move Up,    2: Move Up-Right
-        # 3: Move Left,                     4: Move Right
-        # 5: Move Down-Left,6: Move Down,  7: Move Down-Right
-        # 8: Reload ('r' key)
-        # 9: Shoot (center screen action click)
-        self.action_space = spaces.Discrete(10)
 
         # Pre-calculated relative offset coordinates for 8-way directional clicks
         # Assuming a standard central region relative clicks
@@ -530,9 +527,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             action = random.randint(0, 7)
             print(f"DQN Guard: Reload action (8) requested but reserve_ammo is 0. Overwriting to Random Move ({action}).")
 
-        # Execute action simulation
-        if action in range(8):
-            # Direction diffs mapping: row_offset, col_offset
+        # Execute action simulation: 0-7 represents 1-tile move, 10-17 represents 2-tile jump
+        if action in range(8) or action in range(10, 18):
+            is_two_tile = action in range(10, 18)
+            act_dir = action - 10 if is_two_tile else action
+            step_multiplier = 2 if is_two_tile else 1
             direction_diffs = {
                 0: (-1, -1),  # Up-Left
                 1: (-1, 0),   # Up
@@ -544,18 +543,33 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 7: (1, 1),    # Down-Right
             }
             
-            row_offset, col_offset = direction_diffs[action]
-            target_row = king_row + row_offset
-            target_col = king_col + col_offset
+            row_offset, col_offset = direction_diffs[act_dir]
+            target_row = king_row + row_offset * step_multiplier
+            target_col = king_col + col_offset * step_multiplier
             
-            # Out-of-bounds safety check and replacement loop
+            # Out-of-bounds and barrier safety check and replacement loop
             attempts = 0
-            while not (0 <= target_row < 8 and 0 <= target_col < 8) and attempts < 15:
+            while attempts < 15:
+                # Validate boundary and intermediate/target collision
+                if is_two_tile:
+                    mid_r, mid_c = king_row + row_offset, king_col + col_offset
+                    if 0 <= target_row < 8 and 0 <= target_col < 8:
+                        if board_state[mid_r, mid_c] == 0 and board_state[target_row, target_col] == 0:
+                            break
+                else:
+                    if 0 <= target_row < 8 and 0 <= target_col < 8:
+                        break
+                        
                 import random
-                action = random.randint(0, 7)
-                row_offset, col_offset = direction_diffs[action]
-                target_row = king_row + row_offset
-                target_col = king_col + col_offset
+                # Randomly choose between 1-tile and 2-tile valid direction
+                chosen_act = random.choice([0, 1, 2, 3, 4, 5, 6, 7] + ([10, 11, 12, 13, 14, 15, 16, 17] if self.move_range_bonus > 0 else []))
+                is_two_tile = chosen_act in range(10, 18)
+                act_dir = chosen_act - 10 if is_two_tile else chosen_act
+                step_multiplier = 2 if is_two_tile else 1
+                row_offset, col_offset = direction_diffs[act_dir]
+                target_row = king_row + row_offset * step_multiplier
+                target_col = king_col + col_offset * step_multiplier
+                action = chosen_act
                 attempts += 1
             
             if 0 <= target_row < 8 and 0 <= target_col < 8:

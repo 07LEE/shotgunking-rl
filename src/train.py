@@ -40,7 +40,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130,
     # plus 3 weapon specs is 133, plus 20 buffs/debuffs is 153, plus 64 enemy hp is 217,
     # plus 64 enemy turn speed is 281
-    agent = DQNAgent(state_size=281, action_size=10, lr=learning_rate)
+    agent = DQNAgent(state_size=281, action_size=env.action_space.n, lr=learning_rate)
     
     # Auto-load existing model weights if available to resume continuous learning
     agent.load("models/model.pth")
@@ -75,11 +75,21 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 }
 
                 def is_action_valid(act):
+                    board_state = env.current_state[:64].reshape(8, 8) if env.current_state is not None else np.zeros((8, 8))
                     if act in range(8):
                         row_offset, col_offset = direction_diffs[act]
                         target_row = env.king_row + row_offset
                         target_col = env.king_col + col_offset
                         return 0 <= target_row < 8 and 0 <= target_col < 8
+                    elif act in range(10, 18):
+                        row_offset, col_offset = direction_diffs[act - 10]
+                        mid_row = env.king_row + row_offset
+                        mid_col = env.king_col + col_offset
+                        target_row = env.king_row + row_offset * 2
+                        target_col = env.king_col + col_offset * 2
+                        if 0 <= target_row < 8 and 0 <= target_col < 8:
+                            return board_state[mid_row, mid_col] == 0 and board_state[target_row, target_col] == 0
+                        return False
                     return True
 
                 # Select action
@@ -90,7 +100,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     import random
                     if random.random() < epsilon or agent.policy_net is None:
                         # Find all valid actions
-                        valid_actions = [a for a in range(10) if is_action_valid(a)]
+                        valid_actions = [a for a in range(env.action_space.n) if is_action_valid(a)]
                         action = random.choice(valid_actions)
                     else:
                         # Select best valid action by ranking Q-values
