@@ -8,6 +8,6 @@ Add new weapon entries here without modifying env.py or train.py.
 """
 
 WEAPON_PRESETS = {
-    0: {"name": "Solomon", "damage": 4.0, "range_limit": (3, 5), "spread": 55.0, "max_ammo": 2, "max_reserve_ammo": 6, "pierce_chance": 0.0, "knockback_chance": 0.0},
-    1: {"name": "Victoria", "damage": 5.0, "range_limit": (4, 6), "spread": 45.0, "max_ammo": 1, "max_reserve_ammo": 3, "pierce_chance": 0.0, "knockback_chance": 0.0}
+    0: {"name": "Solomon", "damage": 4.0, "range_limit": (3, 5), "spread": 55.0, "max_ammo": 2, "max_reserve_ammo": 6, "pierce_chance": 0.0, "knockback_chance": 0.0, "melee_damage": 0.0},
+    1: {"name": "Victoria", "damage": 5.0, "range_limit": (4, 6), "spread": 45.0, "max_ammo": 1, "max_reserve_ammo": 3, "pierce_chance": 0.0, "knockback_chance": 0.0, "melee_damage": 0.0}
 }

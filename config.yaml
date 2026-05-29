@@ -9,3 +9,5 @@ epsilon_decay: 0.95
 epsilon_min: 0.05
 rank: 1
 weapon_type: 0
+buffs:
+  melee_kill_extra_turn: false

@@ -38,7 +38,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": ["human"], "render_fps": 5}
 
-    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1):
+    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1, buffs=None):
         """Initializes the environment state and spaces.
 
         Args:
@@ -46,6 +46,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             max_steps: Maximum steps allowed per episode before truncation.
             weapon_type: Integer ID representing registered weapon spec presets.
             rank: Target story mode difficulty level.
+            buffs: Optional dictionary of active player buffs.
         """
         super().__init__()
         self.window_title = window_title
@@ -71,6 +72,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.weapon_type = weapon_type
         self.pierce_chance = preset.get("pierce_chance", 0.0)
         self.knockback_chance = preset.get("knockback_chance", 0.0)
+        
+        if buffs is None:
+            buffs = {}
+        self.melee_damage = preset.get("melee_damage", 0.0)
+        self.melee_kill_extra_turn = buffs.get("melee_kill_extra_turn", False)
+        self.is_extra_turn_active = False
 
         self.max_ammo = preset.get("max_ammo", 2)
         self.max_reserve_ammo = preset.get("max_reserve_ammo", 8)
@@ -284,6 +291,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
                 weapon_obs = np.array([self.damage, self.range_limit, self.spread], dtype=np.float32)
                 status_obs = np.zeros((20,), dtype=np.float32)
+                if self.is_extra_turn_active:
+                    status_obs[0] = 1.0
                 enemy_spec_obs = np.concatenate([hp_matrix.flatten(), turn_matrix.flatten()])
                 return np.concatenate([flat_obs, ammo_obs, weapon_obs, status_obs, enemy_spec_obs])
         
@@ -336,6 +345,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         
         self.current_step = 0
         self.loaded_ammo = self.max_ammo
+        self.is_extra_turn_active = False
         self.reserve_ammo = self.max_reserve_ammo + (1 if self.rank >= 20 else 0)
         print("Resetting Shotgun King environment...")
         
@@ -643,7 +653,14 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 r_diff, c_diff = best_diff
                 # 1-tile distance check: If target is 1-tile away, clicking it moves the King.
                 # Bypassed by shooting 2-tiles away in the same trajectory.
-                shoot_dist = 2 if min_dist == 1 else min_dist
+                # Exception: If melee_damage > 0, automatically decide between melee and ranged shooting based on ammo and damage.
+                if min_dist == 1 and self.melee_damage > 0.0:
+                    if self.loaded_ammo <= 0 or self.melee_damage >= self.damage:
+                        shoot_dist = 1
+                    else:
+                        shoot_dist = 2
+                else:
+                    shoot_dist = 2 if min_dist == 1 else min_dist
                 
                 target_row = king_row + r_diff * shoot_dist
                 target_col = king_col + c_diff * shoot_dist
@@ -670,6 +687,25 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Reconstruct board state for reward/evaluation after observation update
         curr_board = self.current_state[:64].reshape(8, 8)
         curr_threat = self.current_state[64:128].reshape(8, 8)
+
+        # Calculate intermediate kill counts for turn skip decisions
+        curr_enemies = np.sum(curr_board >= 2)
+        killed_enemies = max(0, prev_enemies - curr_enemies)
+        if action != 9:
+            killed_enemies = 0
+
+        # Determine if a melee kill actually occurred
+        is_melee_kill = False
+        if action == 9 and killed_enemies > 0:
+            if min_dist == 1 and self.melee_damage > 0.0:
+                if self.loaded_ammo <= 0 or self.melee_damage >= self.damage:
+                    is_melee_kill = True
+
+        # Update extra turn activation state for observation
+        if is_melee_kill and self.melee_kill_extra_turn:
+            self.is_extra_turn_active = True
+        else:
+            self.is_extra_turn_active = False
 
         # Update Enemy Turn Counter Simulation Logically
         new_enemy_turns = {}
@@ -708,20 +744,17 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                         new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
                     else:
                         prev_turn = self.enemy_turns[matched_prev]
-                        if prev_turn <= 0.0:
-                            new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
+                        if is_melee_kill and self.melee_kill_extra_turn:
+                            new_enemy_turns[(cr, cc)] = prev_turn
                         else:
-                            new_enemy_turns[(cr, cc)] = max(0.0, prev_turn - 1.0)
+                            if prev_turn <= 0.0:
+                                new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
+                            else:
+                                new_enemy_turns[(cr, cc)] = max(0.0, prev_turn - 1.0)
 
         self.enemy_turns = new_enemy_turns
 
         # Calculate reward metrics
-        curr_enemies = np.sum(curr_board >= 2)
-        killed_enemies = max(0, prev_enemies - curr_enemies)
-        
-        # Mask out any non-shooting kills to prevent credit assignment confusion
-        if action != 9:
-            killed_enemies = 0
         
         # Base step penalty (discourage wasting turns)
         reward = -0.1
@@ -730,18 +763,32 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         expected_damage = 0.0
         if original_action == 9 or action == 9:
             if has_valid_target and min_dist <= self.range_limit:
-                # 1. Distance falloff calculation
-                if min_dist <= self.falloff_start:
-                    dist_factor = 1.0
+                # Determine if melee attack was executed
+                is_melee = False
+                if min_dist == 1 and self.melee_damage > 0.0:
+                    if self.loaded_ammo <= 0 or self.melee_damage >= self.damage:
+                        is_melee = True
+                
+                if is_melee:
+                    expected_damage = self.melee_damage
+                    # If melee kill is expected, add bonus to reflect extra turn advantage
+                    if self.melee_kill_extra_turn:
+                        target_hp = hp_matrix[target_row, target_col]
+                        if self.melee_damage >= target_hp:
+                            expected_damage += 1.5
                 else:
-                    denom_falloff = float(self.range_limit - self.falloff_start)
-                    dist_factor = 1.0 - 0.5 * (float(min_dist - self.falloff_start) / denom_falloff) if denom_falloff > 0 else 1.0
-                
-                # 2. Spread-based hit probability calculation
-                denom_range = float(self.range_limit)
-                hit_prob = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist - 1) / denom_range)) if denom_range > 0 else 1.0
-                
-                expected_damage = self.damage * dist_factor * hit_prob
+                    # 1. Distance falloff calculation
+                    if min_dist <= self.falloff_start:
+                        dist_factor = 1.0
+                    else:
+                        denom_falloff = float(self.range_limit - self.falloff_start)
+                        dist_factor = 1.0 - 0.5 * (float(min_dist - self.falloff_start) / denom_falloff) if denom_falloff > 0 else 1.0
+                    
+                    # 2. Spread-based hit probability calculation
+                    denom_range = float(self.range_limit)
+                    hit_prob = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist - 1) / denom_range)) if denom_range > 0 else 1.0
+                    
+                    expected_damage = self.damage * dist_factor * hit_prob
 
                 # 3. Optional pierce damage calculation for a second target behind the first
                 if self.pierce_chance > 0.0 and best_diff is not None:
