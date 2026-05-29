@@ -70,6 +70,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.spread = preset["spread"]
         self.weapon_type = weapon_type
         self.pierce_chance = preset.get("pierce_chance", 0.0)
+        self.knockback_chance = preset.get("knockback_chance", 0.0)
 
         self.max_ammo = preset.get("max_ammo", 2)
         self.max_reserve_ammo = preset.get("max_reserve_ammo", 8)
@@ -769,19 +770,34 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                         expected_damage_2 = self.damage * dist_factor_2 * hit_prob_2
                         expected_damage += self.pierce_chance * expected_damage_2
 
+                # 4. Optional knockback / Fall-off instant kill expectation reward
+                expected_knockback_reward = 0.0
+                if self.knockback_chance > 0.0 and best_diff is not None:
+                    r_diff, c_diff = best_diff
+                    tr_back = king_row + r_diff * (min_dist + 1)
+                    tc_back = king_col + c_diff * (min_dist + 1)
+                    is_out_of_bounds = not (0 <= tr_back < 8 and 0 <= tc_back < 8)
+                    
+                    if is_out_of_bounds:
+                        expected_knockback_reward = self.knockback_chance * 2.0
+                    else:
+                        expected_knockback_reward = self.knockback_chance * 0.4
+
         # Major reward for killing enemies
         if killed_enemies > 0:
             reward += killed_enemies * 2.0
             if expected_damage > 0:
                 reward += expected_damage * 0.3
-            print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{killed_enemies * 2.0 + expected_damage * 0.3:.2f} (including {expected_damage * 0.3:.2f} damage reward)")
+            if expected_knockback_reward > 0:
+                reward += expected_knockback_reward
+            print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{killed_enemies * 2.0 + expected_damage * 0.3 + expected_knockback_reward:.2f} (including {expected_damage * 0.3:.2f} damage, {expected_knockback_reward:.2f} knockback reward)")
             
         # Waste-shooting penalty / Encouragement reward
         if action == 9:
             if killed_enemies == 0:
                 if has_valid_target:
-                    reward += expected_damage * 0.3
-                    print(f"DQN Reward: Fired shoot action at a target with expected damage {expected_damage:.2f} but killed no enemies. Added +{expected_damage * 0.3:.2f}")
+                    reward += expected_damage * 0.3 + expected_knockback_reward
+                    print(f"DQN Reward: Fired shoot action at a target with expected damage {expected_damage:.2f} but killed no enemies. Added +{expected_damage * 0.3 + expected_knockback_reward:.2f} (including {expected_knockback_reward:.2f} knockback reward)")
                 else:
                     reward -= 0.8
                     print("DQN Penalty: Fired shoot action but no target was in range. Subtracted -0.8")
