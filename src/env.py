@@ -65,6 +65,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Weapon Specifications
         preset = WEAPON_PRESETS.get(weapon_type, WEAPON_PRESETS[0])
         self.damage = preset["damage"]
+        self.falloff_start = preset["range_limit"][0]
         self.range_limit = preset["range_limit"][1]
         self.spread = preset["spread"]
         self.weapon_type = weapon_type
@@ -722,17 +723,36 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Base step penalty (discourage wasting turns)
         reward = -0.1
         
+        # Expected damage calculation based on distance and spread if a shoot attempt or action occurs
+        expected_damage = 0.0
+        if original_action == 9 or action == 9:
+            if has_valid_target and min_dist <= self.range_limit:
+                # 1. Distance falloff calculation
+                if min_dist <= self.falloff_start:
+                    dist_factor = 1.0
+                else:
+                    denom_falloff = float(self.range_limit - self.falloff_start)
+                    dist_factor = 1.0 - 0.5 * (float(min_dist - self.falloff_start) / denom_falloff) if denom_falloff > 0 else 1.0
+                
+                # 2. Spread-based hit probability calculation
+                denom_range = float(self.range_limit)
+                hit_prob = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist - 1) / denom_range)) if denom_range > 0 else 1.0
+                
+                expected_damage = self.damage * dist_factor * hit_prob
+
         # Major reward for killing enemies
         if killed_enemies > 0:
             reward += killed_enemies * 2.0
-            print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{killed_enemies * 2.0}")
+            if expected_damage > 0:
+                reward += expected_damage * 0.3
+            print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{killed_enemies * 2.0 + expected_damage * 0.3:.2f} (including {expected_damage * 0.3:.2f} damage reward)")
             
         # Waste-shooting penalty / Encouragement reward
         if action == 9:
             if killed_enemies == 0:
                 if has_valid_target:
-                    reward += 0.1
-                    print("DQN Reward: Fired shoot action at a target but killed no enemies (Encouragement). Added +0.1")
+                    reward += expected_damage * 0.3
+                    print(f"DQN Reward: Fired shoot action at a target with expected damage {expected_damage:.2f} but killed no enemies. Added +{expected_damage * 0.3:.2f}")
                 else:
                     reward -= 0.8
                     print("DQN Penalty: Fired shoot action but no target was in range. Subtracted -0.8")
