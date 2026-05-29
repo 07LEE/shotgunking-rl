@@ -870,20 +870,22 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         # Threat exposure evaluation (impose penalty if King stands inside enemy check lines)
         king_positions = np.argwhere(curr_board == 1)
+        is_threatened = False
         if len(king_positions) > 0:
             king_row, king_col = king_positions[0]
             if curr_threat[king_row, king_col] == 1:
                 reward -= 1.5
+                is_threatened = True
                 print("DQN Penalty: Exposed to enemy checkmate threat zone! Subtracted -1.5")
 
         # Threat Exposure Evaluation
         terminated = False
         king_present = np.any(curr_board == 1)
         
-        # If King is not detected immediately after equilibrium, wait slightly
-        # and recapture to prevent 1-step learning delay caused by slow death animations.
-        if not king_present:
-            time.sleep(0.8)
+        # If King is threatened or missing immediately after equilibrium, wait and
+        # recapture to prevent 1-step learning delay caused by slow death animations.
+        if is_threatened or not king_present:
+            time.sleep(2.0)
             obs = self._get_obs()
             self.current_state = obs
             curr_board = self.current_state[:64].reshape(8, 8)
