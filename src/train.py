@@ -28,7 +28,11 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         epsilon_min: Minimum exploration cutoff limit.
     """
     print("Initializing Shotgun King Gymnasium Environment...")
-    env = ShotgunKingEnv(window_title="Shotgun King", max_steps=max_steps_per_episode)
+    env = ShotgunKingEnv(
+        window_title="Shotgun King",
+        max_steps=max_steps_per_episode,
+        rank=config.get("rank", 1),
+    )
     
     print("Initializing DQN Agent...")
     # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130,
@@ -243,7 +247,8 @@ def load_config(config_path="config.yaml"):
         "mode": "autonomous",
         "learning_rate": 0.001,
         "epsilon_decay": 0.95,
-        "epsilon_min": 0.05
+        "epsilon_min": 0.05,
+        "rank": 1
     }
 
     if not os.path.exists(config_path):

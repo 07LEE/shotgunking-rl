@@ -38,19 +38,21 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": ["human"], "render_fps": 5}
 
-    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0):
+    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1):
         """Initializes the environment state and spaces.
 
         Args:
             window_title: Title of the target game window.
             max_steps: Maximum steps allowed per episode before truncation.
             weapon_type: Integer ID representing registered weapon spec presets.
+            rank: Target story mode difficulty level.
         """
         super().__init__()
         self.window_title = window_title
         self.max_steps = max_steps
         self.current_step = 0
         self.current_state = None
+        self.rank = rank
 
         # Define Observation Space: 1D flat vector of size 281
         # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
@@ -270,7 +272,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 # print(f"Ammo Sync: Real-time UI scan matched (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
 
                 # Construct HP and Turn Speed matrices for detected enemy pieces
-                hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns)
+                hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns, self.rank)
 
                 flat_obs = np.concatenate([state.flatten(), threat.flatten()])
                 ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
