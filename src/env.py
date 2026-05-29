@@ -556,8 +556,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 
         elif action == 8:
             # Reload
-            press_key("r")
-            time.sleep(1.2)
+            # Replace keypress reload with relative click on gun UI at (640, 650)
+            click_relative_in_window(self.window_title, 640, 650)
+            time.sleep(1.8)
             needed = max(0, 2 - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
             self.loaded_ammo += transfer

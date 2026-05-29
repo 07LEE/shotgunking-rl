@@ -1,5 +1,7 @@
 # Shotgun King Reinforcement Learning Project
 
+![Shotgun King Gameplay](assets/image.png)
+
 This project implements an automated gameplay and reinforcement learning system for the game Shotgun King. It processes the live game window via screen capture to construct state representations, which are then passed to a Deep Q-Network agent to optimize keyboard and mouse control simulations.
 
 ## Project Architecture

@@ -239,7 +239,7 @@ def load_config(config_path="config.yaml"):
         "episodes": 50,
         "batch_size": 16,
         "max_steps_per_episode": 30,
-        "mode": "suggest",
+        "mode": "autonomous",
         "learning_rate": 0.001,
         "epsilon_decay": 0.95,
         "epsilon_min": 0.05
