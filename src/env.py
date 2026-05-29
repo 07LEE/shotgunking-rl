@@ -69,6 +69,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.range_limit = preset["range_limit"][1]
         self.spread = preset["spread"]
         self.weapon_type = weapon_type
+        self.pierce_chance = preset.get("pierce_chance", 0.0)
 
         self.max_ammo = preset.get("max_ammo", 2)
         self.max_reserve_ammo = preset.get("max_reserve_ammo", 8)
@@ -424,6 +425,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         original_action = action
         has_valid_target = False
+        best_diff = None
 
         # Force fresh observation update before computing action parameters
         self.current_state = self._get_obs()
@@ -739,6 +741,33 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 hit_prob = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist - 1) / denom_range)) if denom_range > 0 else 1.0
                 
                 expected_damage = self.damage * dist_factor * hit_prob
+
+                # 3. Optional pierce damage calculation for a second target behind the first
+                if self.pierce_chance > 0.0 and best_diff is not None:
+                    r_diff, c_diff = best_diff
+                    min_dist_2 = 99
+                    for dist_2 in range(min_dist + 1, self.range_limit + 1):
+                        tr = king_row + r_diff * dist_2
+                        tc = king_col + c_diff * dist_2
+                        if 0 <= tr < 8 and 0 <= tc < 8:
+                            if board_state[tr, tc] >= 2:
+                                min_dist_2 = dist_2
+                                break
+                            elif board_state[tr, tc] == 1:
+                                break
+                        else:
+                            break
+                    
+                    if min_dist_2 <= self.range_limit:
+                        if min_dist_2 <= self.falloff_start:
+                            dist_factor_2 = 1.0
+                        else:
+                            denom_falloff_2 = float(self.range_limit - self.falloff_start)
+                            dist_factor_2 = 1.0 - 0.5 * (float(min_dist_2 - self.falloff_start) / denom_falloff_2) if denom_falloff_2 > 0 else 1.0
+                        
+                        hit_prob_2 = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist_2 - 1) / denom_range)) if denom_range > 0 else 1.0
+                        expected_damage_2 = self.damage * dist_factor_2 * hit_prob_2
+                        expected_damage += self.pierce_chance * expected_damage_2
 
         # Major reward for killing enemies
         if killed_enemies > 0:
