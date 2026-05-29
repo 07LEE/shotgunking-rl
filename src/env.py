@@ -30,6 +30,7 @@ from capture import capture_screen
 from input import click_relative_in_window, press_key
 from analyzer import get_state_matrix, check_retry_popup
 from weapons import WEAPON_PRESETS
+from specs import get_enemy_specs_matrices
 
 
 class ShotgunKingEnv(gym.Env if gym is not None else object):
@@ -51,11 +52,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_step = 0
         self.current_state = None
 
-        # Define Observation Space: 1D flat vector of size 153
+        # Define Observation Space: 1D flat vector of size 281
         # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
-        # 3 dimensions for weapon specifications, and 20 dimensions for buffs/debuffs
+        # 3 dimensions for weapon specifications, 20 dimensions for buffs/debuffs,
+        # 64 dimensions for enemy HP matrix, and 64 dimensions for enemy turn matrix
         self.observation_space = spaces.Box(
-            low=0, high=90, shape=(153,), dtype=np.float32
+            low=0, high=90, shape=(281,), dtype=np.float32
         )
 
         # Ammo Tracking
@@ -91,6 +93,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         }
         self.king_row = 7
         self.king_col = 4
+        self.enemy_turns = {}
 
     def _check_emergency_stop(self):
         """Checks if the mouse cursor is located in the top-left corner (0,0) of the screen.
@@ -243,10 +246,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         return threat
 
     def _get_obs(self):
-        """Captures screen and returns a 153-dimensional flat observation vector.
+        """Captures screen and returns a 281-dimensional flat observation vector.
 
         Returns:
-            A 153-dimensional numpy float32 observation vector.
+            A 281-dimensional numpy float32 observation vector.
         """
         self._check_emergency_stop()
         image_path = "data/screenshot.png"
@@ -266,14 +269,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 self.loaded_ammo, self.reserve_ammo = extract_ammo_count(img)
                 # print(f"Ammo Sync: Real-time UI scan matched (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
 
+                # Construct HP and Turn Speed matrices for detected enemy pieces
+                hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns)
+
                 flat_obs = np.concatenate([state.flatten(), threat.flatten()])
                 ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
                 weapon_obs = np.array([self.damage, self.range_limit, self.spread], dtype=np.float32)
                 status_obs = np.zeros((20,), dtype=np.float32)
-                return np.concatenate([flat_obs, ammo_obs, weapon_obs, status_obs])
+                enemy_spec_obs = np.concatenate([hp_matrix.flatten(), turn_matrix.flatten()])
+                return np.concatenate([flat_obs, ammo_obs, weapon_obs, status_obs, enemy_spec_obs])
         
         # Fallback dummy observation if loading fails
-        return np.zeros((153,), dtype=np.float32)
+        return np.zeros((281,), dtype=np.float32)
 
     def _get_yes_button_coords(self, img):
         """Finds the precise (x, y) coordinates of the active YES button on the retry screen dynamically.
@@ -383,6 +390,15 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             time.sleep(1.0)
             obs = self._get_obs()
             
+        self.enemy_turns.clear()
+        initial_board = obs[:64].reshape(8, 8)
+        from specs import ENEMY_SPECS
+        for r in range(8):
+            for c in range(8):
+                val = int(initial_board[r, c])
+                if val in ENEMY_SPECS:
+                    self.enemy_turns[(r, c)] = ENEMY_SPECS[val]["turn"]
+
         self.current_state = obs
         info = {}
         return obs, info
@@ -645,6 +661,50 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Reconstruct board state for reward/evaluation after observation update
         curr_board = self.current_state[:64].reshape(8, 8)
         curr_threat = self.current_state[64:128].reshape(8, 8)
+
+        # Update Enemy Turn Counter Simulation Logically
+        new_enemy_turns = {}
+        from specs import ENEMY_SPECS
+
+        # Find matching previous positions for each active enemy piece on current board
+        for cr in range(8):
+            for cc in range(8):
+                val = int(curr_board[cr, cc])
+                if val >= 2:  # Enemy piece detected on current board
+                    # Attempt to find the coordinate this piece moved from
+                    prev_coords = []
+                    for pr in range(8):
+                        for pc in range(8):
+                            if int(board_state[pr, pc]) == val:
+                                prev_coords.append((pr, pc))
+
+                    # Decide the source coordinate (closest to current coord is logical)
+                    matched_prev = None
+                    if len(prev_coords) > 0:
+                        min_d = 99
+                        for pr, pc in prev_coords:
+                            d = abs(cr - pr) + abs(cc - pc)
+                            if d < min_d:
+                                min_d = d
+                                matched_prev = (pr, pc)
+
+                    # Determine if it moved or stood still
+                    is_moved = True
+                    if matched_prev is not None:
+                        if matched_prev == (cr, cc):
+                            is_moved = False
+
+                    # Assign turn state
+                    if is_moved or matched_prev not in self.enemy_turns:
+                        new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
+                    else:
+                        prev_turn = self.enemy_turns[matched_prev]
+                        if prev_turn <= 0.0:
+                            new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
+                        else:
+                            new_enemy_turns[(cr, cc)] = max(0.0, prev_turn - 1.0)
+
+        self.enemy_turns = new_enemy_turns
 
         # Calculate reward metrics
         curr_enemies = np.sum(curr_board >= 2)
