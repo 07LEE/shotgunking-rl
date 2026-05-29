@@ -880,6 +880,16 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         terminated = False
         king_present = np.any(curr_board == 1)
         
+        # If King is not detected immediately after equilibrium, wait slightly
+        # and recapture to prevent 1-step learning delay caused by slow death animations.
+        if not king_present:
+            time.sleep(0.8)
+            obs = self._get_obs()
+            self.current_state = obs
+            curr_board = self.current_state[:64].reshape(8, 8)
+            curr_threat = self.current_state[64:128].reshape(8, 8)
+            king_present = np.any(curr_board == 1)
+
         # Capture screen and verify retry popup actively via screen analysis
         image_path = "data/screenshot.png"
         is_popup = False
