@@ -31,6 +31,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     env = ShotgunKingEnv(
         window_title="Shotgun King",
         max_steps=max_steps_per_episode,
+        weapon_type=config.get("weapon_type", 0),
         rank=config.get("rank", 1),
     )
     
@@ -248,7 +249,8 @@ def load_config(config_path="config.yaml"):
         "learning_rate": 0.001,
         "epsilon_decay": 0.95,
         "epsilon_min": 0.05,
-        "rank": 1
+        "rank": 1,
+        "weapon_type": 0
     }
 
     if not os.path.exists(config_path):
