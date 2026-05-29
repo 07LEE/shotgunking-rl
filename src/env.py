@@ -62,16 +62,19 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             low=0, high=90, shape=(281,), dtype=np.float32
         )
 
-        # Ammo Tracking
-        self.loaded_ammo = 2
-        self.reserve_ammo = 8
-
         # Weapon Specifications
         preset = WEAPON_PRESETS.get(weapon_type, WEAPON_PRESETS[0])
         self.damage = preset["damage"]
         self.range_limit = preset["range_limit"][1]
         self.spread = preset["spread"]
         self.weapon_type = weapon_type
+
+        self.max_ammo = preset.get("max_ammo", 2)
+        self.max_reserve_ammo = preset.get("max_reserve_ammo", 8)
+
+        # Ammo Tracking
+        self.loaded_ammo = self.max_ammo
+        self.reserve_ammo = self.max_reserve_ammo + (1 if self.rank >= 20 else 0)
 
         # Define Action Space: Discrete actions
         # 0: Move Up-Left,  1: Move Up,    2: Move Up-Right
@@ -329,8 +332,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             super().reset(seed=seed)
         
         self.current_step = 0
-        self.loaded_ammo = 2
-        self.reserve_ammo = 8
+        self.loaded_ammo = self.max_ammo
+        self.reserve_ammo = self.max_reserve_ammo + (1 if self.rank >= 20 else 0)
         print("Resetting Shotgun King environment...")
         
         # Safety timeout: Allow user a 3.5-second window to reclaim focus or stop the loop
@@ -504,11 +507,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 action = random.randint(0, 7)
                 reason = f"closest target is out of range (dist: {min_dist} > limit: {self.range_limit})" if min_dist != 99 else "no enemies detected on 8-way radial paths"
                 print(f"DQN Guard: Shoot action (9) requested but {reason}. Overwriting to Random Move ({action}).")
-        elif action == 8 and self.loaded_ammo >= 2:
+        elif action == 8 and self.loaded_ammo >= self.max_ammo:
             import random
             action = random.randint(0, 7)
             print(f"DQN Guard: Reload action (8) requested but ammo already full. Overwriting to Random Move ({action}).")
-        elif action == 8 and self.reserve_ammo <= 0 and self.loaded_ammo < 2:
+        elif action == 8 and self.reserve_ammo <= 0 and self.loaded_ammo < self.max_ammo:
             import random
             action = random.randint(0, 7)
             print(f"DQN Guard: Reload action (8) requested but reserve_ammo is 0. Overwriting to Random Move ({action}).")
@@ -566,7 +569,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             self.king_col = target_col
 
             # Move Rule: Automatically reload loaded_ammo from reserve_ammo when King moves
-            needed = max(0, 2 - self.loaded_ammo)
+            needed = max(0, self.max_ammo - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
             self.loaded_ammo += transfer
             self.reserve_ammo -= transfer
@@ -577,7 +580,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             # Replace keypress reload with relative click on gun UI at (640, 650)
             click_relative_in_window(self.window_title, 640, 650)
             time.sleep(1.8)
-            needed = max(0, 2 - self.loaded_ammo)
+            needed = max(0, self.max_ammo - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
             self.loaded_ammo += transfer
             self.reserve_ammo -= transfer
