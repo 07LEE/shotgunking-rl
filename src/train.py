@@ -34,6 +34,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         weapon_type=config.get("weapon_type", 0),
         rank=config.get("rank", 1),
         buffs=config.get("buffs", None),
+        verbose=config.get("verbose", True),
     )
     
     print("Initializing DQN Agent...")

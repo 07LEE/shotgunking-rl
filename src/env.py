@@ -31,6 +31,25 @@ from input import click_relative_in_window, press_key
 from analyzer import get_state_matrix, check_retry_popup
 from weapons import WEAPON_PRESETS
 from specs import get_enemy_specs_matrices
+import sys
+
+
+def suppress_stdout_if(cond_attr):
+    """Decorator to suppress stdout print messages if a target instance boolean attribute is False."""
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            if not getattr(self, cond_attr, True):
+                with open(os.devnull, "w") as devnull:
+                    old_stdout = sys.stdout
+                    sys.stdout = devnull
+                    try:
+                        return func(self, *args, **kwargs)
+                    finally:
+                        sys.stdout = old_stdout
+            else:
+                return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
 
 
 class ShotgunKingEnv(gym.Env if gym is not None else object):
@@ -38,7 +57,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": ["human"], "render_fps": 5}
 
-    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1, buffs=None):
+    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1, buffs=None, verbose=True):
         """Initializes the environment state and spaces.
 
         Args:
@@ -47,6 +66,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             weapon_type: Integer ID representing registered weapon spec presets.
             rank: Target story mode difficulty level.
             buffs: Optional dictionary of active player buffs.
+            verbose: Enable or disable verbose debug stdout logging.
         """
         super().__init__()
         self.window_title = window_title
@@ -54,6 +74,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_step = 0
         self.current_state = None
         self.rank = rank
+        self.verbose = verbose
 
         # Define Observation Space: 1D flat vector of size 281
         # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
@@ -428,6 +449,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         info = {}
         return obs, info
 
+    @suppress_stdout_if("verbose")
     def step(self, action):
         """Executes a single step in the environment by applying the action.
 
@@ -445,12 +467,29 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         has_valid_target = False
         best_diff = None
 
+        # Cache previous board state before sync
+        prev_board = self.current_state[:64].reshape(8, 8) if self.current_state is not None else np.zeros((8, 8))
+
         # Force fresh observation update before computing action parameters
         self.current_state = self._get_obs()
 
         # Reconstruct 8x8 matrices from 133-dimensional flat state
         board_state = self.current_state[:64].reshape(8, 8)
         threat_state = self.current_state[64:128].reshape(8, 8)
+
+        # Detect pawn promotion: pawn from row 6 (or row 7 if already landed) moving to row 7 and promoting to non-pawn piece
+        promotion_detected = False
+        for col in range(8):
+            if board_state[7, col] in [3, 4, 5, 6]:
+                has_previous_pawn = False
+                for prev_col in [col - 1, col, col + 1]:
+                    if 0 <= prev_col < 8:
+                        if prev_board[6, prev_col] == 2 or prev_board[7, prev_col] == 2:
+                            has_previous_pawn = True
+                            break
+                if has_previous_pawn:
+                    promotion_detected = True
+                    break
 
         # Determine Player King position (either detected or logical backup)
         king_positions = np.argwhere(board_state == 1)
@@ -887,6 +926,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 reward -= 1.5
                 is_threatened = True
                 print("DQN Penalty: Exposed to enemy checkmate threat zone! Subtracted -1.5")
+
+        # Pawn promotion evaluation
+        if promotion_detected:
+            reward -= 3.0
+            print("DQN Penalty: Enemy Pawn promoted! Subtracted -3.0")
 
         # Threat Exposure Evaluation
         terminated = False
