@@ -160,7 +160,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
 
                     # Validation loop for user choice
                     while True:
-                        user_choice = input(f"Recommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad): ").strip()
+                        user_choice = input(f"\nRecommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad): ").strip()
                         if user_choice == ".":
                             print("User flagged defeat. Forcing episode termination...")
                             agent.remember(state, action, -15.0, state, True)
@@ -178,13 +178,31 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             print("Invalid input. Please enter 0-9, Numpad keys, or '.' to exit.")
                             continue
 
-                        # Wall boundary check
-                        if not is_action_valid(temp_action):
+                        # Wall boundary and collision check details for move actions
+                        if temp_action in range(8):
                             row_offset, col_offset = direction_diffs[temp_action]
                             target_row = env.king_row + row_offset
                             target_col = env.king_col + col_offset
-                            print(f"Move blocked by wall! Target ({target_row}, {target_col}) is out of bounds. Current King: ({env.king_row}, {env.king_col}). Choose another action.")
-                            continue
+                            
+                            if not (0 <= target_row < 8 and 0 <= target_col < 8):
+                                print(f"Move blocked by wall! Target ({target_row}, {target_col}) is out of bounds. Current King: ({env.king_row}, {env.king_col}). Choose another action.")
+                                continue
+                                
+                            board_state = env.current_state[:64].reshape(8, 8) if env.current_state is not None else np.zeros((8, 8))
+                            if board_state[target_row, target_col] != 0:
+                                print(f"Move blocked by piece! Target ({target_row}, {target_col}) contains a piece (Type {board_state[target_row, target_col]}). Current King: ({env.king_row}, {env.king_col}). Choose another action.")
+                                continue
+                        elif temp_action == 9:
+                            if env.loaded_ammo <= 0:
+                                print(f"Shoot blocked by ammo! Loaded ammo is 0. Current ammo: {env.loaded_ammo}/{env.max_ammo}. Choose another action.")
+                                continue
+                        elif temp_action == 8:
+                            if env.loaded_ammo >= env.max_ammo:
+                                print(f"Reload blocked! Loaded ammo is already full ({env.loaded_ammo}/{env.max_ammo}). Choose another action.")
+                                continue
+                            if env.reserve_ammo <= 0:
+                                print(f"Reload blocked by reserve! Reserve ammo is 0. Choose another action.")
+                                continue
                             
                         # If validation passed
                         action = temp_action

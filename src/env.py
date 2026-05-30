@@ -502,6 +502,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         else:
             king_row, king_col = self.king_row, self.king_col
             print(f"King missing in board_state. Using logical tracked position: ({king_row}, {king_col})")
+            # Print actual parsed board_state matrix for vision debugging
+            print("Current Board State Matrix:")
+            print(board_state)
 
         # Count enemies before action execution
         prev_enemies = np.sum(board_state >= 2)

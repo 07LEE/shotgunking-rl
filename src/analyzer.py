@@ -245,10 +245,10 @@ def classify_patch(patch):
                 score = float(res[0][0])
                 if score > max_score:
                     max_score = score
-            if max_score >= 0.68:
+            if max_score >= 0.60:
                 # Color Guard: Player King is dark, reject if the detected region is too bright (white pieces)
                 piece_pixels = gray[signal > 100]
-                if len(piece_pixels) > 0 and np.mean(piece_pixels) < 95.0:
+                if len(piece_pixels) > 0 and np.mean(piece_pixels) < 105.0:
                     return 1
         else:
             # geometry fallback: based on dark contour area
