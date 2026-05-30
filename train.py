@@ -147,9 +147,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             if len(top_actions) == 3:
                                 break
                                 
-                    print("\n=== AI Decision Suggestion ===")
-                    for rank, act_idx in enumerate(top_actions, 1):
-                        print(f"Rank {rank}: {action_names[act_idx]} (Q-value: {q_values[act_idx]:.4f})")
+                    # Calculate softmax probabilities for Top 3 actions to project relative confidence %
+                    exp_q = np.exp(q_values - np.max(q_values))
+                    softmax_probs = exp_q / np.sum(exp_q)
                     
                     # Convert Numpad inputs to internal action index
                     numpad_map = {
@@ -158,6 +158,13 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         "1": 5, "2": 6, "3": 7,
                         "0": 9
                     }
+                    reverse_numpad_map = {v: k for k, v in numpad_map.items()}
+
+                    print("\n=== AI Decision Suggestion ===")
+                    for rank, act_idx in enumerate(top_actions, 1):
+                        confidence = softmax_probs[act_idx] * 100
+                        key_hint = reverse_numpad_map.get(act_idx, "?")
+                        print(f"Rank {rank}: {action_names[act_idx]} [Key: {key_hint}] (Confidence: {confidence:.1f}%, Q-value: {q_values[act_idx]:.4f})")
 
                     # Validation loop for user choice
                     while True:
