@@ -102,19 +102,30 @@ def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King
 
     try:
         with mss.mss() as sct:
-            monitor = None
-            if window_title:
-                monitor = find_window_geometry(window_title)
-                
-            if monitor is None:
+            # Acquire entire screen geometry to validate boundary containment
+            screen = sct.monitors[0]
+            monitor = find_window_geometry(window_title) if window_title else None
+
+            if monitor is not None:
+                # Check if the game window geometry exits the boundary of the virtual screen dynamically
+                is_out = (
+                    monitor["left"] < screen["left"] or
+                    monitor["top"] < screen["top"] or
+                    (monitor["left"] + monitor["width"]) > (screen["left"] + screen["width"]) or
+                    (monitor["top"] + monitor["height"]) > (screen["top"] + screen["height"])
+                )
+                if is_out:
+                    msg = f"Game window is out of monitor bounds! Window: {monitor}, Screen: {screen}. Please move the window inside the monitor."
+                    print(f"Error: {msg}")
+                    raise RuntimeError(msg)
+            else:
                 print("Falling back to primary monitor capture...")
                 monitor = sct.monitors[1]
-                
+
             screenshot = sct.grab(monitor)
             
             if cv2 is not None and np is not None:
                 img = np.array(screenshot)
-                # mss grab returns BGRA. Convert to BGR for standard saving via OpenCV
                 img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
                 cv2.imwrite(output_path, img)
             else:

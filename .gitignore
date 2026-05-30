@@ -14,3 +14,6 @@ data/
 
 # Trained models
 models/
+
+# Live capture temporary outputs
+.temp/

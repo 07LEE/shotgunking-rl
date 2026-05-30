@@ -147,6 +147,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         prev_roi = img[y1:y2, x1:x2]
         
         has_changed = False
+        stable_count = 0
+        required_stable_ticks = 3
         
         while time.time() - start_time < max_wait:
             time.sleep(0.15)
@@ -163,17 +165,25 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             
             # Check for visual transitions (animation start and end)
             if not has_changed:
-                if mean_diff > 1.5:
+                if mean_diff > 0.6:
                     has_changed = True
-                elif time.time() - start_time > 0.6:
-                    # Early exit if no animation starts after 0.6 seconds (e.g. invalid action or already game over)
+                elif time.time() - start_time > 1.5:
+                    # Early exit if no animation starts after 1.5 seconds (increased from 0.6s to absorb game lags)
+                    print("Equilibrium: Early exit due to no animation start within 1.5s.")
                     break
             else:
-                if mean_diff < 0.5:
-                    break
+                if mean_diff < 0.4:
+                    stable_count += 1
+                    if stable_count >= required_stable_ticks:
+                        print(f"Equilibrium: Stable state confirmed after {required_stable_ticks} consecutive frames.")
+                        break
+                else:
+                    stable_count = 0
                     
             prev_roi = curr_roi
             
+        if time.time() - start_time >= max_wait:
+            print("Equilibrium: Exited due to maximum wait timeout.")
         time.sleep(0.2)
         return self._get_obs()
 
