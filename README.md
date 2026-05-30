@@ -17,15 +17,22 @@ The system operates in a closed loop across four main phases:
 
 The custom environment ShotgunKingEnv maps game frames to the OpenAI Gymnasium standard.
 
-- Observation Space: 133-dimensional float vector
+- Observation Space: 281-dimensional float vector
   - Board Matrix (dimensions 0-63): 8x8 flattened grid representing piece coordinates (0: Empty, 1: Player King, 2: Pawn, 3: Knight, 4: Bishop, 5: Rook, 6: Queen/King).
   - Threat Matrix (dimensions 64-127): 8x8 flattened grid projecting active enemy attack lines.
   - Ammo Status (dimensions 128-129): Real-time sync of loaded and reserve ammo counts.
   - Weapon Specifications (dimensions 130-132): Flat values representing weapon damage, range limit, and spread.
-- Action Space: 10 discrete actions
-  - Actions 0-7: 8-directional movement clicks relative to the Player King.
-  - Action 8: Manual reload keypress.
-  - Action 9: Directed shoot click targetting the closest eligible enemy.
+  - Buff/Debuff Status (dimensions 133-152): Status encoding for active card effects (e.g. move range bonus).
+  - Enemy HP Matrix (dimensions 153-216): Flattened 8x8 grid representing hit points of enemies.
+  - Enemy Turn Speed Matrix (dimensions 217-280): Flattened 8x8 grid representing movement speed points of enemies.
+- Action Space: Dynamic discrete actions depending on active buffs
+  - Default (move_range_bonus = 0): 10 discrete actions
+    - Actions 0-7: 8-directional 1-tile movement clicks relative to the Player King.
+    - Action 8: Manual reload keypress.
+    - Action 9: Directed shoot click targetting the closest eligible enemy.
+  - Enhanced (move_range_bonus = 1): 18 discrete actions
+    - Actions 0-9: Identical to default actions.
+    - Actions 10-17: 8-directional 2-tile jump movement clicks. Eligible only when both the intermediate tile and the destination tile are empty.
 
 ## Image Processing Pipeline
 
@@ -38,7 +45,7 @@ The analyzer module extracts state vectors from raw BGR screenshots.
 
 ## Model Details
 
-- Policy Network: MLP structure consisting of a 133-size input layer, a 128-unit linear layer, a 64-unit linear layer, and a 10-unit output layer.
+- Policy Network: MLP structure consisting of a 281-size input layer, a 128-unit linear layer, a 64-unit linear layer, and a dynamic output layer matched to the action space size (10 or 18).
 - Optimization: Backpropagation via MSE loss and Adam optimizer. Trains on experience tuples sampled from a ReplayBuffer.
 
 ## Installation and Execution
