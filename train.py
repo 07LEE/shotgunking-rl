@@ -100,23 +100,29 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         return False
                     return True
 
-                # Select action
-                action = agent.act(state, epsilon=epsilon)
+                # Calculate Q-values once per step to optimize performance by avoiding duplicate feed-forwards
+                q_values = None
+                if agent.policy_net is not None:
+                    import torch
+                    state_tensor = torch.tensor(state.astype(np.float32)).unsqueeze(0).to(agent.device)
+                    with torch.no_grad():
+                        q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
+
+                # Select action using epsilon-greedy policy with cached Q-values
+                import random
+                if random.random() < epsilon or q_values is None:
+                    action = random.randint(0, agent.action_size - 1)
+                else:
+                    action = int(np.argmax(q_values))
 
                 # Verify and filter AI choice to ensure no out-of-bounds move
                 if not is_action_valid(action):
-                    import random
-                    if random.random() < epsilon or agent.policy_net is None:
+                    if random.random() < epsilon or q_values is None:
                         # Find all valid actions
                         valid_actions = [a for a in range(env.action_space.n) if is_action_valid(a)]
                         action = random.choice(valid_actions)
                     else:
-                        # Select best valid action by ranking Q-values
-                        import torch
-                        state_tensor = torch.tensor(state.astype(np.float32)).unsqueeze(0).to(agent.device)
-                        with torch.no_grad():
-                            q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
-                        # Sort indices by Q-value descending
+                        # Select best valid action by ranking cached Q-values
                         ranked_actions = np.argsort(q_values)[::-1]
                         for act in ranked_actions:
                             if is_action_valid(act):
@@ -124,12 +130,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                                 break
 
                 # Handle decision suggestion and override in suggest mode
-                if mode == "suggest" and agent.policy_net is not None:
-                    import torch
-                    state_tensor = torch.tensor(state.astype(np.float32)).unsqueeze(0).to(agent.device)
-                    with torch.no_grad():
-                        q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
-                    
+                if mode == "suggest" and q_values is not None:
                     action_names = {
                         0: "Move Up-Left", 1: "Move Up", 2: "Move Up-Right",
                         3: "Move Left", 4: "Move Right",
