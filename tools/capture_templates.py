@@ -7,7 +7,7 @@ Usage:
   3. Automatically takes a screenshot, detects pieces, and saves templates
   4. Visually inspect saved PNGs to verify correct labeling
 
-  uv run python scripts/capture_templates.py
+  uv run python tools/capture_templates.py
 """
 import subprocess
 import sys

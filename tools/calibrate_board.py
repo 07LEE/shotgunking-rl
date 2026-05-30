@@ -6,7 +6,7 @@ using column average brightness variance to find left/right boundaries,
 and row average brightness variance to find top/bottom boundaries.
 
 Usage:
-    PYTHONPATH=src uv run python scripts/calibrate_board.py
+    PYTHONPATH=src uv run python tools/calibrate_board.py
 """
 import cv2
 import numpy as np
