@@ -5,6 +5,11 @@ to run training episodes, perform replay updates, and optimize decisions.
 """
 
 import time
+import sys
+import os
+
+# Add src to python path for internal imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 try:
     import numpy as np
