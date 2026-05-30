@@ -160,6 +160,26 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     }
                     reverse_numpad_map = {v: k for k, v in numpad_map.items()}
 
+                    def print_valid_action_hints():
+                        valid_keys = []
+                        check_order = [0, 1, 2, 3, 8, 4, 5, 6, 7, 9]
+                        for act_i in check_order:
+                            is_ok = is_action_valid(act_i)
+                            if act_i == 9:
+                                is_ok = is_ok and env.loaded_ammo > 0
+                            elif act_i == 8:
+                                is_ok = is_ok and env.loaded_ammo < env.max_ammo and env.reserve_ammo > 0
+                            
+                            if is_ok:
+                                key_hint = reverse_numpad_map.get(act_i, "?")
+                                if act_i == 9:
+                                    valid_keys.append(f"{key_hint} (Shoot)")
+                                elif act_i == 8:
+                                    valid_keys.append(f"{key_hint} (Reload)")
+                                else:
+                                    valid_keys.append(key_hint)
+                        print(f"Valid choices for current board state: {', '.join(valid_keys)}")
+
                     print("\n=== AI Decision Suggestion ===")
                     for rank, act_idx in enumerate(top_actions, 1):
                         confidence = softmax_probs[act_idx] * 100
@@ -184,6 +204,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             temp_action = action
                         else:
                             print("Invalid input. Please enter 0-9, Numpad keys, or '.' to exit.")
+                            print_valid_action_hints()
                             continue
 
                         # Wall boundary and collision check details for move actions
@@ -194,22 +215,27 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             
                             if not (0 <= target_row < 8 and 0 <= target_col < 8):
                                 print(f"Move blocked by wall! Target ({target_row}, {target_col}) is out of bounds. Current King: ({env.king_row}, {env.king_col}). Choose another action.")
+                                print_valid_action_hints()
                                 continue
                                 
                             board_state = env.current_state[:64].reshape(8, 8) if env.current_state is not None else np.zeros((8, 8))
                             if board_state[target_row, target_col] != 0:
                                 print(f"Move blocked by piece! Target ({target_row}, {target_col}) contains a piece (Type {board_state[target_row, target_col]}). Current King: ({env.king_row}, {env.king_col}). Choose another action.")
+                                print_valid_action_hints()
                                 continue
                         elif temp_action == 9:
                             if env.loaded_ammo <= 0:
                                 print(f"Shoot blocked by ammo! Loaded ammo is 0. Current ammo: {env.loaded_ammo}/{env.max_ammo}. Choose another action.")
+                                print_valid_action_hints()
                                 continue
                         elif temp_action == 8:
                             if env.loaded_ammo >= env.max_ammo:
                                 print(f"Reload blocked! Loaded ammo is already full ({env.loaded_ammo}/{env.max_ammo}). Choose another action.")
+                                print_valid_action_hints()
                                 continue
                             if env.reserve_ammo <= 0:
                                 print(f"Reload blocked by reserve! Reserve ammo is 0. Choose another action.")
+                                print_valid_action_hints()
                                 continue
                             
                         # If validation passed
