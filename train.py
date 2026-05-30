@@ -294,10 +294,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Shotgun King RL Training Loop")
     parser.add_argument("--config", type=str, default="config.yaml",
                         help="Path to the training configuration YAML file")
+    parser.add_argument("--mode", type=str, default=None,
+                        help="Execution mode override (autonomous or suggest)")
     args = parser.parse_args()
 
     if np is not None:
         config = load_config(args.config)
+        if args.mode is not None:
+            config["mode"] = args.mode
         train_dqn(
             episodes=config["episodes"],
             batch_size=config["batch_size"],
