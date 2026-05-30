@@ -86,7 +86,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         row_offset, col_offset = direction_diffs[act]
                         target_row = env.king_row + row_offset
                         target_col = env.king_col + col_offset
-                        return 0 <= target_row < 8 and 0 <= target_col < 8
+                        if 0 <= target_row < 8 and 0 <= target_col < 8:
+                            return board_state[target_row, target_col] == 0
+                        return False
                     elif act in range(10, 18):
                         row_offset, col_offset = direction_diffs[act - 10]
                         mid_row = env.king_row + row_offset
@@ -228,7 +230,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 if done:
                     break
                     
-                time.sleep(3.0)
+                time.sleep(1.0)
                 
             # Decay exploration factor
             epsilon = max(epsilon_min, epsilon * epsilon_decay)

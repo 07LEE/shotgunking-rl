@@ -420,6 +420,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         obs = self._get_obs()
         
         # In-game Start Sync Guard: Poll until Player King (1) is detected on the board
+        printed_sync_msg = False
         while True:
             self._check_emergency_stop()
             board_state = obs[:64].reshape(8, 8)
@@ -432,7 +433,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 if len(king_positions) > 0:
                     self.king_row, self.king_col = int(king_positions[0][0]), int(king_positions[0][1])
                 break
-            print("In-game Sync: Waiting for game play to start (King not found on board)...")
+            if not printed_sync_msg:
+                print("In-game Sync: Waiting for game play to start (King not found on board)...")
+                printed_sync_msg = True
             time.sleep(1.0)
             obs = self._get_obs()
             
@@ -607,7 +610,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                             break
                 else:
                     if 0 <= target_row < 8 and 0 <= target_col < 8:
-                        break
+                        if board_state[target_row, target_col] == 0:
+                            break
                         
                 import random
                 # Randomly choose between 1-tile and 2-tile valid direction
@@ -629,7 +633,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
                 self._check_emergency_stop()
                 click_relative_in_window(self.window_title, x, y)
-                time.sleep(1.8)
+                time.sleep(2.2)
             else:
                 # Absolute fallback clipping if loop somehow fails to find inside direction
                 target_row = max(0, min(7, target_row))
@@ -639,7 +643,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
                 self._check_emergency_stop()
                 click_relative_in_window(self.window_title, x, y)
-                time.sleep(1.8)
+                time.sleep(2.2)
 
             # Update tracked position internally
             self.king_row = target_row
