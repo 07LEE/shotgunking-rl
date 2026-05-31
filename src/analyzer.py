@@ -81,7 +81,7 @@ def _extract_signal(patch):
     signal = np.abs(gray - bg_mean)
     max_val = signal.max()
     # print(f"  [DEBUG extract] max_val: {max_val}")
-    if max_val > 20.0:
+    if max_val > 35.0:
         signal = (signal / max_val * 255.0).clip(0, 255).astype(np.uint8)
     else:
         signal = np.zeros((45, 45), dtype=np.uint8)
@@ -279,9 +279,10 @@ def classify_patch(patch):
 
         c_white = max(contours_white, key=cv2.contourArea)
         area_white = cv2.contourArea(c_white)
+        # print(f"  [DEBUG area] area_white: {area_white}")
 
         # Empty tile is already filtered by signal.max() == 0, check only for small noise
-        if area_white < 30.0:    # noise
+        if area_white < 150.0:    # noise
             return 0
 
         # -- 3. Template matching (loaded pieces only) --
