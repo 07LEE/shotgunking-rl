@@ -751,6 +751,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             print(f"Ammo System: Shot fired. Loaded ammo consumed. (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
 
         # Wait for turn transition and board state stabilization actively
+        # Shoot action has heavy fire/smoke animation, enforce guaranteed sleep to ensure clean capture
+        if action == 9:
+            time.sleep(2.0)
         obs = self._wait_for_equilibrium()
         self.current_state = obs
 

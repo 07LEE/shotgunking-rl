@@ -98,6 +98,10 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         if 0 <= target_row < 8 and 0 <= target_col < 8:
                             return board_state[mid_row, mid_col] == 0 and board_state[target_row, target_col] == 0
                         return False
+                    elif act == 8:  # Reload
+                        return env.loaded_ammo < env.max_ammo and env.reserve_ammo > 0
+                    elif act == 9:  # Shoot
+                        return env.loaded_ammo > 0
                     return True
 
                 # Calculate Q-values once per step to optimize performance by avoiding duplicate feed-forwards
