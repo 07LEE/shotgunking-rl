@@ -37,7 +37,7 @@ def main():
         print("Failed to crop chessboard.")
         return
 
-    output_dir = os.path.join(project_root, "data/debug_cells")
+    output_dir = os.path.join(project_root, ".temp/debug_cells")
     os.makedirs(output_dir, exist_ok=True)
 
     cell_size = 65

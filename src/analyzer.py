@@ -15,7 +15,7 @@ except ImportError:
 
 # Piece template paths and cache
 # If template file is missing, fallback to geometry classification
-TEMPLATES_DIR = "data/templates"
+PIECES_DIR = "data/pieces"
 _TEMPLATES = {}   # {piece_id: list of 45x45 uint8 grayscale signals}
 _TEMPLATES_LOADED = False
 
@@ -33,12 +33,12 @@ def _load_templates():
     for piece_id in range(1, 7):
         _TEMPLATES[piece_id] = []
 
-    if not os.path.exists(TEMPLATES_DIR):
+    if not os.path.exists(PIECES_DIR):
         return
 
     try:
         # Scan directory for all PNG files matching patterns like 'pawn_2*.png'
-        for filename in os.listdir(TEMPLATES_DIR):
+        for filename in os.listdir(PIECES_DIR):
             if not filename.endswith(".png"):
                 continue
             # Parse piece_id safely by splitting filename with underscore (e.g. 'bishop_4_1.png' -> parts[1] is '4')
@@ -47,7 +47,7 @@ def _load_templates():
                 try:
                     piece_id = int(parts[1])
                     if 1 <= piece_id <= 6:
-                        path = os.path.join(TEMPLATES_DIR, filename)
+                        path = os.path.join(PIECES_DIR, filename)
                         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
                         if img is not None:
                             _TEMPLATES[piece_id].append(cv2.resize(img, (45, 45)))
@@ -454,9 +454,15 @@ def check_retry_popup(img):
         return False
 
     try:
-        height, width, _ = img.shape
-        if height != 720 or width != 1280:
-            img = cv2.resize(img, (1280, 720))
+        # Check full chessboard region brightness to verify if the screen is darkened (Game Over state)
+        board = crop_chessboard(img)
+        if board is None:
+            return False
+        board_gray = cv2.cvtColor(board, cv2.COLOR_BGR2GRAY)
+        board_mean = board_gray.mean()
+        # If the board is bright, it cannot be a retry popup (popup always darkens the screen)
+        if board_mean > 60.0:
+            return False
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
@@ -472,8 +478,8 @@ def check_retry_popup(img):
         center_patch = gray[340:380, 620:660]
         center_mean = np.mean(center_patch)
 
-        # Active popup characteristics: High variance in button regions, dark background
-        if left_var > 2000.0 and right_var > 2000.0 and center_mean < 40.0:
+        # Active popup characteristics: Darkened board, high variance in YES/NO buttons
+        if left_var > 6000.0 and right_var > 6000.0 and center_mean < 40.0:
             return True
 
         return False
