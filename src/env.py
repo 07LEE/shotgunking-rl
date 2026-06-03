@@ -964,6 +964,24 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             if check_retry_popup(img):
                 is_popup = True
 
+        # If King is missing and no popup is detected, wait and retry capture to handle temporary lags or screen effects
+        attempts = 0
+        while not king_present and not is_popup and attempts < 5:
+            time.sleep(1.0)
+            print(f"DQN Guard: Player King missing but retry popup not detected (curr_enemies: {curr_enemies}). Retrying capture/analysis... (Attempt {attempts+1}/5)")
+            obs = self._get_obs()
+            self.current_state = obs
+            curr_board = self.current_state[:64].reshape(8, 8)
+            curr_threat = self.current_state[64:128].reshape(8, 8)
+            king_present = np.any(curr_board == 1)
+            curr_enemies = np.sum(curr_board >= 2)
+            
+            if cv2 is not None and os.path.exists(image_path):
+                img = cv2.imread(image_path)
+                if check_retry_popup(img):
+                    is_popup = True
+            attempts += 1
+
         if is_popup:
             reward = -15.0 - float(curr_enemies)
             terminated = True
@@ -973,14 +991,17 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             self._check_emergency_stop()
             click_relative_in_window(self.window_title, tx, ty)
             time.sleep(2.5)
-        elif curr_enemies == 0:
+        elif curr_enemies == 0 and king_present:
             reward += 10.0
             terminated = True
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
         elif not king_present:
-            reward = -15.0 - float(curr_enemies)
-            terminated = True
-            print(f"DQN Penalty: Player King missing but retry popup not yet detected. Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Postponing click to reset.")
+            if curr_enemies == 0:
+                print("DQN Warning: Both Player King and enemies are missing from detection. Suspecting persistent screen capture failure. Bypassing step termination to prevent false defeat.")
+            else:
+                reward = -15.0 - float(curr_enemies)
+                terminated = True
+                print(f"DQN Penalty: Player King missing but retry popup not yet detected. Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Postponing click to reset.")
 
         truncated = self.current_step >= self.max_steps
         

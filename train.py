@@ -101,7 +101,36 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     elif act == 8:  # Reload
                         return env.loaded_ammo < env.max_ammo and env.reserve_ammo > 0
                     elif act == 9:  # Shoot
-                        return env.loaded_ammo > 0
+                        if env.loaded_ammo <= 0:
+                            return False
+                        has_valid_target = False
+                        king_positions = np.argwhere(board_state == 1)
+                        if len(king_positions) > 0:
+                            k_row, k_col = int(king_positions[0][0]), int(king_positions[0][1])
+                        else:
+                            k_row, k_col = env.king_row, env.king_col
+                        directions = [
+                            (-1, -1), (-1, 0), (-1, 1),
+                            (0, -1),           (0, 1),
+                            (1, -1),  (1, 0),  (1, 1)
+                        ]
+                        for r_diff, c_diff in directions:
+                            for dist in range(1, 8):
+                                tr = k_row + r_diff * dist
+                                tc = k_col + c_diff * dist
+                                if 0 <= tr < 8 and 0 <= tc < 8:
+                                    piece = board_state[tr, tc]
+                                    if piece >= 2:
+                                        if dist <= env.range_limit:
+                                            has_valid_target = True
+                                        break
+                                    elif piece == 1:
+                                        break
+                                else:
+                                    break
+                            if has_valid_target:
+                                break
+                        return has_valid_target
                     return True
 
                 # Calculate Q-values once per step to optimize performance by avoiding duplicate feed-forwards
