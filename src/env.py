@@ -101,6 +101,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.move_range_bonus = buffs.get("move_range_bonus", 0)
         self.royal_guard_active = buffs.get("royal_guard", False)
         self.is_extra_turn_active = False
+        # Card selection state: stores last detected layout and chosen pair for stats recording
+        self._last_detected_cards = {}
+        self._last_card_choice = None
+        # Countdown debuff state: tracks whether countdown is active and when it triggered
+        self.countdown_active = False
+        self.countdown_trigger_step = None
 
         # Define Action Space dynamically: 10 discrete actions if move_range_bonus is 0,
         # and 18 discrete actions if move_range_bonus is 1 (enabling 2-tile jump)
@@ -375,6 +381,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_step = 0
         self.loaded_ammo = self.max_ammo
         self.is_extra_turn_active = False
+        self.countdown_active = False
+        self.countdown_trigger_step = None
         self.reserve_ammo = self.max_reserve_ammo + (1 if self.rank >= 20 else 0)
         print("Resetting Shotgun King environment...")
         
@@ -1001,6 +1009,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     is_popup = True
             attempts += 1
 
+        # Countdown defeat check: start counter when enemies drop to 6 or below, defeat after 12 turns
+        if self.countdown_active:
+            if self.countdown_trigger_step is None and 0 < curr_enemies <= 6:
+                self.countdown_trigger_step = self.current_step
+                print(f"DQN Countdown: Triggered at step {self.current_step} ({curr_enemies} enemies remain).")
+            if self.countdown_trigger_step is not None and not terminated:
+                turns_elapsed = self.current_step - self.countdown_trigger_step
+                if turns_elapsed >= 12:
+                    reward = -15.0
+                    terminated = True
+                    print(f"DQN Penalty: Countdown defeat! {turns_elapsed} turns elapsed since trigger. Subtracted -15.0.")
+
         if is_popup:
             reward = -15.0 - float(curr_enemies)
             terminated = True
@@ -1037,6 +1057,17 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if truncated:
             print("Episode truncated due to max steps limit.")
 
+        # Record card selection outcome to stats file when episode ends
+        if terminated and self._last_card_choice is not None and self._last_detected_cards:
+            try:
+                from cards import update_card_stats
+                outcome = "win" if reward > 0 else "lose"
+                update_card_stats(self._last_detected_cards, self._last_card_choice, outcome)
+                self._last_detected_cards = {}
+                self._last_card_choice = None
+            except Exception as e:
+                print(f"DQN Cards: Failed to record card outcome: {e}")
+
         info = {"step": self.current_step, "action": action}
         return obs, reward, terminated, truncated, info
 
@@ -1045,13 +1076,23 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         """Automatically click the optimal card pair using external selection module."""
         try:
             from cards import select_best_card_pair
-            choice = select_best_card_pair(img)
+            choice, detected = select_best_card_pair(img, rank=self.rank)
+            self._last_detected_cards = detected
+            self._last_card_choice = choice
             if choice == "top":
                 print("DQN Cards: Choosing Top Pair. Clicking top-left card.")
                 click_relative_in_window(self.window_title, 582, 274)
             else:
                 print("DQN Cards: Choosing Bottom Pair. Clicking bottom-left card.")
                 click_relative_in_window(self.window_title, 582, 474)
+            # Activate countdown debuff if countdown card is in the chosen pair
+            if choice == "top":
+                chosen_keys = [detected.get("top_left"), detected.get("top_right")]
+            else:
+                chosen_keys = [detected.get("bottom_left"), detected.get("bottom_right")]
+            if "countdown" in chosen_keys:
+                self.countdown_active = True
+                print("DQN Cards: Countdown debuff activated.")
         except Exception as e:
             print(f"Failed to auto-select card pair: {e}")
         time.sleep(2.5)

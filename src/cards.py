@@ -116,18 +116,27 @@ CARD_DATABASE = {
 }
 
 
-def select_best_card_pair(img, cards_dir="data/cards"):
+def select_best_card_pair(img, cards_dir="data/cards", rank=1, player_hp=None, stats_path="data/card_stats.json"):
     """Analyze current screen, match active cards, and return the optimal pair choice ('top' or 'bottom').
+
+    Dynamic scoring applies three correction layers in order:
+      1. Rank-based debuff penalty scaling (higher rank -> larger debuff penalty).
+      2. Player HP urgency scaling (low HP -> re-weight offensive cards).
+      3. Win-rate-based correction loaded from stats_path JSON (min 5 samples required).
 
     Args:
         img: 1280x720 BGR screen screenshot image.
         cards_dir: Path to directory containing card template PNGs.
+        rank: Current story mode difficulty rank (1-based integer).
+        player_hp: Current player HP. None disables urgency correction.
+        stats_path: Path to JSON file storing per-card win/lose statistics.
 
     Returns:
-        String 'top' or 'bottom' indicating the optimal pair.
+        Tuple of (choice, detected_cards) where choice is 'top' or 'bottom'
+        and detected_cards is a dict mapping slot names to matched card keys.
     """
     if img is None or cv2 is None or np is None:
-        return "top"
+        return "top", {}
 
     # Define crop coordinate boundaries for 4 card slots
     card_regions = {
@@ -139,6 +148,7 @@ def select_best_card_pair(img, cards_dir="data/cards"):
 
     # Load reference templates from cards_dir
     import os
+    import json
     templates = {}
     if os.path.exists(cards_dir):
         for fn in os.listdir(cards_dir):
@@ -168,7 +178,7 @@ def select_best_card_pair(img, cards_dir="data/cards"):
 
     print(f"DQN Cards: Detected card layout -> {detected_cards}")
 
-    # Define heuristic score weight mapping (player buffs > 0, enemy debuffs < 0)
+    # Define base heuristic score weight mapping (player buffs > 0, enemy debuffs < 0)
     card_scores = {
         "heavy_armor": -8.0,
         "court_meeting": -6.0,
@@ -179,11 +189,82 @@ def select_best_card_pair(img, cards_dir="data/cards"):
         "hungry_rats": 6.0,
         "royal_guard": -12.0,
     }
+
+    # Stage 1: Rank-based debuff penalty scaling
+    debuff_scale = 1.0 + (rank - 1) * 0.1
+    for key in ("heavy_armor", "court_meeting", "countdown", "royal_guard"):
+        card_scores[key] = card_scores[key] * debuff_scale
+    print(f"DQN Cards: Rank {rank} -> debuff_scale={debuff_scale:.2f}")
+
+    # Stage 2: Player HP urgency correction
+    if player_hp is not None and player_hp <= 1:
+        card_scores["poison"] = 8.0
+        card_scores["countdown"] = -1.0
+        print(f"DQN Cards: Low HP ({player_hp}) urgency correction applied.")
+
+    # Stage 3: Win-rate-based score correction from accumulated stats file
+    if os.path.exists(stats_path):
+        try:
+            with open(stats_path) as f:
+                stats = json.load(f)
+            for key in list(card_scores.keys()):
+                entry = stats.get(key, {})
+                total = entry.get("win", 0) + entry.get("lose", 0)
+                if total >= 5:
+                    win_rate = entry["win"] / total
+                    correction = (win_rate - 0.5) * 4.0
+                    card_scores[key] += correction
+            print(f"DQN Cards: Win-rate stats loaded from {stats_path}.")
+        except Exception as e:
+            print(f"DQN Cards: Failed to load card stats: {e}")
+
     val_top = card_scores.get(detected_cards.get("top_left"), 0.0) + card_scores.get(detected_cards.get("top_right"), 0.0)
     val_bottom = card_scores.get(detected_cards.get("bottom_left"), 0.0) + card_scores.get(detected_cards.get("bottom_right"), 0.0)
     print(f"DQN Cards: Evaluation -> Top Pair: {val_top:.2f}, Bottom Pair: {val_bottom:.2f}")
 
-    if val_top >= val_bottom:
-        return "top"
-    return "bottom"
+    choice = "top" if val_top >= val_bottom else "bottom"
+    return choice, detected_cards
+
+
+def update_card_stats(detected_cards, chosen, outcome, stats_path="data/card_stats.json"):
+    """Record win/lose outcome for each card in the chosen pair to the stats file.
+
+    Args:
+        detected_cards: Dict mapping slot names ('top_left', etc.) to matched card keys.
+        chosen: 'top' or 'bottom' indicating which pair was selected this episode.
+        outcome: 'win' or 'lose' for the episode result.
+        stats_path: Path to the JSON statistics file.
+    """
+    import json
+    import os
+
+    stats = {}
+    if os.path.exists(stats_path):
+        try:
+            with open(stats_path) as f:
+                stats = json.load(f)
+        except Exception:
+            stats = {}
+
+    # Determine cards in the chosen pair
+    if chosen == "top":
+        slot_keys = ["top_left", "top_right"]
+    else:
+        slot_keys = ["bottom_left", "bottom_right"]
+
+    for slot in slot_keys:
+        card_key = detected_cards.get(slot)
+        if card_key is None:
+            continue
+        if card_key not in stats:
+            stats[card_key] = {"win": 0, "lose": 0}
+        stats[card_key][outcome] = stats[card_key].get(outcome, 0) + 1
+
+    try:
+        with open(stats_path, "w") as f:
+            json.dump(stats, f, indent=2)
+        print(f"DQN Cards: Updated card stats -> {stats_path} (outcome: {outcome})")
+    except Exception as e:
+        print(f"DQN Cards: Failed to write card stats: {e}")
+
 
