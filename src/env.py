@@ -28,7 +28,7 @@ except ImportError:
 
 from capture import capture_screen
 from input import click_relative_in_window, press_key
-from analyzer import get_state_matrix, check_retry_popup
+from analyzer import get_state_matrix, check_retry_popup, check_card_selection_screen
 from weapons import WEAPON_PRESETS
 from specs import get_enemy_specs_matrices
 import sys
@@ -995,6 +995,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             reward += 10.0
             terminated = True
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
+        elif not king_present and check_card_selection_screen(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None):
+            reward += 10.0
+            terminated = True
+            print("DQN Reward: Congratulations! Victory/Card selection screen detected! Added +10.0. Episode terminated with victory.")
         elif not king_present:
             if curr_enemies == 0:
                 print("DQN Warning: Both Player King and enemies are missing from detection. Suspecting persistent screen capture failure. Bypassing step termination to prevent false defeat.")

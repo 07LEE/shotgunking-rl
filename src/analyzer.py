@@ -488,6 +488,44 @@ def check_retry_popup(img):
         return False
 
 
+def check_card_selection_screen(img):
+    """Checks whether the captured screen contains the card selection popup.
+
+    It samples specific card boundary coordinates that contain highly unique
+    bright colors when active.
+
+    Args:
+        img: Full 1280x720 BGR game screen screenshot.
+
+    Returns:
+        True if the card selection popup is active, False otherwise.
+    """
+    if img is None or cv2 is None or np is None:
+        return False
+    try:
+        height, width = img.shape[:2]
+        if height != 720 or width != 1280:
+            img = cv2.resize(img, (1280, 720))
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Sampling unique bright border pixel locations (16 points) from active card boxes
+        card_borders = [
+            (220, 545), (220, 619), (328, 545), (328, 619),
+            (220, 656), (220, 730), (328, 656), (328, 730),
+            (420, 545), (420, 619), (528, 545), (528, 619),
+            (420, 656), (420, 730), (528, 656), (528, 730)
+        ]
+
+        # All sampled pixels must exhibit bright ivory grayscale color (> 215)
+        for y, x in card_borders:
+            if gray[y, x] < 215:
+                return False
+        return True
+    except Exception as e:
+        print(f"Failed to check card selection screen: {e}")
+        return False
+
+
 if __name__ == "__main__":
     print("Testing chessboard grid segmentation and analysis...")
     screenshot_path = "data/screenshot.png"

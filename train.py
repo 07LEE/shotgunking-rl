@@ -86,13 +86,17 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 }
 
                 def is_action_valid(act):
-                    board_state = env.current_state[:64].reshape(8, 8) if env.current_state is not None else np.zeros((8, 8))
+                    if env.current_state is None:
+                        return False
+                    board_state = env.current_state[:64].reshape(8, 8)
+                    threat_state = env.current_state[64:128].reshape(8, 8)
+                    
                     if act in range(8):
                         row_offset, col_offset = direction_diffs[act]
                         target_row = env.king_row + row_offset
                         target_col = env.king_col + col_offset
                         if 0 <= target_row < 8 and 0 <= target_col < 8:
-                            return board_state[target_row, target_col] == 0
+                            return board_state[target_row, target_col] == 0 and threat_state[target_row, target_col] == 0
                         return False
                     elif act in range(10, 18):
                         row_offset, col_offset = direction_diffs[act - 10]
@@ -101,7 +105,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         target_row = env.king_row + row_offset * 2
                         target_col = env.king_col + col_offset * 2
                         if 0 <= target_row < 8 and 0 <= target_col < 8:
-                            return board_state[mid_row, mid_col] == 0 and board_state[target_row, target_col] == 0
+                            return board_state[mid_row, mid_col] == 0 and board_state[target_row, target_col] == 0 and threat_state[target_row, target_col] == 0
                         return False
                     elif act == 8:  # Reload
                         return env.loaded_ammo < env.max_ammo and env.reserve_ammo > 0
