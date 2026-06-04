@@ -56,5 +56,53 @@ CARD_DATABASE = {
             "allow_debuff_card_selection": True,
         },
         "enemy_debuffs": {}
+    },
+    "poison": {
+        "id": 4,
+        "type": "buff",
+        "name_ko": "암살용 독",
+        "name_en": "Poison",
+        "db_image_file": "cards/poison.png",
+        "player_buffs": {},
+        "enemy_debuffs": {
+            "boss_hp_bonus": -1,
+            "queen_turn_limit": 1.0,
+            "queen_turn_limit_duration": 15,
+        }
+    },
+    "countdown": {
+        "id": 5,
+        "type": "debuff",
+        "name_ko": "카운트다운",
+        "name_en": "Countdown",
+        "db_image_file": "cards/countdown.png",
+        "player_buffs": {},
+        "enemy_debuffs": {
+            "trigger_enemy_count_limit": 6,
+            "defeat_turn_limit": 12,
+        }
+    },
+    "hungry_rats": {
+        "id": 6,
+        "type": "buff",
+        "name_ko": "굶주린 쥐떼",
+        "name_en": "Hungry Rats",
+        "db_image_file": "cards/hungry_rats.png",
+        "player_buffs": {
+            "damage_on_kill_random_enemy": 1.0,
+        },
+        "enemy_debuffs": {}
+    },
+    "royal_guard": {
+        "id": 7,
+        "type": "debuff",
+        "name_ko": "근위병",
+        "name_en": "Royal Guard",
+        "db_image_file": "cards/royal_guard.png",
+        "player_buffs": {},
+        "enemy_debuffs": {
+            "enemy_knight_hp_bonus": 1,
+            "king_immortal_while_knight_present": True,
+        }
     }
 }

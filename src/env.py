@@ -996,6 +996,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             terminated = True
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
         elif not king_present and check_card_selection_screen(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None):
+            try:
+                from tools.extract_cards import extract_game_cards
+                extract_game_cards(image_path=image_path, output_dir=".temp")
+                print("DQN Reset: Successfully extracted and saved new victory cards to '.temp'")
+            except Exception as e:
+                print(f"Failed to auto-extract victory cards: {e}")
             reward += 10.0
             terminated = True
             print("DQN Reward: Congratulations! Victory/Card selection screen detected! Added +10.0. Episode terminated with victory.")
