@@ -99,6 +99,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.melee_damage = preset.get("melee_damage", 0.0)
         self.melee_kill_extra_turn = buffs.get("melee_kill_extra_turn", False)
         self.move_range_bonus = buffs.get("move_range_bonus", 0)
+        self.royal_guard_active = buffs.get("royal_guard", False)
         self.is_extra_turn_active = False
 
         # Define Action Space dynamically: 10 discrete actions if move_range_bonus is 0,
@@ -529,6 +530,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     if 0 <= tr < 8 and 0 <= tc < 8:
                         piece = board_state[tr, tc]
                         if piece >= 2:
+                            if piece == 6 and self.royal_guard_active and np.any(board_state == 3):
+                                # Royal Guard active: King/Queen is immortal while Knight is present. Skip target.
+                                break
                             is_threat = False
                             is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
                             is_straight = (r_diff == 0 or c_diff == 0)
@@ -683,6 +687,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     if 0 <= tr < 8 and 0 <= tc < 8:
                         piece = board_state[tr, tc]
                         if piece >= 2:
+                            if piece == 6 and self.royal_guard_active and np.any(board_state == 3):
+                                # Royal Guard active: King/Queen is immortal while Knight is present. Skip target.
+                                break
                             is_threat = False
                             is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
                             is_straight = (r_diff == 0 or c_diff == 0)
