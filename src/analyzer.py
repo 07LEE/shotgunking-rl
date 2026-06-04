@@ -209,7 +209,7 @@ def crop_chessboard(img):
         return None
 
 
-def classify_patch(patch):
+def classify_patch(patch, row=-1, col=-1):
     """Classifies a single 65x65 cell patch on the board to identify its piece.
 
     Prioritize template matching, fallback to geometry-based logic if templates are missing.
@@ -245,10 +245,10 @@ def classify_patch(patch):
                 score = float(res[0][0])
                 if score > max_score:
                     max_score = score
-            if max_score >= 0.60:
+            if max_score >= 0.45:
                 # Color Guard: Player King is dark, reject if the detected region is too bright (white pieces)
                 piece_pixels = gray[signal > 100]
-                if len(piece_pixels) > 0 and np.mean(piece_pixels) < 105.0:
+                if len(piece_pixels) > 0 and np.mean(piece_pixels) < 145.0:
                     return 1
         else:
             # geometry fallback: based on dark contour area
@@ -329,7 +329,7 @@ def classify_patch(patch):
         bias = abs(cx - (x + w / 2.0))
 
         # [FIX] check bias (Knight asymmetry) before height threshold
-        if h <= 25:
+        if h <= 28:
             return 2    # Pawn
         elif bias >= 2.0:
             return 3    # Knight (asymmetric horse head)
@@ -337,7 +337,7 @@ def classify_patch(patch):
             return 6    # Queen / King (very large piece)
         elif w / float(h) >= 1.1:
             return 5    # Rook (wide and flat castle shape)
-        elif 26 <= h <= 39:
+        elif 29 <= h <= 39:
             return 4    # Bishop (symmetric medium height)
         else:
             return 6    # safe fallback
@@ -374,7 +374,7 @@ def get_state_matrix(img):
             x_end = x_start + cell_size
             
             patch = board_img[y_start:y_end, x_start:x_end]
-            state_matrix[row, col] = classify_patch(patch)
+            state_matrix[row, col] = classify_patch(patch, row, col)
             
     return state_matrix
 
