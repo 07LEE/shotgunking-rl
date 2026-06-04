@@ -18,6 +18,10 @@ except ImportError:
 
 from env import ShotgunKingEnv
 from agent import DQNAgent
+try:
+    from torch.utils.tensorboard import SummaryWriter
+except ImportError:
+    SummaryWriter = None
 
 
 def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05):
@@ -32,6 +36,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         epsilon_decay: Exploration factor multiplier.
         epsilon_min: Minimum exploration cutoff limit.
     """
+    writer = SummaryWriter('runs/shotgun_king_dqn') if SummaryWriter is not None else None
     print("Initializing Shotgun King Gymnasium Environment...")
     env = ShotgunKingEnv(
         window_title="Shotgun King",
@@ -307,6 +312,8 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     
                 if loss > 0:
                     print(f"Step {step_idx} - Action: {action}, Reward: {reward:.2f}, Loss: {loss:.4f}")
+                    if writer is not None:
+                        writer.add_scalar('Loss/train', loss, total_step_count)
                 else:
                     print(f"Step {step_idx} - Action: {action}, Reward: {reward:.2f} (Filling Memory...)")
                     
@@ -320,6 +327,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
             # Decay exploration factor
             epsilon = max(epsilon_min, epsilon * epsilon_decay)
             print(f"Episode {ep} Finished. Total Reward Collected: {episode_reward:.2f}")
+            if writer is not None:
+                writer.add_scalar('Reward/episode', episode_reward, ep)
+                writer.add_scalar('Epsilon/episode', epsilon, ep)
             
             # Save model weights at the end of every episode for safety
             agent.save("models/model.pth")
@@ -332,6 +342,10 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         print(f"\nUnexpected error occurred: {e}. Saving model weights before crash...")
         agent.save("models/model.pth")
         raise e
+    finally:
+        if writer is not None:
+            writer.close()
+            print("TensorBoard SummaryWriter closed.")
         
     print("\n=== SHOTGUN KING DQN TRAINING COMPLETED ===")
 
