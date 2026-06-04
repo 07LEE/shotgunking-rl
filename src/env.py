@@ -386,12 +386,16 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         
         # Poll for retry popup up to 10 attempts (5 seconds total)
         popup_detected = False
+        card_detected = False
         for attempt in range(10):
             capture_screen(output_path=image_path, window_title=self.window_title)
             if cv2 is not None and os.path.exists(image_path):
                 img = cv2.imread(image_path)
                 if check_retry_popup(img):
                     popup_detected = True
+                    break
+                elif check_card_selection_screen(img):
+                    card_detected = True
                     break
             time.sleep(0.5)
             
@@ -402,6 +406,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             self._check_emergency_stop()
             click_relative_in_window(self.window_title, tx, ty)
             time.sleep(2.5)
+        elif card_detected:
+            print("DQN Reset: Detected card selection screen during reset. Transitioning to automatic choice.")
+            img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+            self._handle_card_selection(img)
         else:
             # Check if King is already present before attempting fallback force click
             initial_obs = self._get_obs()
@@ -409,14 +417,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             if np.any(initial_board == 1):
                 print("DQN Reset: Retry popup not detected, but Player King is already present. Bypassing force click.")
             else:
-                # Fallback Force Click: If King is missing from the board state, perform force retry YES click
-                # to break out of potential infinite loading sync loop
-                print("DQN Reset Warning: Retry popup not verified by pixel variance, and King is missing. Performing force YES click (dynamic coordinates enabled).")
-                img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
-                tx, ty = self._get_yes_button_coords(img)
-                self._check_emergency_stop()
-                click_relative_in_window(self.window_title, tx, ty)
-                time.sleep(2.5)
+                # Check card selection screen first to prevent false force retry click
+                if check_card_selection_screen(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None):
+                    self._handle_card_selection(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None)
+                else:
+                    # Fallback Force Click: If King is missing from the board state, perform force retry YES click
+                    # to break out of potential infinite loading sync loop
+                    print("DQN Reset Warning: Retry popup not verified by pixel variance, and King is missing. Performing force YES click (dynamic coordinates enabled).")
+                    img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+                    tx, ty = self._get_yes_button_coords(img)
+                    self._check_emergency_stop()
+                    click_relative_in_window(self.window_title, tx, ty)
+                    time.sleep(2.5)
         
         obs = self._get_obs()
         
@@ -1027,6 +1039,22 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         info = {"step": self.current_step, "action": action}
         return obs, reward, terminated, truncated, info
+
+
+    def _handle_card_selection(self, img):
+        """Automatically click the optimal card pair using external selection module."""
+        try:
+            from cards import select_best_card_pair
+            choice = select_best_card_pair(img)
+            if choice == "top":
+                print("DQN Cards: Choosing Top Pair. Clicking top-left card.")
+                click_relative_in_window(self.window_title, 582, 274)
+            else:
+                print("DQN Cards: Choosing Bottom Pair. Clicking bottom-left card.")
+                click_relative_in_window(self.window_title, 582, 474)
+        except Exception as e:
+            print(f"Failed to auto-select card pair: {e}")
+        time.sleep(2.5)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,14 @@ the persistent database template image filenames, and the precise parameter effe
 to the player (buffs) and the enemies (debuffs) inside the Gymnasium environment.
 """
 
+try:
+    import cv2
+    import numpy as np
+except ImportError:
+    cv2 = None
+    np = None
+
+
 CARD_DATABASE = {
     "heavy_armor": {
         "id": 0,
@@ -106,3 +114,76 @@ CARD_DATABASE = {
         }
     }
 }
+
+
+def select_best_card_pair(img, cards_dir="data/cards"):
+    """Analyze current screen, match active cards, and return the optimal pair choice ('top' or 'bottom').
+
+    Args:
+        img: 1280x720 BGR screen screenshot image.
+        cards_dir: Path to directory containing card template PNGs.
+
+    Returns:
+        String 'top' or 'bottom' indicating the optimal pair.
+    """
+    if img is None or cv2 is None or np is None:
+        return "top"
+
+    # Define crop coordinate boundaries for 4 card slots
+    card_regions = {
+        "top_left": {"x1": 540, "x2": 624, "y1": 216, "y2": 332},
+        "top_right": {"x1": 651, "x2": 735, "y1": 216, "y2": 332},
+        "bottom_left": {"x1": 540, "x2": 624, "y1": 416, "y2": 532},
+        "bottom_right": {"x1": 651, "x2": 735, "y1": 416, "y2": 532},
+    }
+
+    # Load reference templates from cards_dir
+    import os
+    templates = {}
+    if os.path.exists(cards_dir):
+        for fn in os.listdir(cards_dir):
+            if fn.endswith(".png"):
+                card_key = fn.replace(".png", "")
+                t_img = cv2.imread(os.path.join(cards_dir, fn), cv2.IMREAD_GRAYSCALE)
+                if t_img is not None:
+                    templates[card_key] = cv2.resize(t_img, (84, 116))
+
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    detected_cards = {}
+    for name, coords in card_regions.items():
+        x1, x2 = coords["x1"], coords["x2"]
+        y1, y2 = coords["y1"], coords["y2"]
+        patch = cv2.resize(gray[y1:y2, x1:x2], (84, 116))
+
+        best_score = -1.0
+        best_key = None
+        for key, tmpl in templates.items():
+            res = cv2.matchTemplate(patch, tmpl, cv2.TM_CCOEFF_NORMED)
+            score = float(res[0][0])
+            if score > best_score:
+                best_score = score
+                best_key = key
+
+            detected_cards[name] = best_key if best_score >= 0.65 else None
+
+    print(f"DQN Cards: Detected card layout -> {detected_cards}")
+
+    # Define heuristic score weight mapping (player buffs > 0, enemy debuffs < 0)
+    card_scores = {
+        "heavy_armor": -8.0,
+        "court_meeting": -6.0,
+        "petition_discrimination": 4.0,
+        "daring_operation": 2.0,
+        "poison": 5.0,
+        "countdown": -4.0,
+        "hungry_rats": 6.0,
+        "royal_guard": -12.0,
+    }
+    val_top = card_scores.get(detected_cards.get("top_left"), 0.0) + card_scores.get(detected_cards.get("top_right"), 0.0)
+    val_bottom = card_scores.get(detected_cards.get("bottom_left"), 0.0) + card_scores.get(detected_cards.get("bottom_right"), 0.0)
+    print(f"DQN Cards: Evaluation -> Top Pair: {val_top:.2f}, Bottom Pair: {val_bottom:.2f}")
+
+    if val_top >= val_bottom:
+        return "top"
+    return "bottom"
+
