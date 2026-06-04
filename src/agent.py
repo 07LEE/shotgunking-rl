@@ -26,7 +26,7 @@ except ImportError:
 class QNetwork(nn.Module if nn is not None else object):
     """Deep Q-Network MLP neural network."""
 
-    def __init__(self, state_size=133, action_size=10):
+    def __init__(self, state_size=281, action_size=10):
         """Initializes the network layers.
 
         Args:
@@ -67,7 +67,7 @@ class ReplayBuffer:
         """
         self.buffer = deque(maxlen=capacity)
 
-    def push(self, state, action, reward, next_state, done):
+    def push(self, state, action, reward, next_state, action_mask, next_action_mask, done):
         """Saves a single experience transition.
 
         Args:
@@ -75,9 +75,11 @@ class ReplayBuffer:
             action: Action index.
             reward: Reward value.
             next_state: Next state matrix.
+            action_mask: Current action mask.
+            next_action_mask: Next action mask.
             done: Termination flag.
         """
-        self.buffer.append((state, action, reward, next_state, done))
+        self.buffer.append((state, action, reward, next_state, action_mask, next_action_mask, done))
 
     def sample(self, batch_size):
         """Samples a random batch of experiences.
@@ -86,15 +88,17 @@ class ReplayBuffer:
             batch_size: Number of transitions to sample.
 
         Returns:
-            A tuple of (states, actions, rewards, next_states, dones).
+            A tuple of (states, actions, rewards, next_states, action_masks, next_action_masks, dones).
         """
         batch = random.sample(self.buffer, batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
+        states, actions, rewards, next_states, action_masks, next_action_masks, dones = zip(*batch)
         return (
             np.array(states),
             np.array(actions),
             np.array(rewards, dtype=np.float32),
             np.array(next_states),
+            np.array(action_masks, dtype=np.float32),
+            np.array(next_action_masks, dtype=np.float32),
             np.array(dones, dtype=np.float32),
         )
 
@@ -105,7 +109,7 @@ class ReplayBuffer:
 class DQNAgent:
     """Deep Q-Network decision-making agent."""
 
-    def __init__(self, state_size=133, action_size=10, lr=1e-3, gamma=0.99):
+    def __init__(self, state_size=281, action_size=10, lr=1e-3, gamma=0.99):
         """Initializes the agent parameters, networks, and optimizer.
 
         Args:
@@ -134,29 +138,36 @@ class DQNAgent:
             self.policy_net = None
             self.target_net = None
 
-    def act(self, state, epsilon=0.1):
+    def act(self, state, action_mask=None, epsilon=0.1):
         """Chooses an action based on epsilon-greedy policy.
 
         Args:
             state: Current 8x8 state representation.
+            action_mask: Current action mask.
             epsilon: Epsilon threshold for random exploration.
 
         Returns:
             Chosen action index (integer).
         """
+        if action_mask is None:
+            action_mask = np.ones(self.action_size, dtype=np.float32)
+
         if random.random() < epsilon or self.policy_net is None:
+            valid_indices = np.where(action_mask == 1)[0]
+            if len(valid_indices) > 0:
+                return int(random.choice(valid_indices))
             return random.randint(0, self.action_size - 1)
 
-        # Preprocess state: convert float 130-dimensional 1D vector to tensor
         state_tensor = torch.tensor(state.astype(np.float32)).unsqueeze(0).to(self.device)
         
         with torch.no_grad():
-            q_values = self.policy_net(state_tensor)
-            return int(q_values.argmax(dim=1).item())
+            q_values = self.policy_net(state_tensor).cpu().numpy()[0]
+            q_values[action_mask == 0] = -1e9
+            return int(np.argmax(q_values))
 
-    def remember(self, state, action, reward, next_state, done):
+    def remember(self, state, action, reward, next_state, action_mask, next_action_mask, done):
         """Stores experience transition into replay memory."""
-        self.memory.push(state, action, reward, next_state, done)
+        self.memory.push(state, action, reward, next_state, action_mask, next_action_mask, done)
 
     def update_target_network(self):
         """Synchronizes the target network weights with policy network."""
@@ -175,21 +186,26 @@ class DQNAgent:
         if len(self.memory) < batch_size or self.policy_net is None:
             return 0.0
 
-        states, actions, rewards, next_states, dones = self.memory.sample(batch_size)
+        states, actions, rewards, next_states, action_masks, next_action_masks, dones = self.memory.sample(batch_size)
 
-        # Convert to PyTorch tensors directly (states are already 130-dimensional 1D vectors)
         state_t = torch.tensor(np.array(states, dtype=np.float32)).to(self.device)
         action_t = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device)
         reward_t = torch.tensor(rewards).unsqueeze(1).to(self.device)
         next_state_t = torch.tensor(np.array(next_states, dtype=np.float32)).to(self.device)
+        next_action_masks_t = torch.tensor(np.array(next_action_masks, dtype=np.float32)).to(self.device)
         done_t = torch.tensor(dones).unsqueeze(1).to(self.device)
 
         # Calculate current predicted Q-values
         curr_q = self.policy_net(state_t).gather(1, action_t)
 
-        # Calculate target Q-values using Target Network (Double-DQN / standard DQN)
         with torch.no_grad():
-            max_next_q = self.target_net(next_state_t).max(dim=1, keepdim=True)[0]
+            # Double DQN implementation
+            next_q_policy = self.policy_net(next_state_t).clone()
+            next_q_policy[next_action_masks_t == 0] = -1e9
+            best_actions = next_q_policy.argmax(dim=1, keepdim=True)
+            
+            next_q_target = self.target_net(next_state_t)
+            max_next_q = next_q_target.gather(1, best_actions)
             target_q = reward_t + (self.gamma * max_next_q * (1 - done_t))
 
         # Perform backpropagation
@@ -225,15 +241,16 @@ class DQNAgent:
 if __name__ == "__main__":
     print("Testing DQNAgent initialization and forward pass...")
     if torch is not None and np is not None:
-        agent = DQNAgent(state_size=133, action_size=10)
-        dummy_state = np.zeros((133,), dtype=np.float32)
+        agent = DQNAgent(state_size=281, action_size=10)
+        dummy_state = np.zeros((281,), dtype=np.float32)
         
         action = agent.act(dummy_state, epsilon=0.0)
         print(f"Decided action for dummy state: {action}")
         
         # Test memory push and training step
-        agent.remember(dummy_state, 1, 0.1, dummy_state, False)
-        agent.remember(dummy_state, 2, 0.1, dummy_state, False)
+        dummy_mask = np.ones((10,), dtype=np.float32)
+        agent.remember(dummy_state, 1, 0.1, dummy_state, dummy_mask, dummy_mask, False)
+        agent.remember(dummy_state, 2, 0.1, dummy_state, dummy_mask, dummy_mask, False)
         
         # Manually invoke replay with small batch size 2 for prototype validation
         loss_val = agent.replay(batch_size=2)

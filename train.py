@@ -138,6 +138,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         return has_valid_target
                     return True
 
+                # Calculate action mask for current state
+                action_mask = np.array([1 if is_action_valid(a) else 0 for a in range(env.action_space.n)], dtype=np.float32)
+
                 # Calculate Q-values once per step to optimize performance by avoiding duplicate feed-forwards
                 q_values = None
                 if agent.policy_net is not None:
@@ -146,26 +149,8 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     with torch.no_grad():
                         q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
 
-                # Select action using epsilon-greedy policy with cached Q-values
-                import random
-                if random.random() < epsilon or q_values is None:
-                    action = random.randint(0, agent.action_size - 1)
-                else:
-                    action = int(np.argmax(q_values))
-
-                # Verify and filter AI choice to ensure no out-of-bounds move
-                if not is_action_valid(action):
-                    if random.random() < epsilon or q_values is None:
-                        # Find all valid actions
-                        valid_actions = [a for a in range(env.action_space.n) if is_action_valid(a)]
-                        action = random.choice(valid_actions)
-                    else:
-                        # Select best valid action by ranking cached Q-values
-                        ranked_actions = np.argsort(q_values)[::-1]
-                        for act in ranked_actions:
-                            if is_action_valid(act):
-                                action = int(act)
-                                break
+                # Decide action based on current state and mask
+                action = agent.act(state, action_mask=action_mask, epsilon=epsilon)
 
                 # Handle decision suggestion and override in suggest mode
                 if mode == "suggest" and q_values is not None:
@@ -299,8 +284,11 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 
                 episode_reward += reward
                 
-                # Store experience in replay memory
-                agent.remember(state, actual_action, reward, next_state, done)
+                # Calculate next action mask for replay updates
+                next_action_mask = np.array([1 if is_action_valid(a) else 0 for a in range(env.action_space.n)], dtype=np.float32)
+
+                # Store experience in replay memory with masks included
+                agent.remember(state, actual_action, reward, next_state, action_mask, next_action_mask, done)
                 
                 # Perform optimization step via replay
                 loss = agent.replay(batch_size=batch_size)
