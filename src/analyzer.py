@@ -238,13 +238,13 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
 
     try:
         _load_templates()
+        signal = _extract_signal(patch_gray)
+        patch_f = signal.astype(np.float32)
 
         gray = patch_gray[10:55, 10:55]
 
         # -- 1. Player King detection (dark piece) --
         if 1 in _TEMPLATES and _TEMPLATES[1]:
-            signal = _extract_signal(patch_gray)
-            patch_f = signal.astype(np.float32)
             max_score = -1.0
             for tmpl in _TEMPLATES[1]:
                 res = cv2.matchTemplate(
@@ -274,7 +274,6 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                     return 1
 
         # Check signal strength to bypass empty tiles regardless of background tile color
-        signal = _extract_signal(patch_gray)
         # print(f"  [DEBUG check] signal max: {signal.max()}")
         if signal.max() == 0:
             return 0
@@ -298,9 +297,6 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         # -- 3. Template matching (loaded pieces only) --
         has_any_template = any(len(_TEMPLATES[piece_id]) > 0 for piece_id in range(2, 7))
         if has_any_template:
-            signal = _extract_signal(patch_gray)
-            patch_f = signal.astype(np.float32)
-
             best_score = -1.0
             best_piece = 6  # fallback to Queen if matching fails
 
@@ -423,34 +419,24 @@ def extract_ammo_count(img):
 
         # 1. Calculate loaded ammo (Y: 52~72)
         loaded = 0
+        loaded_region = rgb[52:72, 384:544]
+        red_mask_loaded = (loaded_region[:, :, 0] > 180) & (loaded_region[:, :, 1] < 60) & (loaded_region[:, :, 2] < 80)
         for i in range(10):
-            start_x = 384 + i * 16
+            start_x = i * 16
             end_x = start_x + 8
-            
-            red_pixels = 0
-            for y in range(52, 72):
-                for x in range(start_x, end_x):
-                    r, g, b = rgb[y, x]
-                    if r > 180 and g < 60 and b < 80:
-                        red_pixels += 1
-            if red_pixels >= 15:
+            if np.sum(red_mask_loaded[:, start_x:end_x]) >= 15:
                 loaded += 1
             else:
                 break
 
         # 2. Calculate reserve ammo (Y: 89~108)
         reserve = 0
+        reserve_region = rgb[89:108, 384:704]
+        red_mask_reserve = (reserve_region[:, :, 0] > 180) & (reserve_region[:, :, 1] < 60) & (reserve_region[:, :, 2] < 80)
         for i in range(20):
-            start_x = 384 + i * 16
+            start_x = i * 16
             end_x = start_x + 8
-            
-            red_pixels = 0
-            for y in range(89, 108):
-                for x in range(start_x, end_x):
-                    r, g, b = rgb[y, x]
-                    if r > 180 and g < 60 and b < 80:
-                        red_pixels += 1
-            if red_pixels >= 15:
+            if np.sum(red_mask_reserve[:, start_x:end_x]) >= 15:
                 reserve += 1
             else:
                 break
