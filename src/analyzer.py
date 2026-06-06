@@ -59,7 +59,8 @@ def _load_templates():
                         path = os.path.join(PIECES_DIR, filename)
                         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
                         if img is not None:
-                            _TEMPLATES[piece_id].append(cv2.resize(img, (45, 45)))
+                            resized = cv2.resize(img, (45, 45))
+                            _TEMPLATES[piece_id].append(resized.astype(np.float32))
                 except ValueError:
                     pass
         # for pid in range(1, 7):
@@ -68,20 +69,20 @@ def _load_templates():
         print(f"Failed to load templates: {e}")
 
 
-def _extract_signal(patch):
+def _extract_signal(patch_gray):
     """Extract 45x45 piece signal by subtracting corner background from 65x65 patch.
 
     Removes background tile colors to emphasize the piece silhouette.
     Works identically on both light and dark tiles.
 
     Args:
-        patch: 65x65 BGR image patch.
+        patch_gray: 65x65 Grayscale image patch.
 
     Returns:
         45x45 uint8 grayscale signal (piece=bright, background=dark).
     """
-    cropped = patch[10:55, 10:55]
-    gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY).astype(float)
+    cropped_gray = patch_gray[10:55, 10:55]
+    gray = cropped_gray.astype(float)
     corners = [
         gray[:4, :4], gray[:4, -4:],
         gray[-4:, :4], gray[-4:, -4:],
@@ -218,37 +219,37 @@ def crop_chessboard(img):
         return None
 
 
-def classify_patch(patch, row=-1, col=-1):
+def classify_patch(patch, patch_gray, row=-1, col=-1):
     """Classifies a single 65x65 cell patch on the board to identify its piece.
 
     Prioritize template matching, fallback to geometry-based logic if templates are missing.
 
     Args:
         patch: A 65x65 BGR image representing a single cell.
+        patch_gray: A 65x65 Grayscale image representing a single cell.
 
     Returns:
         An integer representing the cell state:
         0: Empty, 1: Black King (Player),
         2: Pawn, 3: Knight, 4: Bishop, 5: Rook, 6: Queen/King.
     """
-    if patch is None or cv2 is None or np is None:
+    if patch is None or patch_gray is None or cv2 is None or np is None:
         return 0
 
     try:
         _load_templates()
 
-        cropped = patch[10:55, 10:55]
-        gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
+        gray = patch_gray[10:55, 10:55]
 
         # -- 1. Player King detection (dark piece) --
         if 1 in _TEMPLATES and _TEMPLATES[1]:
-            signal = _extract_signal(patch)
+            signal = _extract_signal(patch_gray)
             patch_f = signal.astype(np.float32)
             max_score = -1.0
             for tmpl in _TEMPLATES[1]:
                 res = cv2.matchTemplate(
                     patch_f,
-                    tmpl.astype(np.float32),
+                    tmpl,
                     cv2.TM_CCOEFF_NORMED,
                 )
                 score = float(res[0][0])
@@ -273,7 +274,7 @@ def classify_patch(patch, row=-1, col=-1):
                     return 1
 
         # Check signal strength to bypass empty tiles regardless of background tile color
-        signal = _extract_signal(patch)
+        signal = _extract_signal(patch_gray)
         # print(f"  [DEBUG check] signal max: {signal.max()}")
         if signal.max() == 0:
             return 0
@@ -297,7 +298,7 @@ def classify_patch(patch, row=-1, col=-1):
         # -- 3. Template matching (loaded pieces only) --
         has_any_template = any(len(_TEMPLATES[piece_id]) > 0 for piece_id in range(2, 7))
         if has_any_template:
-            signal = _extract_signal(patch)
+            signal = _extract_signal(patch_gray)
             patch_f = signal.astype(np.float32)
 
             best_score = -1.0
@@ -308,7 +309,7 @@ def classify_patch(patch, row=-1, col=-1):
                 for tmpl in templates:
                     res = cv2.matchTemplate(
                         patch_f,
-                        tmpl.astype(np.float32),
+                        tmpl,
                         cv2.TM_CCOEFF_NORMED,
                     )
                     score = float(res[0][0])
@@ -373,6 +374,8 @@ def get_state_matrix(img):
         print("Error: Could not crop chessboard for state extraction.")
         return state_matrix
 
+    board_gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
+
     # Slicing width and height (520 / 8 = 65)
     cell_size = 65
 
@@ -384,6 +387,7 @@ def get_state_matrix(img):
             x_end = x_start + cell_size
             
             patch = board_img[y_start:y_end, x_start:x_end]
+            patch_gray = board_gray[y_start:y_end, x_start:x_end]
             if _PREV_BOARD_IMG is not None and _PREV_STATE_MATRIX is not None:
                 prev_patch = _PREV_BOARD_IMG[y_start:y_end, x_start:x_end]
                 # Compute mean absolute difference between patches to skip unchanged cells
@@ -391,7 +395,7 @@ def get_state_matrix(img):
                 if diff < 4.0:
                     state_matrix[row, col] = _PREV_STATE_MATRIX[row, col]
                     continue
-            state_matrix[row, col] = classify_patch(patch, row, col)
+            state_matrix[row, col] = classify_patch(patch, patch_gray, row, col)
             
     _PREV_BOARD_IMG = board_img.copy()
     _PREV_STATE_MATRIX = state_matrix.copy()
