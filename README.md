@@ -45,7 +45,7 @@ The analyzer module extracts state vectors from raw BGR screenshots.
 
 ## Model Details
 
-- Policy Network: MLP structure consisting of a 281-size input layer, a 128-unit linear layer, a 64-unit linear layer, and a dynamic output layer matched to the action space size (10 or 18).
+- Policy Network: Multi-input neural network fusing spatial chess board configurations and non-spatial attributes. The spatial grid data (state, threat, hp, turn speed) is processed via 2-layer Conv2d layers and flat-projected to a 64-unit vector. The meta attributes (ammo, weapon, status) are processed via a 16-unit linear projection. These representations are concatenated and passed through joint decision layers to estimate Q-values.
 - Optimization: Backpropagation via MSE loss and Adam optimizer. Trains on experience tuples sampled from a ReplayBuffer.
 
 ## Installation and Execution

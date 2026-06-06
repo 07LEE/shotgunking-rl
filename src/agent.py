@@ -24,36 +24,69 @@ except ImportError:
 
 
 class QNetwork(nn.Module if nn is not None else object):
-    """Deep Q-Network MLP neural network."""
+    """Deep Q-Network multi-input convolutional neural network."""
 
     def __init__(self, state_size=281, action_size=10):
         """Initializes the network layers.
 
         Args:
-            state_size: Flattened input state vector dimension (133).
-            action_size: Number of discrete action choices (10).
+            state_size: Flattened input state vector dimension (281).
+            action_size: Number of discrete action choices (10 or 18).
         """
         super().__init__()
         if nn is not None:
-            self.fc1 = nn.Linear(state_size, 128)
-            self.fc2 = nn.Linear(128, 64)
-            self.fc3 = nn.Linear(64, action_size)
+            # Spatial convolution layers (4 input channels: board, threat, hp, turn speed)
+            self.conv1 = nn.Conv2d(4, 16, kernel_size=3, padding=1)
+            self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
             self.relu = nn.ReLU()
+            self.flatten = nn.Flatten()
+            
+            # Linear projections for features
+            self.fc_spatial = nn.Linear(32 * 8 * 8, 64)
+            self.fc_meta = nn.Linear(25, 16)  # 25 meta inputs: 2 ammo + 3 weapon + 20 status
+            
+            # Joint decision layers
+            self.fc_joint = nn.Linear(64 + 16, 64)
+            self.fc_out = nn.Linear(64, action_size)
 
     def forward(self, x):
         """Forward pass of the network.
 
         Args:
-            x: Input state tensor.
+            x: Input state tensor of shape [Batch, 281].
 
         Returns:
             Output action Q-values.
         """
         if nn is None:
             return x
-        x = self.relu(self.fc1(x))
-        x = self.relu(self.fc2(x))
-        return self.fc3(x)
+            
+        # Segment indices to reconstruct spatial grid configurations (8x8)
+        grid_state = x[:, 0:64].view(-1, 1, 8, 8)
+        grid_threat = x[:, 64:128].view(-1, 1, 8, 8)
+        grid_hp = x[:, 153:217].view(-1, 1, 8, 8)
+        grid_turn = x[:, 217:281].view(-1, 1, 8, 8)
+        spatial_input = torch.cat([grid_state, grid_threat, grid_hp, grid_turn], dim=1)
+        
+        # Segment non-spatial attributes (25 dimensions)
+        meta_ammo = x[:, 128:130]
+        meta_weapon = x[:, 130:133]
+        meta_status = x[:, 133:153]
+        meta_input = torch.cat([meta_ammo, meta_weapon, meta_status], dim=1)
+        
+        # Compute spatial feature representations
+        conv_out = self.relu(self.conv1(spatial_input))
+        conv_out = self.relu(self.conv2(conv_out))
+        flat_spatial = self.flatten(conv_out)
+        spatial_feat = self.relu(self.fc_spatial(flat_spatial))
+        
+        # Compute meta representations
+        meta_feat = self.relu(self.fc_meta(meta_input))
+        
+        # Fuse representations and compute decisions
+        combined = torch.cat([spatial_feat, meta_feat], dim=1)
+        joint_feat = self.relu(self.fc_joint(combined))
+        return self.fc_out(joint_feat)
 
 
 class ReplayBuffer:
