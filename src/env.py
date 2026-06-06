@@ -385,6 +385,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.countdown_trigger_step = None
         self.reserve_ammo = self.max_reserve_ammo + (1 if self.rank >= 20 else 0)
         print("Resetting Shotgun King environment...")
+        from analyzer import reset_analyzer_cache
+        reset_analyzer_cache()
         
         # Safety timeout: Allow user a 3.5-second window to reclaim focus or stop the loop
         time.sleep(3.5)

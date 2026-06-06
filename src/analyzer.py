@@ -18,6 +18,15 @@ except ImportError:
 PIECES_DIR = "data/pieces"
 _TEMPLATES = {}   # {piece_id: list of 45x45 uint8 grayscale signals}
 _TEMPLATES_LOADED = False
+_PREV_BOARD_IMG = None
+_PREV_STATE_MATRIX = None
+
+
+def reset_analyzer_cache():
+    """Reset the cached board image and state matrix."""
+    global _PREV_BOARD_IMG, _PREV_STATE_MATRIX
+    _PREV_BOARD_IMG = None
+    _PREV_STATE_MATRIX = None
 
 
 def _load_templates():
@@ -356,6 +365,7 @@ def get_state_matrix(img):
     Returns:
         An 8x8 numpy array containing state values (0: Empty, 1: Player, 2: Enemy).
     """
+    global _PREV_BOARD_IMG, _PREV_STATE_MATRIX
     state_matrix = np.zeros((8, 8), dtype=int)
     
     board_img = crop_chessboard(img)
@@ -374,8 +384,17 @@ def get_state_matrix(img):
             x_end = x_start + cell_size
             
             patch = board_img[y_start:y_end, x_start:x_end]
+            if _PREV_BOARD_IMG is not None and _PREV_STATE_MATRIX is not None:
+                prev_patch = _PREV_BOARD_IMG[y_start:y_end, x_start:x_end]
+                # Compute mean absolute difference between patches to skip unchanged cells
+                diff = np.mean(cv2.absdiff(prev_patch, patch))
+                if diff < 4.0:
+                    state_matrix[row, col] = _PREV_STATE_MATRIX[row, col]
+                    continue
             state_matrix[row, col] = classify_patch(patch, row, col)
             
+    _PREV_BOARD_IMG = board_img.copy()
+    _PREV_STATE_MATRIX = state_matrix.copy()
     return state_matrix
 
 
