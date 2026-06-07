@@ -202,7 +202,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                                 if act_i == 9:
                                     valid_keys.append(f"{key_hint} (Shoot)")
                                 elif act_i == 8:
-                                    valid_keys.append(f"{key_hint} (Reload)")
+                                    valid_keys.append(f"{key_hint} or r (Reload)")
                                 else:
                                     valid_keys.append(key_hint)
                         print(f"Valid choices for current board state: {', '.join(valid_keys)}")
@@ -211,18 +211,23 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     for rank, act_idx in enumerate(top_actions, 1):
                         confidence = softmax_probs[act_idx] * 100
                         key_hint = reverse_numpad_map.get(act_idx, "?")
-                        print(f"Rank {rank}: {action_names[act_idx]} [Key: {key_hint}] (Confidence: {confidence:.1f}%, Q-value: {q_values[act_idx]:.4f})")
+                        if act_idx == 8:
+                            print(f"Rank {rank}: {action_names[act_idx]} [Key: {key_hint} or r] (Confidence: {confidence:.1f}%, Q-value: {q_values[act_idx]:.4f})")
+                        else:
+                            print(f"Rank {rank}: {action_names[act_idx]} [Key: {key_hint}] (Confidence: {confidence:.1f}%, Q-value: {q_values[act_idx]:.4f})")
 
                     # Validation loop for user choice
                     while True:
-                        user_choice = input(f"\nRecommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad): ").strip()
+                        user_choice = input(f"\nRecommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad/r): ").strip()
                         if user_choice == ".":
                             print("User flagged defeat. Forcing episode termination...")
                             agent.remember(state, action, -15.0, state, True)
                             break
                         
                         temp_action = action
-                        if user_choice in numpad_map:
+                        if user_choice.lower() == 'r':
+                            temp_action = 8
+                        elif user_choice in numpad_map:
                             temp_action = numpad_map[user_choice]
                         elif user_choice.isdigit() and int(user_choice) in range(10):
                             temp_action = int(user_choice)
@@ -230,7 +235,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             # Use recommended action
                             temp_action = action
                         else:
-                            print("Invalid input. Please enter 0-9, Numpad keys, or '.' to exit.")
+                            print("Invalid input. Please enter 0-9, Numpad keys, 'r', or '.' to exit.")
                             print_valid_action_hints()
                             continue
 
@@ -268,7 +273,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         # If validation passed
                         action = temp_action
                         if user_choice != "":
-                            if user_choice in numpad_map:
+                            if user_choice.lower() == 'r':
+                                print(f"Action overridden by user to: {action_names[action]} (r key input)")
+                            elif user_choice in numpad_map:
                                 print(f"Action overridden by user to: {action_names[action]} (Numpad input: {user_choice})")
                             else:
                                 print(f"Action overridden by user to: {action_names[action]}")

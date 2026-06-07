@@ -244,6 +244,7 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         gray = patch_gray[10:55, 10:55]
 
         # -- 1. Player King detection (dark piece) --
+        is_king = False
         if 1 in _TEMPLATES and _TEMPLATES[1]:
             max_score = -1.0
             for tmpl in _TEMPLATES[1]:
@@ -259,8 +260,9 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                 # Color Guard: Player King is dark, reject if the detected region is too bright (white pieces)
                 piece_pixels = gray[signal > 100]
                 if len(piece_pixels) > 0 and np.mean(piece_pixels) < 145.0:
-                    return 1
-        else:
+                    is_king = True
+
+        if not is_king:
             # geometry fallback: based on dark contour area
             _, thresh_black = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
             contours_black, _ = cv2.findContours(
@@ -271,7 +273,10 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                     max(contours_black, key=cv2.contourArea)
                 )
                 if area_black > 50.0:
-                    return 1
+                    is_king = True
+
+        if is_king:
+            return 1
 
         # Check signal strength to bypass empty tiles regardless of background tile color
         # print(f"  [DEBUG check] signal max: {signal.max()}")
@@ -314,10 +319,12 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                         best_piece = piece_id
 
             if best_score >= 0.50:      # confidence threshold
-                # print(f"  [Template Match] Found piece {best_piece} with score {best_score:.3f}")
-                return best_piece
-            # else:
-            #     print(f"  [Template Match Failed] Best guess was {best_piece} with score {best_score:.3f}. Fallback to geometry.")
+                # Color Guard for enemy pieces (must be bright)
+                piece_pixels = gray[signal > 100]
+                if len(piece_pixels) > 0 and np.mean(piece_pixels) >= 145.0:
+                    return best_piece
+                else:
+                    return 0 # reject dark pieces (e.g. gun barrel)
 
         # -- 4. Geometry fallback (missing templates or low confidence) --
         x, y, w, h = cv2.boundingRect(c_white)
@@ -328,6 +335,11 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
 
         # [GUARD] Empty light/dark tile artifact if width is almost cell size
         if w >= 40 and area_white < 300:
+            return 0
+
+        # Color Guard for fallback pieces (must be bright)
+        piece_pixels = gray[signal > 100]
+        if len(piece_pixels) > 0 and np.mean(piece_pixels) < 145.0:
             return 0
 
         M = cv2.moments(c_white)

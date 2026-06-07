@@ -312,6 +312,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             if img is not None:
                 # Call state extractor to return 8x8 chessboard array
                 state = get_state_matrix(img).astype(np.float32)
+                if not np.any(state == 1.0):
+                    if hasattr(self, 'king_row') and hasattr(self, 'king_col'):
+                        if 0 <= self.king_row < 8 and 0 <= self.king_col < 8:
+                            state[self.king_row, self.king_col] = 1.0
+                            print(f"DQN Obs Guard: Player King missing. Force injected at tracked coordinate: ({self.king_row}, {self.king_col})")
                 threat = self._get_threat_matrix(state).astype(np.float32)
                 
                 # Real-time ammo sync from screenshot UI
@@ -687,8 +692,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 
         elif action == 8:
             # Reload
-            # Replace keypress reload with relative click on gun UI at (640, 650)
+            # Perform both relative click and keypress reload for redundant reliability
             click_relative_in_window(self.window_title, 640, 650)
+            time.sleep(0.2)
+            press_key("r")
             time.sleep(1.8)
             needed = max(0, self.max_ammo - self.loaded_ammo)
             transfer = min(needed, self.reserve_ammo)
