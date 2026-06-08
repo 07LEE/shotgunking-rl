@@ -221,12 +221,12 @@ class DQNAgent:
 
         states, actions, rewards, next_states, action_masks, next_action_masks, dones = self.memory.sample(batch_size)
 
-        state_t = torch.tensor(np.array(states, dtype=np.float32)).to(self.device)
-        action_t = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device)
-        reward_t = torch.tensor(rewards).unsqueeze(1).to(self.device)
-        next_state_t = torch.tensor(np.array(next_states, dtype=np.float32)).to(self.device)
-        next_action_masks_t = torch.tensor(np.array(next_action_masks, dtype=np.float32)).to(self.device)
-        done_t = torch.tensor(dones).unsqueeze(1).to(self.device)
+        state_t = torch.tensor(np.array(states, dtype=np.float32)).to(self.device, non_blocking=True)
+        action_t = torch.tensor(actions, dtype=torch.long).unsqueeze(1).to(self.device, non_blocking=True)
+        reward_t = torch.tensor(rewards).unsqueeze(1).to(self.device, non_blocking=True)
+        next_state_t = torch.tensor(np.array(next_states, dtype=np.float32)).to(self.device, non_blocking=True)
+        next_action_masks_t = torch.tensor(np.array(next_action_masks, dtype=np.float32)).to(self.device, non_blocking=True)
+        done_t = torch.tensor(dones).unsqueeze(1).to(self.device, non_blocking=True)
 
         # Calculate current predicted Q-values
         curr_q = self.policy_net(state_t).gather(1, action_t)
