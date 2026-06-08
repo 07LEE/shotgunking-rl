@@ -633,38 +633,50 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             target_row = king_row + row_offset * step_multiplier
             target_col = king_col + col_offset * step_multiplier
             
-            # Out-of-bounds and barrier safety check and replacement loop
-            attempts = 0
-            while attempts < 15:
-                # Validate boundary and intermediate/target collision
-                if is_two_tile:
-                    mid_r, mid_c = king_row + row_offset, king_col + col_offset
-                    if 0 <= target_row < 8 and 0 <= target_col < 8:
-                        if board_state[mid_r, mid_c] == 0 and board_state[target_row, target_col] == 0:
-                            break
+            # Calculate all possible candidate actions
+            candidates = list(range(8))
+            if self.move_range_bonus > 0:
+                candidates.extend(range(10, 18))
+            
+            valid_moves = []
+            for cand in candidates:
+                is_two = cand in range(10, 18)
+                d_idx = cand - 10 if is_two else cand
+                mult = 2 if is_two else 1
+                ro, co = direction_diffs[d_idx]
+                tr = king_row + ro * mult
+                tc = king_col + co * mult
+                
+                if 0 <= tr < 8 and 0 <= tc < 8:
+                    if is_two:
+                        mr, mc = king_row + ro, king_col + co
+                        if board_state[mr, mc] == 0 and board_state[tr, tc] == 0:
+                            valid_moves.append(cand)
+                    else:
+                        if board_state[tr, tc] == 0:
+                            valid_moves.append(cand)
+            
+            if action not in valid_moves:
+                if len(valid_moves) > 0:
+                    import random
+                    action = random.choice(valid_moves)
+                    print(f"DQN Guard: Action overridden due to collision. Selected valid move: {action}")
                 else:
-                    if 0 <= target_row < 8 and 0 <= target_col < 8:
-                        if board_state[target_row, target_col] == 0:
-                            break
-                        
-                import random
-                # Randomly choose between 1-tile and 2-tile valid direction
-                chosen_act = random.choice([0, 1, 2, 3, 4, 5, 6, 7] + ([10, 11, 12, 13, 14, 15, 16, 17] if self.move_range_bonus > 0 else []))
-                is_two_tile = chosen_act in range(10, 18)
-                act_dir = chosen_act - 10 if is_two_tile else chosen_act
-                step_multiplier = 2 if is_two_tile else 1
-                row_offset, col_offset = direction_diffs[act_dir]
-                target_row = king_row + row_offset * step_multiplier
-                target_col = king_col + col_offset * step_multiplier
-                action = chosen_act
-                attempts += 1
+                    print("DQN Guard Warning: No valid moves available. Executing original action.")
+            
+            is_two_tile = action in range(10, 18)
+            act_dir = action - 10 if is_two_tile else action
+            step_multiplier = 2 if is_two_tile else 1
+            row_offset, col_offset = direction_diffs[act_dir]
+            target_row = king_row + row_offset * step_multiplier
+            target_col = king_col + col_offset * step_multiplier
             
             if 0 <= target_row < 8 and 0 <= target_col < 8:
                 # Precise board cell calculation based on standard coordinates:
                 # x_start=390, y_start=127, cell_size=62.5
                 x = int(390 + target_col * 62.5 + 31.25)
                 y = int(127 + target_row * 62.5 + 31.25)
-                print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y}) (attempts: {attempts})")
+                print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y})")
                 self._check_emergency_stop()
                 click_relative_in_window(self.window_title, x, y)
                 time.sleep(2.2)
