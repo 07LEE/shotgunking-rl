@@ -462,8 +462,8 @@ def extract_ammo_count(img):
 def check_retry_popup(img):
     """Checks whether the captured screen contains the retry/game-over popup.
 
-    It uses pixel statistics (variance and mean) in target button regions to detect
-    if the game-over 'YES / NO' popup is currently active.
+    It uses geometric properties (contour width, height, coordinates, and symmetry)
+    of the YES/NO buttons to detect if the popup is active in a language-independent manner.
 
     Args:
         img: Full 1280x720 BGR game screen screenshot.
@@ -475,6 +475,11 @@ def check_retry_popup(img):
         return False
 
     try:
+        # Resize input image to 1280x720 for consistent geometric coordinates
+        height, width = img.shape[:2]
+        if height != 720 or width != 1280:
+            img = cv2.resize(img, (1280, 720))
+
         # Check full chessboard region brightness to verify if the screen is darkened (Game Over state)
         board = crop_chessboard(img)
         if board is None:
@@ -487,25 +492,31 @@ def check_retry_popup(img):
 
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-        # 1. Left button region (X: 500-580, Y: 380-440)
-        left_patch = gray[380:440, 500:580]
-        left_var = np.var(left_patch)
+        # Use Otsu's thresholding to segment the bright buttons from the darkened background
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # 2. Right button region (X: 700-780, Y: 380-440)
-        right_patch = gray[380:440, 700:780]
-        right_var = np.var(right_patch)
+        detected_buttons = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            # Filter contours matching the expected YES/NO buttons shape & region
+            # Expected buttons: Width ~ 120px (110-130), Height ~ 36px (30-45), Y around 364 (345-385)
+            if 110 <= w <= 130 and 30 <= h <= 45 and 345 <= y <= 385:
+                detected_buttons.append((x, y, w, h))
 
-        # 3. Background center region (X: 620-660, Y: 340-380)
-        center_patch = gray[340:380, 620:660]
-        center_mean = np.mean(center_patch)
-
-        # Active popup characteristics: Darkened board, high variance in YES/NO buttons
-        if left_var > 6000.0 and right_var > 6000.0 and center_mean < 40.0:
-            return True
+        if len(detected_buttons) == 2:
+            btn1, btn2 = sorted(detected_buttons, key=lambda b: b[0])
+            y_diff = abs(btn1[1] - btn2[1])
+            # Verify horizontal alignment (small y difference) and lateral symmetry (average X center around 640px)
+            center1 = btn1[0] + btn1[2] / 2
+            center2 = btn2[0] + btn2[2] / 2
+            avg_x = (center1 + center2) / 2
+            if y_diff < 5 and abs(avg_x - 640.0) < 10.0:
+                return True
 
         return False
     except Exception as e:
-        print(f"Failed to check retry popup: {e}")
+        print(f"Failed to check retry popup geometrically: {e}")
         return False
 
 

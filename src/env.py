@@ -33,6 +33,11 @@ from weapons import WEAPON_PRESETS
 from specs import get_enemy_specs_matrices
 import sys
 
+# Ensure project root is in python path to support tools module imports
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 
 def suppress_stdout_if(cond_attr):
     """Decorator to suppress stdout print messages if a target instance boolean attribute is False."""
@@ -295,8 +300,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                                 
         return threat
 
-    def _get_obs(self):
+    def _get_obs(self, force_inject=True):
         """Captures screen and returns a 281-dimensional flat observation vector.
+
+        Args:
+            force_inject: If True, injects tracked King coordinate if missing.
 
         Returns:
             A 281-dimensional numpy float32 observation vector.
@@ -312,7 +320,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             if img is not None:
                 # Call state extractor to return 8x8 chessboard array
                 state = get_state_matrix(img).astype(np.float32)
-                if not np.any(state == 1.0):
+                if force_inject and not np.any(state == 1.0):
                     if hasattr(self, 'king_row') and hasattr(self, 'king_col'):
                         if 0 <= self.king_row < 8 and 0 <= self.king_col < 8:
                             state[self.king_row, self.king_col] = 1.0
@@ -507,6 +515,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Reconstruct 8x8 matrices from 133-dimensional flat state
         board_state = self.current_state[:64].reshape(8, 8)
         threat_state = self.current_state[64:128].reshape(8, 8)
+        from specs import get_enemy_specs_matrices
+        hp_matrix, _ = get_enemy_specs_matrices(board_state, self.enemy_turns, self.rank)
 
         # Detect pawn promotion: pawn from row 6 (or row 7 if already landed) moving to row 7 and promoting to non-pawn piece
         promotion_detected = False
@@ -542,6 +552,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             # Check range limit and target existence
             has_valid_target = False
             min_dist = 99
+            best_diff = None
             best_is_threat = False
             
             # 8 directions to sweep radially for enemies
@@ -579,16 +590,19 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                             
                             if not best_is_threat and is_threat:
                                 min_dist = dist
+                                best_diff = (r_diff, c_diff)
                                 best_is_threat = is_threat
                             elif is_threat == best_is_threat:
                                 if dist < min_dist:
                                     min_dist = dist
+                                    best_diff = (r_diff, c_diff)
                             break
                         elif board_state[tr, tc] == 1:
                             break
                     else:
                         break
-            if min_dist <= self.range_limit:
+            # Apply Euclidean distance factor (1.414) for diagonal checks
+            if best_diff is not None and float(min_dist) * (1.414 if (abs(best_diff[0]) == 1 and abs(best_diff[1]) == 1) else 1.0) <= float(self.range_limit):
                 has_valid_target = True
 
             if self.loaded_ammo <= 0:
@@ -656,13 +670,32 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                         if board_state[tr, tc] == 0:
                             valid_moves.append(cand)
             
-            if action not in valid_moves:
-                if len(valid_moves) > 0:
+            # Filter valid moves to only threat-free moves
+            safe_moves = []
+            for mv in valid_moves:
+                is_two = mv in range(10, 18)
+                d_idx = mv - 10 if is_two else mv
+                mult = 2 if is_two else 1
+                ro, co = direction_diffs[d_idx]
+                tr = king_row + ro * mult
+                tc = king_col + co * mult
+                if threat_state[tr, tc] == 0:
+                    safe_moves.append(mv)
+
+            # DQN Guard: Prioritize safe moves if available to prevent suicide moves
+            if len(safe_moves) > 0:
+                if action not in safe_moves:
                     import random
-                    action = random.choice(valid_moves)
-                    print(f"DQN Guard: Action overridden due to collision. Selected valid move: {action}")
-                else:
-                    print("DQN Guard Warning: No valid moves available. Executing original action.")
+                    action = random.choice(safe_moves)
+                    print(f"DQN Guard: Action overridden to safe move: {action}")
+            else:
+                if action not in valid_moves:
+                    if len(valid_moves) > 0:
+                        import random
+                        action = random.choice(valid_moves)
+                        print(f"DQN Guard: Action overridden to valid move due to collision: {action}")
+                    else:
+                        print("DQN Guard Warning: No valid moves available. Executing original action.")
             
             is_two_tile = action in range(10, 18)
             act_dir = action - 10 if is_two_tile else action
@@ -709,16 +742,25 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             time.sleep(0.2)
             press_key("r")
             time.sleep(1.8)
-            needed = max(0, self.max_ammo - self.loaded_ammo)
-            transfer = min(needed, self.reserve_ammo)
-            self.loaded_ammo += transfer
-            self.reserve_ammo -= transfer
-            print(f"Ammo System: Manual reload completed. Loaded {transfer} shells. (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
+            # Re-capture and sync real ammo from UI to prevent logical mismatch
+            image_path = "data/screenshot.png"
+            capture_screen(output_path=image_path, window_title=self.window_title)
+            if cv2 is not None and os.path.exists(image_path):
+                img = cv2.imread(image_path)
+                if img is not None:
+                    from analyzer import extract_ammo_count
+                    self.loaded_ammo, self.reserve_ammo = extract_ammo_count(img)
+            print(f"Ammo System: Manual reload completed. Synced from UI (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
             
         elif action == 9:
             # Shoot (Intel aimed click bypassing the 1-tile move physics rule)
             min_dist = 99
             best_diff = None
+            directions = [
+                (-1, -1), (-1, 0), (-1, 1),
+                (0, -1),           (0, 1),
+                (1, -1),  (1, 0),  (1, 1)
+            ]
             best_is_threat = False
             
             for r_diff, c_diff in directions:
@@ -767,7 +809,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     else:
                         break
             
-            if best_diff is not None and min_dist <= self.range_limit:
+            # Apply Euclidean distance factor (1.414) for diagonal checks during actual shoot event
+            if best_diff is not None and float(min_dist) * (1.414 if (abs(best_diff[0]) == 1 and abs(best_diff[1]) == 1) else 1.0) <= float(self.range_limit):
                 r_diff, c_diff = best_diff
                 # 1-tile distance check: If target is 1-tile away, clicking it moves the King.
                 # Bypassed by shooting 2-tiles away in the same trajectory.
@@ -992,17 +1035,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         # Threat Exposure Evaluation
         terminated = False
-        king_present = np.any(curr_board == 1)
+        # Evaluate real King presence without force injection for defeat detection
+        real_obs = self._get_obs(force_inject=False)
+        real_board = real_obs[:64].reshape(8, 8)
+        king_present = np.any(real_board == 1)
         
         # If King is threatened or missing immediately after equilibrium, wait and
         # recapture to prevent 1-step learning delay caused by slow death animations.
         if is_threatened or not king_present:
             time.sleep(2.0)
-            obs = self._get_obs()
-            self.current_state = obs
-            curr_board = self.current_state[:64].reshape(8, 8)
-            curr_threat = self.current_state[64:128].reshape(8, 8)
-            king_present = np.any(curr_board == 1)
+            real_obs = self._get_obs(force_inject=False)
+            real_board = real_obs[:64].reshape(8, 8)
+            king_present = np.any(real_board == 1)
 
         # Capture screen and verify retry popup actively via screen analysis
         image_path = "data/screenshot.png"
@@ -1017,12 +1061,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         while not king_present and not is_popup and attempts < 5:
             time.sleep(1.0)
             print(f"DQN Guard: Player King missing but retry popup not detected (curr_enemies: {curr_enemies}). Retrying capture/analysis... (Attempt {attempts+1}/5)")
-            obs = self._get_obs()
-            self.current_state = obs
-            curr_board = self.current_state[:64].reshape(8, 8)
-            curr_threat = self.current_state[64:128].reshape(8, 8)
-            king_present = np.any(curr_board == 1)
-            curr_enemies = np.sum(curr_board >= 2)
+            real_obs = self._get_obs(force_inject=False)
+            real_board = real_obs[:64].reshape(8, 8)
+            king_present = np.any(real_board == 1)
+            curr_enemies = np.sum(real_board >= 2)
             
             if cv2 is not None and os.path.exists(image_path):
                 img = cv2.imread(image_path)
@@ -1030,6 +1072,19 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     is_popup = True
             attempts += 1
 
+        # Sync the final observation state
+        self.current_state = self._get_obs(force_inject=True)
+        curr_board = self.current_state[:64].reshape(8, 8)
+
+        if is_popup:
+            reward = -15.0 - float(curr_enemies)
+            terminated = True
+            print(f"DQN Penalty: Detected retry popup via screen analysis! Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Clicking YES button (dynamic coordinates enabled).")
+            img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+            tx, ty = self._get_yes_button_coords(img)
+            self._check_emergency_stop()
+            click_relative_in_window(self.window_title, tx, ty)
+            time.sleep(2.5)
         # Countdown defeat check: start counter when enemies drop to 6 or below, defeat after 12 turns
         if self.countdown_active:
             if self.countdown_trigger_step is None and 0 < curr_enemies <= 6:
