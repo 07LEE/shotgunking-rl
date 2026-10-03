@@ -8,7 +8,7 @@ import unittest
 import cv2
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tools/preprocess"))
 from build_piece_dataset import build_dataset
 
 

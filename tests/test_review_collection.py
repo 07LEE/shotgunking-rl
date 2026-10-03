@@ -10,7 +10,8 @@ import cv2
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools/review'))
-from review_collection import prepare_session, load_item, save_item, detect_crop
+from review_collection import load_item, save_item
+from prepare_collection import prepare_session, detect_crop
 
 
 @unittest.skipUnless((ROOT / 'data/test_fixtures/board_01.png').exists() and (ROOT / 'assets/pieces').is_dir(), 'Private fixtures required')
