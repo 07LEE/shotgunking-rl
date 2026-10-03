@@ -11,7 +11,6 @@ wheels/
 
 # Private game assets and training data
 /assets/
-tests/fixtures/
 data/
 datasets/
 **/piece_dataset*/

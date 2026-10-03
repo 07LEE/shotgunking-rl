@@ -29,7 +29,8 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
     groups = {}
     image_groups = {}
     skipped = 0
-    for path in sorted(annotation_dir.glob("*.json")):
+    paths = list(annotation_dir.glob("*.json")) + list(annotation_dir.glob("*/annotations/*.json"))
+    for path in sorted(paths):
         data = json.loads(path.read_text())
         if data.get("schema") != "piece-cells-v1":
             raise ValueError(f"{path}: expected piece-cells-v1 schema")
@@ -99,7 +100,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--annotations", type=Path, default=ROOT / "tests/fixtures/piece_annotations")
+    parser.add_argument("--annotations", type=Path, default=ROOT / "data/collection/sessions", help="An annotation directory or a sessions directory")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-provisional", action="store_true", help="Include unconfirmed labels for inspection only")
     args = parser.parse_args()

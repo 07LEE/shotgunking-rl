@@ -18,7 +18,7 @@ NAMES = {0: "empty", 1: "player", 2: "pawn", 3: "knight", 4: "bishop", 5: "rook"
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("fixture", nargs="?", type=Path, default=ROOT / "tests/fixtures/board_01.json")
+    parser.add_argument("fixture", nargs="?", type=Path, default=ROOT / "data/test_fixtures/board_01.json")
     args = parser.parse_args()
     fixture = args.fixture.resolve()
     annotation = json.loads(fixture.read_text())

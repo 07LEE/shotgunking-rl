@@ -12,15 +12,15 @@ sys.path.insert(0, str(ROOT / "tools"))
 from build_piece_dataset import build_dataset
 
 
-@unittest.skipUnless((ROOT / "tests/fixtures/piece_annotations/board_01.json").exists() and (ROOT / "tests/fixtures/board_01.png").exists(), "Private fixtures are required")
+@unittest.skipUnless((ROOT / "data/test_fixtures/piece_annotations/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists(), "Private fixtures are required")
 class PieceDatasetTests(unittest.TestCase):
     def test_provisional_labels_require_explicit_opt_in(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "cells"
             with self.assertRaisesRegex(ValueError, "No usable annotations"):
-                build_dataset(ROOT / "tests/fixtures/piece_annotations", output)
+                build_dataset(ROOT / "data/test_fixtures/piece_annotations", output)
             self.assertFalse(output.exists())
-            summary = build_dataset(ROOT / "tests/fixtures/piece_annotations", output, True)
+            summary = build_dataset(ROOT / "data/test_fixtures/piece_annotations", output, True)
             self.assertEqual(summary["cells"], 64)
             self.assertEqual(summary["counts"]["train"]["white_king"], 1)
             self.assertEqual(summary["missing_classes"], ["rook", "queen"])
@@ -34,8 +34,8 @@ class PieceDatasetTests(unittest.TestCase):
             base = Path(directory)
             annotations = base / "annotations"
             annotations.mkdir()
-            data = json.loads((ROOT / "tests/fixtures/piece_annotations/board_01.json").read_text())
-            data["image"] = str(ROOT / "tests/fixtures/board_01.png")
+            data = json.loads((ROOT / "data/test_fixtures/piece_annotations/board_01.json").read_text())
+            data["image"] = str(ROOT / "data/test_fixtures/board_01.png")
             for split in ("train", "test"):
                 data["split"] = split
                 (annotations / f"{split}.json").write_text(json.dumps(data))
@@ -48,8 +48,8 @@ class PieceDatasetTests(unittest.TestCase):
             base = Path(directory)
             annotations = base / "annotations"
             annotations.mkdir()
-            data = json.loads((ROOT / "tests/fixtures/piece_annotations/board_01.json").read_text())
-            image = cv2.imread(str(ROOT / "tests/fixtures/board_01.png"))
+            data = json.loads((ROOT / "data/test_fixtures/piece_annotations/board_01.json").read_text())
+            image = cv2.imread(str(ROOT / "data/test_fixtures/board_01.png"))
             padded = cv2.copyMakeBorder(image, 20, 10, 5, 5, cv2.BORDER_CONSTANT)
             cv2.imwrite(str(annotations / "window.png"), padded)
             data.update(image="window.png", game_crop=[5, 20, 1285, 740], exclude_cells=[[7, 3]], floor=2)

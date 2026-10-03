@@ -13,13 +13,13 @@ sys.path.insert(0, str(ROOT / "src"))
 import analyzer
 
 
-@unittest.skipUnless((ROOT / "tests/fixtures/board_01.json").exists() and (ROOT / "tests/fixtures/board_01.png").exists() and (ROOT / "assets/pieces").is_dir(), "Private fixtures and piece templates are required")
+@unittest.skipUnless((ROOT / "data/test_fixtures/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists() and (ROOT / "assets/pieces").is_dir(), "Private fixtures and piece templates are required")
 class BoardRegressionTests(unittest.TestCase):
     def setUp(self):
         analyzer.reset_analyzer_cache()
 
     def test_saved_board_and_cached_repeat(self):
-        fixture = ROOT / "tests/fixtures/board_01.json"
+        fixture = ROOT / "data/test_fixtures/board_01.json"
         annotation = json.loads(fixture.read_text())
         image = cv2.imread(str(fixture.parent / annotation["image"]))
         self.assertIsNotNone(image)
