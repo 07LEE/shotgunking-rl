@@ -91,5 +91,6 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
     text-align: center;
     pointer-events: none;
 }
-#grid.show-labels .cell.selected span { background: #42435ce6; color: #fff; }
+#grid.show-labels .cell span.empty-label { background: #d3d5dcde; color: #333640; }
+#grid.show-labels .cell.selected span.piece-label { background: #42435ce6; color: #fff; }
 #grid.show-labels .cell.excluded span { background: #63333ce6; color: #ffd5dc; }

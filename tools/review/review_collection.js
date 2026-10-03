@@ -18,6 +18,7 @@ function draw() {
             button.title = square + ': ' + data.board[r][c];
             button.setAttribute('aria-label', button.title);
             const text = document.createElement('span');
+            text.className = data.board[r][c] === 'empty' ? 'empty-label' : 'piece-label';
             text.textContent = data.board[r][c].replace('player_king', 'Player king').replace('white_king', 'White king');
             button.append(text);
             button.onclick = () => { selected = [r, c]; draw(); };
@@ -44,7 +45,44 @@ $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('lab
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
 for (const id of ['floor', 'crop']) $(id).oninput = () => { dirty = true };
 $('preview').onclick = () => { try { preview() } catch (e) { status(e.message) } };
-async function save(confirmed) { try { const raw = $('floor').value; const floor = raw === '' ? null : Number(raw); if (floor !== null && (!Number.isInteger(floor) || floor < 1)) throw Error('Floor must be a positive integer'); const result = await api('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': token }, body: JSON.stringify({ id: currentId, revision, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed }) }); revision = result.revision; data.confirmed = confirmed; dirty = false; status(confirmed ? 'Approved and saved.' : 'Draft saved; excluded from approved datasets.'); items.find(x => x.id === currentId).confirmed = confirmed; renderOptions() } catch (e) { status(e.message) } }
+async function save(confirmed) {
+    const buttons = [$('draft'), $('approve')];
+    buttons.forEach(button => { button.disabled = true; });
+    try {
+        const raw = $('floor').value;
+        const floor = raw === '' ? null : Number(raw);
+        if (floor !== null && (!Number.isInteger(floor) || floor < 1)) throw Error('Floor must be a positive integer');
+        const result = await api('/api/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
+            body: JSON.stringify({ id: currentId, revision, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed })
+        });
+        revision = result.revision;
+        data.confirmed = confirmed;
+        dirty = false;
+        items.find(item => item.id === currentId).confirmed = confirmed;
+        renderOptions();
+        if (!confirmed) {
+            status('Draft saved; excluded from approved datasets.');
+            return;
+        }
+        const list = sessionItems();
+        const index = list.findIndex(item => item.id === currentId);
+        const next = [...list.slice(index + 1), ...list.slice(0, index)].find(item => !item.confirmed);
+        if (next) {
+            currentId = next.id;
+            remember();
+            renderOptions();
+            await load();
+        } else {
+            status('Session review complete — all ' + list.length + ' screens approved.');
+        }
+    } catch (error) {
+        status(error.message);
+    } finally {
+        buttons.forEach(button => { button.disabled = false; });
+    }
+}
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
 function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = (item.confirmed ? '✓ ' : '○ ') + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; $('progress').textContent = list.filter(x => x.confirmed).length + ' / ' + list.length + ' approved · screenshot ' + (index + 1) + ' / ' + list.length }
 function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); if (index + delta < 0 || index + delta >= list.length) return; if (dirty && !confirm('Discard unsaved edits?')) return; currentId = list[index + delta].id; remember(); renderOptions(); load() }
