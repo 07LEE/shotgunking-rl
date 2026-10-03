@@ -159,6 +159,13 @@ def make_server(collection, port=0):
                 if self.path == '/':
                     html = Path(__file__).with_name('review_collection.html').read_text().replace('__TOKEN__', token)
                     return self.reply(html.encode(), 'text/html; charset=utf-8')
+                static_files = {
+                    '/review_collection.css': 'text/css; charset=utf-8',
+                    '/review_collection.js': 'text/javascript; charset=utf-8',
+                }
+                if self.path in static_files:
+                    asset = Path(__file__).with_name(self.path[1:])
+                    return self.reply(asset.read_bytes(), static_files[self.path])
                 if self.path == '/api/items':
                     items = []
                     for path in annotation_paths(collection):
