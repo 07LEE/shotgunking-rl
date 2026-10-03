@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Piece Annotation Review</title>
+<style>
+body{font:16px system-ui;background:#15191f;color:#eee;margin:24px}main{display:flex;gap:24px;flex-wrap:wrap}aside{width:360px}select,input,button{font:inherit;padding:8px;margin:4px 0;background:#252c36;color:#eee;border:1px solid #667;border-radius:4px}select{width:100%}button{cursor:pointer}#board{position:relative;width:520px;height:520px;background:#333}#image{width:100%;height:100%}#grid{position:absolute;inset:0;display:grid;grid-template-columns:repeat(8,1fr)}.cell{margin:0;padding:0;border:1px solid #5f9a7890;border-radius:0;background:transparent;position:relative}.cell span{position:absolute;bottom:0;left:0;background:#000c;font-size:10px;padding:2px}.cell.selected{outline:3px solid #55ceff;z-index:1}.cell.excluded{background:#f338}.cell.excluded span{text-decoration:line-through}#status{white-space:pre-wrap;color:#9ddbd0}label{display:block;margin-top:12px}.help{color:#b9c2ce;font-size:14px}#crop{width:95%}
+</style>
+<h1>Piece Annotation Review</h1><p class="help">Check every cell, floor and game crop. Automatic labels are suggestions. Exclude overlays and uncertain cells before approval.</p>
+<main><section><div id="board"><img id="image" alt="Game board"><div id="grid"></div></div><p id="cellInfo">Select a cell to correct its label.</p></section><aside>
+<label>Screenshot<select id="items"></select></label>
+<button id="previous">Previous</button> <button id="next">Next</button>
+<label>Selected cell label<select id="label"></select></label>
+<label><input type="checkbox" id="excluded"> Exclude selected cell</label>
+<label>Floor <input id="floor" type="number" min="1"></label>
+<p id="split"></p>
+<label>Game crop: left, top, right, bottom<input id="crop"></label><button id="preview">Preview crop</button>
+<p class="help">Crop coordinates are in the original screenshot. Preview and check alignment before saving.</p>
+<button id="draft">Save draft</button> <button id="approve">Approve reviewed screen</button>
+<p id="status"></p>
+</aside></main>
+<script>
+const token='__TOKEN__', classes=['empty','player_king','pawn','knight','bishop','rook','queen','white_king'];
+const $=id=>document.getElementById(id);let items=[],data,revision,selected=[0,0],dirty=false;
+for(const c of classes){const o=document.createElement('option');o.value=c;o.textContent=c;$('label').append(o)}
+async function api(url,options){const r=await fetch(url,options);const a=await r.json();if(!r.ok)throw Error(a.error||r.statusText);return a}
+function status(s){$('status').textContent=s}
+function exclude(r,c){return data.exclude_cells.some(x=>x[0]===r&&x[1]===c)}
+function draw(){const grid=$('grid');grid.replaceChildren();for(let r=0;r<8;r++)for(let c=0;c<8;c++){const b=document.createElement('button');b.className='cell'+(exclude(r,c)?' excluded':'')+(selected[0]===r&&selected[1]===c?' selected':'');const square=String.fromCharCode(97+c)+(8-r);b.title=square+': '+data.board[r][c];const text=document.createElement('span');text.textContent=square+' '+data.board[r][c];b.append(text);b.onclick=()=>{selected=[r,c];draw()};grid.append(b)}const [r,c]=selected;$('label').value=data.board[r][c];$('excluded').checked=exclude(r,c);$('cellInfo').textContent=String.fromCharCode(97+c)+(8-r)+': '+data.board[r][c]}
+function cropValue(){const parts=$('crop').value.split(',').map(x=>x.trim());if(parts.length!==4||parts.some(x=>!/^\d+$/.test(x)))throw Error('Enter four nonnegative integer crop coordinates');return parts.map(Number)}
+function preview(){const crop=cropValue();$('image').src='/api/board?id='+encodeURIComponent($('items').value)+'&crop='+encodeURIComponent(JSON.stringify(crop))}
+async function load(){try{const a=await api('/api/item?id='+encodeURIComponent($('items').value));data=a.data;revision=a.revision;data.exclude_cells??=[];selected=[0,0];$('floor').value=data.floor??'';$('crop').value=data.game_crop.join(', ');$('split').textContent='Session split: '+data.split;preview();draw();dirty=false;status(data.confirmed?'Previously approved. Editing requires saving again.':'Draft: review all labels before approval.')}catch(e){status(e.message)}}
+$('image').onerror=()=>status('Board preview failed. Check crop coordinates.');
+$('items').onchange=()=>{if(dirty&&!confirm('Discard unsaved edits?')){$('items').value=currentId;return}currentId=$('items').value;load()};let currentId='';
+$('label').onchange=()=>{const[r,c]=selected;data.board[r][c]=$('label').value;dirty=true;draw()};
+$('excluded').onchange=()=>{const[r,c]=selected;data.exclude_cells=data.exclude_cells.filter(x=>x[0]!==r||x[1]!==c);if($('excluded').checked)data.exclude_cells.push([r,c]);dirty=true;draw()};
+for(const id of ['floor','crop'])$(id).oninput=()=>{dirty=true};
+$('preview').onclick=()=>{try{preview()}catch(e){status(e.message)}};
+async function save(confirmed){try{const raw=$('floor').value;const floor=raw===''?null:Number(raw);if(floor!==null&&(!Number.isInteger(floor)||floor<1))throw Error('Floor must be a positive integer');const result=await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json','X-Review-Token':token},body:JSON.stringify({id:currentId,revision,board:data.board,exclude_cells:data.exclude_cells,game_crop:cropValue(),floor,split:data.split,confirmed})});revision=result.revision;data.confirmed=confirmed;dirty=false;status(confirmed?'Approved and saved.':'Draft saved; excluded from approved datasets.');items.find(x=>x.id===currentId).confirmed=confirmed;renderOptions()}catch(e){status(e.message)}}
+$('draft').onclick=()=>save(false);$('approve').onclick=()=>save(true);
+function renderOptions(){const value=currentId;$('items').replaceChildren();for(const item of items){const o=document.createElement('option');o.value=item.id;o.textContent=(item.confirmed?'✓ ':'○ ')+item.session+' / '+item.id.split('/').pop();$('items').append(o)}$('items').value=value}
+function navigate(delta){const index=items.findIndex(x=>x.id===currentId);if(index+delta<0||index+delta>=items.length)return;if(dirty&&!confirm('Discard unsaved edits?'))return;currentId=items[index+delta].id;$('items').value=currentId;load()}
+$('previous').onclick=()=>navigate(-1);$('next').onclick=()=>navigate(1);
+window.onbeforeunload=e=>{if(dirty){e.preventDefault();e.returnValue=''}};
+(async()=>{try{items=await api('/api/items');if(!items.length){status('No annotations. Run with --session to prepare inbox images.');return}currentId=items.find(x=>!x.confirmed)?.id||items[0].id;renderOptions();await load()}catch(e){status(e.message)}})();
+</script></html>
