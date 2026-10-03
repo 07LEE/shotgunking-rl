@@ -56,8 +56,21 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
             raise ValueError(f"{path}: duplicate image already present in {image_groups[digest]}")
         image_groups[digest] = str(path)
         img = cv2.imread(str(image_path))
-        if img is None or img.shape[:2] != (720, 1280):
-            raise ValueError(f"{path}: expected readable 1280x720 image")
+        if img is None:
+            raise ValueError(f"{path}: unreadable image")
+        crop = data.get("game_crop")
+        if crop is not None:
+            if not isinstance(crop, list) or len(crop) != 4 or any(type(v) is not int for v in crop):
+                raise ValueError(f"{path}: game_crop must be [left, top, right, bottom]")
+            left, top, right, bottom = crop
+            if not (0 <= left < right <= img.shape[1] and 0 <= top < bottom <= img.shape[0]):
+                raise ValueError(f"{path}: game_crop is outside image bounds")
+            img = cv2.resize(img[top:bottom, left:right], (1280, 720), interpolation=cv2.INTER_AREA)
+        elif img.shape[:2] != (720, 1280):
+            raise ValueError(f"{path}: non-1280x720 image requires game_crop")
+        excluded = data.get("exclude_cells", [])
+        if not isinstance(excluded, list) or any(not isinstance(cell, list) or len(cell) != 2 or any(type(v) is not int or not 0 <= v < 8 for v in cell) for cell in excluded):
+            raise ValueError(f"{path}: exclude_cells must contain [row, col] pairs in 0..7")
         sources.append((path, data, digest, split, crop_chessboard(img)))
     if not sources:
         raise ValueError(f"No usable annotations ({skipped} unconfirmed skipped)")
@@ -67,6 +80,8 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
     for path, data, digest, split, board_img in sources:
         for row in range(8):
             for col in range(8):
+                if [row, col] in data.get("exclude_cells", []):
+                    continue
                 label = data["board"][row][col]
                 relative = Path(split) / label / f"{digest}_r{row}_c{col}.png"
                 target = output / relative
@@ -75,7 +90,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
                 if not cv2.imwrite(str(target), cell):
                     raise OSError(f"Could not write {target}")
                 counts[split][label] += 1
-                records.append({"path": relative.as_posix(), "label": label, "split": split, "session_id": data["session_id"], "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col})
+                records.append({"path": relative.as_posix(), "label": label, "split": split, "session_id": data["session_id"], "floor": data.get("floor"), "game_crop": data.get("game_crop"), "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col})
     (output / "manifest.jsonl").write_text("".join(json.dumps(record) + "\n" for record in records))
     summary = {"classes": list(CLASSES), "screens": len(sources), "cells": len(records), "skipped_unconfirmed": skipped, "counts": {split: {label: counts[split][label] for label in CLASSES} for split in counts}, "missing_classes": [label for label in CLASSES if not any(counts[s][label] for s in counts)], "evaluation_ready": all(sum(counts[s].values()) > 0 for s in counts) and all(counts["train"][label] > 0 for label in CLASSES) and all(r["confirmed"] for r in records)}
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
