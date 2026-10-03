@@ -50,6 +50,7 @@ details label { margin: 14px 0 10px; }
 .help { color: var(--muted); font-size: 12px; line-height: 1.7; }
 details .help { margin-top: 12px; }
 #status { white-space: pre-wrap; color: var(--accent); font-size: 12px; margin-top: 14px; }
+#status.error { color: #ffb8bd; background: #71323c40; border: 1px solid #a9596550; border-radius: 8px; padding: 10px 12px; }
 .board-frame { display: grid; grid-template-columns: 22px minmax(0, 1fr); grid-template-rows: 24px auto; gap: 4px; }
 .files, .ranks { display: grid; color: var(--muted); font: 12px ui-monospace, monospace; text-align: center; }
 .files { grid-column: 2; grid-template-columns: repeat(8, 1fr); align-items: center; }

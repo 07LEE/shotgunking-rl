@@ -35,7 +35,7 @@
                 <section class="panel controls"><div class="panel-heading"><div><p class="eyebrow">03 / CORRECT</p><h2>Cell &amp; screen details</h2></div></div>
                     <label>Selected cell label<select id="label"></select></label>
                     <label class="toggle exclude-toggle"><input type="checkbox" id="excluded"> Exclude this cell from training</label>
-                    <div class="metadata"><label>Floor<input id="floor" type="number" min="1" placeholder="Floor number"></label><p id="split" class="badge"></p></div>
+                    <div class="metadata"><label>Floor · required for approval<input id="floor" type="number" min="1" step="1" placeholder="Enter floor number"></label><p id="split" class="badge"></p></div>
                     <details><summary>Adjust game crop</summary><label>Left, top, right, bottom<input id="crop" spellcheck="false"></label><button id="preview">Preview crop</button><p class="help">Coordinates refer to the original screenshot. Check alignment before saving.</p></details>
                 </section>
                 <section class="panel controls save-panel"><p class="help">Check every cell, floor and crop. Automatic labels need your review.</p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve screen ✓</button></div><p id="status" role="status" aria-live="polite"></p></section>

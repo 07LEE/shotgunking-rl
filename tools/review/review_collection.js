@@ -5,7 +5,11 @@ function recalled() { try { return JSON.parse(localStorage.getItem('piece-review
 function sessionItems() { return items.filter(item => item.session === currentSession) }
 for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c; $('label').append(o) }
 async function api(url, options) { const r = await fetch(url, options); const a = await r.json(); if (!r.ok) throw Error(a.error || r.statusText); return a }
-function status(s) { $('status').textContent = s }
+function status(s, error = false) {
+    $('status').textContent = s;
+    $('status').classList.toggle('error', error);
+    if (error) $('status').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
 function exclude(r, c) { return data.exclude_cells.some(x => x[0] === r && x[1] === c) }
 function draw() {
     const grid = $('grid');
@@ -51,7 +55,14 @@ async function save(confirmed) {
     try {
         const raw = $('floor').value;
         const floor = raw === '' ? null : Number(raw);
-        if (floor !== null && (!Number.isInteger(floor) || floor < 1)) throw Error('Floor must be a positive integer');
+        if ((confirmed && floor === null) || (floor !== null && (!Number.isInteger(floor) || floor < 1))) {
+            $('floor').setCustomValidity('Enter a positive floor number before approval.');
+            $('floor').reportValidity();
+            $('floor').focus();
+            throw Error('Enter the floor number, then approve again.');
+        }
+        $('floor').setCustomValidity('');
+        status('Saving review…');
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
@@ -78,11 +89,12 @@ async function save(confirmed) {
             status('Session review complete — all ' + list.length + ' screens approved.');
         }
     } catch (error) {
-        status(error.message);
+        status('Not saved — ' + error.message, true);
     } finally {
         buttons.forEach(button => { button.disabled = false; });
     }
 }
+$('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
 function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = (item.confirmed ? '✓ ' : '○ ') + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; $('progress').textContent = list.filter(x => x.confirmed).length + ' / ' + list.length + ' approved · screenshot ' + (index + 1) + ' / ' + list.length }
 function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); if (index + delta < 0 || index + delta >= list.length) return; if (dirty && !confirm('Discard unsaved edits?')) return; currentId = list[index + delta].id; remember(); renderOptions(); load() }
