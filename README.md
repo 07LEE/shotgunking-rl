@@ -1,6 +1,8 @@
 # Shotgun King Reinforcement Learning Project
 
-![Shotgun King Gameplay](assets/image.png)
+![Shotgun King Gameplay](docs/assets/image.png)
+
+Piece templates, training screenshots, annotations, datasets, and model checkpoints are kept locally and excluded from Git. Offline image checks require the private assets and fixtures to be present. Documentation images in `docs/assets/` are included in Git.
 
 This project implements an automated gameplay and reinforcement learning system for the game Shotgun King. It processes the live game window via screen capture to construct state representations, which are then passed to a Deep Q-Network agent to optimize keyboard and mouse control simulations.
 

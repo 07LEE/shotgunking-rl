@@ -9,11 +9,20 @@ wheels/
 # Virtual environments
 .venv
 
-# 
+# Private game assets and training data
+/assets/
+tests/fixtures/
 data/
+datasets/
+**/piece_dataset*/
 
 # Trained models
 models/
+checkpoints/
+*.pth
+*.pt
+*.ckpt
+runs/
 
 # Live capture temporary outputs
 .temp/

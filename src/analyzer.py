@@ -5,6 +5,7 @@ and extracts a clean numerical state matrix representing piece positions.
 """
 
 import os
+from pathlib import Path
 
 try:
     import cv2
@@ -15,7 +16,7 @@ except ImportError:
 
 # Piece template paths and cache
 # If template file is missing, fallback to geometry classification
-PIECES_DIR = "data/pieces"
+PIECES_DIR = str(Path(__file__).resolve().parents[1] / "assets" / "pieces")
 _TEMPLATES = {}   # {piece_id: list of 45x45 uint8 grayscale signals}
 _TEMPLATES_LOADED = False
 _PREV_BOARD_IMG = None
@@ -59,7 +60,8 @@ def _load_templates():
                         path = os.path.join(PIECES_DIR, filename)
                         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
                         if img is not None:
-                            resized = cv2.resize(img, (45, 45))
+                            # Raw cell patches and extracted signals are different formats.
+                            resized = _extract_signal(img) if img.shape == (65, 65) else cv2.resize(img, (45, 45))
                             _TEMPLATES[piece_id].append(resized.astype(np.float32))
                 except ValueError:
                     pass
@@ -320,8 +322,9 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
 
             if best_score >= 0.50:      # confidence threshold
                 # Color Guard for enemy pieces (must be bright)
-                piece_pixels = gray[signal > 100]
-                if len(piece_pixels) > 0 and np.mean(piece_pixels) >= 145.0:
+                # The signal includes dark outlines on light tiles. Inspect the
+                # bright piece interior rather than averaging those outlines.
+                if np.count_nonzero(gray > 180) >= 30:
                     return best_piece
                 else:
                     return 0 # reject dark pieces (e.g. gun barrel)
@@ -338,8 +341,7 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
             return 0
 
         # Color Guard for fallback pieces (must be bright)
-        piece_pixels = gray[signal > 100]
-        if len(piece_pixels) > 0 and np.mean(piece_pixels) < 145.0:
+        if np.count_nonzero(gray > 180) < 30:
             return 0
 
         M = cv2.moments(c_white)
