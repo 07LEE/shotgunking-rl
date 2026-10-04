@@ -301,6 +301,76 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                                 
         return threat
 
+    def get_action_mask(self):
+        """Return valid actions for the current observation without game input."""
+        mask = np.zeros(self.action_space.n, dtype=np.float32)
+        if self.current_state is None:
+            return mask
+
+        board = self.current_state[:64].reshape(8, 8)
+        threat = self.current_state[64:128].reshape(8, 8)
+        king_positions = np.argwhere(board == 1)
+        if len(king_positions) > 0:
+            king_row, king_col = (int(value) for value in king_positions[0])
+        else:
+            king_row, king_col = self.king_row, self.king_col
+
+        directions = (
+            (-1, -1), (-1, 0), (-1, 1),
+            (0, -1), (0, 1),
+            (1, -1), (1, 0), (1, 1),
+        )
+        for action, (row_offset, col_offset) in enumerate(directions):
+            target_row = king_row + row_offset
+            target_col = king_col + col_offset
+            if 0 <= target_row < 8 and 0 <= target_col < 8:
+                mask[action] = float(
+                    board[target_row, target_col] == 0
+                    and threat[target_row, target_col] == 0
+                )
+
+        mask[8] = float(
+            self.loaded_ammo < self.max_ammo and self.reserve_ammo > 0
+        )
+        if self.loaded_ammo > 0:
+            for row_offset, col_offset in directions:
+                for distance in range(1, 8):
+                    target_row = king_row + row_offset * distance
+                    target_col = king_col + col_offset * distance
+                    if not (0 <= target_row < 8 and 0 <= target_col < 8):
+                        break
+                    piece = board[target_row, target_col]
+                    if piece >= 2:
+                        diagonal = row_offset != 0 and col_offset != 0
+                        effective_distance = distance * (1.414 if diagonal else 1.0)
+                        target_is_guarded = (
+                            piece == 6
+                            and self.royal_guard_active
+                            and np.any(board == 3)
+                        )
+                        if effective_distance <= self.range_limit and not target_is_guarded:
+                            mask[9] = 1.0
+                        break
+                    if piece == 1:
+                        break
+                if mask[9]:
+                    break
+
+        if self.move_range_bonus > 0:
+            for direction_index, (row_offset, col_offset) in enumerate(directions):
+                middle_row = king_row + row_offset
+                middle_col = king_col + col_offset
+                target_row = king_row + row_offset * 2
+                target_col = king_col + col_offset * 2
+                if 0 <= target_row < 8 and 0 <= target_col < 8:
+                    mask[10 + direction_index] = float(
+                        board[middle_row, middle_col] == 0
+                        and board[target_row, target_col] == 0
+                        and threat[target_row, target_col] == 0
+                    )
+
+        return mask
+
     def _get_obs(self, force_inject=True):
         """Captures screen and returns a 281-dimensional flat observation vector.
 
@@ -314,7 +384,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         image_path = "data/screenshot.png"
         
         # Ensure fresh screen capture
-        capture_screen(output_path=image_path, window_title=self.window_title)
+        if not capture_screen(output_path=image_path, window_title=self.window_title):
+            return np.zeros((281,), dtype=np.float32)
         
         if cv2 is not None and os.path.exists(image_path):
             img = cv2.imread(image_path)
@@ -1077,15 +1148,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_state = self._get_obs(force_inject=True)
         curr_board = self.current_state[:64].reshape(8, 8)
 
-        if is_popup:
-            reward = -15.0 - float(curr_enemies)
-            terminated = True
-            print(f"DQN Penalty: Detected retry popup via screen analysis! Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Clicking YES button (dynamic coordinates enabled).")
-            img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
-            tx, ty = self._get_yes_button_coords(img)
-            self._check_emergency_stop()
-            click_relative_in_window(self.window_title, tx, ty)
-            time.sleep(2.5)
         # Countdown defeat check: start counter when enemies drop to 6 or below, defeat after 12 turns
         if self.countdown_active:
             if self.countdown_trigger_step is None and 0 < curr_enemies <= 6:
@@ -1146,7 +1208,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 print(f"DQN Cards: Failed to record card outcome: {e}")
 
         info = {"step": self.current_step, "action": action}
-        return obs, reward, terminated, truncated, info
+        return self.current_state, reward, terminated, truncated, info
 
 
     def _handle_card_selection(self, img):

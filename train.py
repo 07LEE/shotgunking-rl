@@ -78,72 +78,11 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 step_idx += 1
                 total_step_count += 1
                 
-                # Direction diffs mapping: row_offset, col_offset
-                direction_diffs = {
-                    0: (-1, -1), 1: (-1, 0), 2: (-1, 1),
-                    3: (0, -1),             4: (0, 1),
-                    5: (1, -1),  6: (1, 0),  7: (1, 1)
-                }
+                # Calculate action mask for current state
+                action_mask = env.get_action_mask()
 
                 def is_action_valid(act):
-                    if env.current_state is None:
-                        return False
-                    board_state = env.current_state[:64].reshape(8, 8)
-                    threat_state = env.current_state[64:128].reshape(8, 8)
-                    
-                    if act in range(8):
-                        row_offset, col_offset = direction_diffs[act]
-                        target_row = env.king_row + row_offset
-                        target_col = env.king_col + col_offset
-                        if 0 <= target_row < 8 and 0 <= target_col < 8:
-                            return board_state[target_row, target_col] == 0 and threat_state[target_row, target_col] == 0
-                        return False
-                    elif act in range(10, 18):
-                        row_offset, col_offset = direction_diffs[act - 10]
-                        mid_row = env.king_row + row_offset
-                        mid_col = env.king_col + col_offset
-                        target_row = env.king_row + row_offset * 2
-                        target_col = env.king_col + col_offset * 2
-                        if 0 <= target_row < 8 and 0 <= target_col < 8:
-                            return board_state[mid_row, mid_col] == 0 and board_state[target_row, target_col] == 0 and threat_state[target_row, target_col] == 0
-                        return False
-                    elif act == 8:  # Reload
-                        return env.loaded_ammo < env.max_ammo and env.reserve_ammo > 0
-                    elif act == 9:  # Shoot
-                        if env.loaded_ammo <= 0:
-                            return False
-                        has_valid_target = False
-                        king_positions = np.argwhere(board_state == 1)
-                        if len(king_positions) > 0:
-                            k_row, k_col = int(king_positions[0][0]), int(king_positions[0][1])
-                        else:
-                            k_row, k_col = env.king_row, env.king_col
-                        directions = [
-                            (-1, -1), (-1, 0), (-1, 1),
-                            (0, -1),           (0, 1),
-                            (1, -1),  (1, 0),  (1, 1)
-                        ]
-                        for r_diff, c_diff in directions:
-                            for dist in range(1, 8):
-                                tr = k_row + r_diff * dist
-                                tc = k_col + c_diff * dist
-                                if 0 <= tr < 8 and 0 <= tc < 8:
-                                    piece = board_state[tr, tc]
-                                    if piece >= 2:
-                                        if dist <= env.range_limit:
-                                            has_valid_target = True
-                                        break
-                                    elif piece == 1:
-                                        break
-                                else:
-                                    break
-                            if has_valid_target:
-                                break
-                        return has_valid_target
-                    return True
-
-                # Calculate action mask for current state
-                action_mask = np.array([1 if is_action_valid(a) else 0 for a in range(env.action_space.n)], dtype=np.float32)
+                    return bool(action_mask[act])
 
                 # Calculate Q-values once per step to optimize performance by avoiding duplicate feed-forwards
                 q_values = None
@@ -296,7 +235,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 episode_reward += reward
                 
                 # Calculate next action mask for replay updates
-                next_action_mask = np.array([1 if is_action_valid(a) else 0 for a in range(env.action_space.n)], dtype=np.float32)
+                next_action_mask = env.get_action_mask()
 
                 # Store experience in replay memory with masks included
                 agent.remember(state, actual_action, reward, next_state, action_mask, next_action_mask, done)
