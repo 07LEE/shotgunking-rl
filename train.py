@@ -18,10 +18,24 @@ except ImportError:
 
 from env import ShotgunKingEnv
 from agent import DQNAgent
+from shotgun_king_rl.runtime.state import ACTION_DIRECTIONS
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
     SummaryWriter = None
+
+
+def remember_manual_defeat(agent, state, action, action_mask):
+    """Record a user-confirmed defeat with a complete replay transition."""
+    agent.remember(
+        state,
+        action,
+        -15.0,
+        state,
+        action_mask,
+        action_mask,
+        True,
+    )
 
 
 def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05):
@@ -160,7 +174,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         user_choice = input(f"\nRecommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad/r): ").strip()
                         if user_choice == ".":
                             print("User flagged defeat. Forcing episode termination...")
-                            agent.remember(state, action, -15.0, state, True)
+                            remember_manual_defeat(agent, state, action, action_mask)
                             break
                         
                         temp_action = action
@@ -180,7 +194,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
 
                         # Wall boundary and collision check details for move actions
                         if temp_action in range(8):
-                            row_offset, col_offset = direction_diffs[temp_action]
+                            row_offset, col_offset = ACTION_DIRECTIONS[temp_action]
                             target_row = env.king_row + row_offset
                             target_col = env.king_col + col_offset
                             

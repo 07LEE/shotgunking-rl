@@ -32,6 +32,13 @@ from input import click_relative_in_window, press_key
 from analyzer import get_state_matrix, check_retry_popup, check_card_selection_screen
 from weapons import WEAPON_PRESETS
 from specs import get_enemy_specs_matrices
+from shotgun_king_rl.runtime.state import (
+    ACTION_DIRECTIONS,
+    build_action_mask,
+    build_observation,
+    build_threat_matrix,
+    update_enemy_turns,
+)
 import sys
 
 # Ensure project root is in python path to support tools module imports
@@ -222,154 +229,22 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         return self._get_obs()
 
     def _get_threat_matrix(self, state):
-        """Calculates an 8x8 binary threat matrix projecting all enemy check line rays.
-
-        Args:
-            state: Current 8x8 board state representation.
-
-        Returns:
-            An 8x8 numpy array where 1 represents a dangerous check/attack zone.
-        """
-        threat = np.zeros((8, 8), dtype=np.int32)
-        
-        # Directions for check rays
-        straight_directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
-        diagonal_directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
-        
-        # Directions for Knight L-shapes
-        knight_offsets = [
-            (-2, -1), (-2, 1), (-1, -2), (-1, 2),
-            (1, -2), (1, 2), (2, -1), (2, 1)
-        ]
-        
-        # Scan the board for all enemy pieces (values >= 2 represent different enemy types)
-        for er in range(8):
-            for ec in range(8):
-                piece = state[er, ec]
-                if piece < 2:
-                    continue
-                    
-                # 1. Pawn (2): Attacks diagonally down by 1 tile (which is row + 1 on screen)
-                if piece == 2:
-                    for dc in [-1, 1]:
-                        tr, tc = er + 1, ec + dc
-                        if 0 <= tr < 8 and 0 <= tc < 8:
-                            threat[tr, tc] = 1
-                            
-                # 2. Knight (3): Attacks 8 L-shape coordinates
-                elif piece == 3:
-                    for dr, dc in knight_offsets:
-                        tr, tc = er + dr, ec + dc
-                        if 0 <= tr < 8 and 0 <= tc < 8:
-                            threat[tr, tc] = 1
-                            
-                # 3. Bishop (4): Radial diagonal rays (blocked by any piece)
-                elif piece == 4:
-                    for dr, dc in diagonal_directions:
-                        for dist in range(1, 8):
-                            tr, tc = er + dr * dist, ec + dc * dist
-                            if 0 <= tr < 8 and 0 <= tc < 8:
-                                threat[tr, tc] = 1
-                                if state[tr, tc] != 0:
-                                    break
-                            else:
-                                break
-                                
-                # 4. Rook (5): Radial straight rays (blocked by any piece)
-                elif piece == 5:
-                    for dr, dc in straight_directions:
-                        for dist in range(1, 8):
-                            tr, tc = er + dr * dist, ec + dc * dist
-                            if 0 <= tr < 8 and 0 <= tc < 8:
-                                threat[tr, tc] = 1
-                                if state[tr, tc] != 0:
-                                    break
-                            else:
-                                break
-                                
-                # 5. Queen / King (6): Both straight and diagonal rays (blocked by any piece)
-                elif piece == 6:
-                    for dr, dc in straight_directions + diagonal_directions:
-                        for dist in range(1, 8):
-                            tr, tc = er + dr * dist, ec + dc * dist
-                            if 0 <= tr < 8 and 0 <= tc < 8:
-                                threat[tr, tc] = 1
-                                if state[tr, tc] != 0:
-                                    break
-                            else:
-                                break
-                                
-        return threat
+        """Return the threat matrix through the pure runtime state module."""
+        return build_threat_matrix(state)
 
     def get_action_mask(self):
         """Return valid actions for the current observation without game input."""
-        mask = np.zeros(self.action_space.n, dtype=np.float32)
-        if self.current_state is None:
-            return mask
-
-        board = self.current_state[:64].reshape(8, 8)
-        threat = self.current_state[64:128].reshape(8, 8)
-        king_positions = np.argwhere(board == 1)
-        if len(king_positions) > 0:
-            king_row, king_col = (int(value) for value in king_positions[0])
-        else:
-            king_row, king_col = self.king_row, self.king_col
-
-        directions = (
-            (-1, -1), (-1, 0), (-1, 1),
-            (0, -1), (0, 1),
-            (1, -1), (1, 0), (1, 1),
+        return build_action_mask(
+            observation=self.current_state,
+            action_count=self.action_space.n,
+            tracked_king=(self.king_row, self.king_col),
+            loaded_ammo=self.loaded_ammo,
+            max_ammo=self.max_ammo,
+            reserve_ammo=self.reserve_ammo,
+            range_limit=self.range_limit,
+            royal_guard_active=self.royal_guard_active,
+            move_range_bonus=self.move_range_bonus,
         )
-        for action, (row_offset, col_offset) in enumerate(directions):
-            target_row = king_row + row_offset
-            target_col = king_col + col_offset
-            if 0 <= target_row < 8 and 0 <= target_col < 8:
-                mask[action] = float(
-                    board[target_row, target_col] == 0
-                    and threat[target_row, target_col] == 0
-                )
-
-        mask[8] = float(
-            self.loaded_ammo < self.max_ammo and self.reserve_ammo > 0
-        )
-        if self.loaded_ammo > 0:
-            for row_offset, col_offset in directions:
-                for distance in range(1, 8):
-                    target_row = king_row + row_offset * distance
-                    target_col = king_col + col_offset * distance
-                    if not (0 <= target_row < 8 and 0 <= target_col < 8):
-                        break
-                    piece = board[target_row, target_col]
-                    if piece >= 2:
-                        diagonal = row_offset != 0 and col_offset != 0
-                        effective_distance = distance * (1.414 if diagonal else 1.0)
-                        target_is_guarded = (
-                            piece == 6
-                            and self.royal_guard_active
-                            and np.any(board == 3)
-                        )
-                        if effective_distance <= self.range_limit and not target_is_guarded:
-                            mask[9] = 1.0
-                        break
-                    if piece == 1:
-                        break
-                if mask[9]:
-                    break
-
-        if self.move_range_bonus > 0:
-            for direction_index, (row_offset, col_offset) in enumerate(directions):
-                middle_row = king_row + row_offset
-                middle_col = king_col + col_offset
-                target_row = king_row + row_offset * 2
-                target_col = king_col + col_offset * 2
-                if 0 <= target_row < 8 and 0 <= target_col < 8:
-                    mask[10 + direction_index] = float(
-                        board[middle_row, middle_col] == 0
-                        and board[target_row, target_col] == 0
-                        and threat[target_row, target_col] == 0
-                    )
-
-        return mask
 
     def _get_obs(self, force_inject=True):
         """Captures screen and returns a 281-dimensional flat observation vector.
@@ -407,14 +282,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 # Construct HP and Turn Speed matrices for detected enemy pieces
                 hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns, self.rank)
 
-                flat_obs = np.concatenate([state.flatten(), threat.flatten()])
-                ammo_obs = np.array([self.loaded_ammo, self.reserve_ammo], dtype=np.float32)
-                weapon_obs = np.array([self.damage, self.range_limit, self.spread], dtype=np.float32)
-                status_obs = np.zeros((20,), dtype=np.float32)
-                if self.is_extra_turn_active:
-                    status_obs[0] = 1.0
-                enemy_spec_obs = np.concatenate([hp_matrix.flatten(), turn_matrix.flatten()])
-                return np.concatenate([flat_obs, ammo_obs, weapon_obs, status_obs, enemy_spec_obs])
+                return build_observation(
+                    board=state,
+                    threat=threat,
+                    loaded_ammo=self.loaded_ammo,
+                    reserve_ammo=self.reserve_ammo,
+                    damage=self.damage,
+                    range_limit=self.range_limit,
+                    spread=self.spread,
+                    extra_turn_active=self.is_extra_turn_active,
+                    hp_matrix=hp_matrix,
+                    turn_matrix=turn_matrix,
+                )
         
         # Fallback dummy observation if loading fails
         return np.zeros((281,), dtype=np.float32)
@@ -628,12 +507,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             best_is_threat = False
             
             # 8 directions to sweep radially for enemies
-            directions = [
-                (-1, -1), (-1, 0), (-1, 1),
-                (0, -1),           (0, 1),
-                (1, -1),  (1, 0),  (1, 1)
-            ]
-            for r_diff, c_diff in directions:
+            for r_diff, c_diff in ACTION_DIRECTIONS:
                 for dist in range(1, 8):
                     tr = king_row + r_diff * dist
                     tc = king_col + c_diff * dist
@@ -704,18 +578,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             is_two_tile = action in range(10, 18)
             act_dir = action - 10 if is_two_tile else action
             step_multiplier = 2 if is_two_tile else 1
-            direction_diffs = {
-                0: (-1, -1),  # Up-Left
-                1: (-1, 0),   # Up
-                2: (-1, 1),   # Up-Right
-                3: (0, -1),   # Left
-                4: (0, 1),    # Right
-                5: (1, -1),   # Down-Left
-                6: (1, 0),    # Down
-                7: (1, 1),    # Down-Right
-            }
-            
-            row_offset, col_offset = direction_diffs[act_dir]
+            row_offset, col_offset = ACTION_DIRECTIONS[act_dir]
             target_row = king_row + row_offset * step_multiplier
             target_col = king_col + col_offset * step_multiplier
             
@@ -729,7 +592,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 is_two = cand in range(10, 18)
                 d_idx = cand - 10 if is_two else cand
                 mult = 2 if is_two else 1
-                ro, co = direction_diffs[d_idx]
+                ro, co = ACTION_DIRECTIONS[d_idx]
                 tr = king_row + ro * mult
                 tc = king_col + co * mult
                 
@@ -748,7 +611,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 is_two = mv in range(10, 18)
                 d_idx = mv - 10 if is_two else mv
                 mult = 2 if is_two else 1
-                ro, co = direction_diffs[d_idx]
+                ro, co = ACTION_DIRECTIONS[d_idx]
                 tr = king_row + ro * mult
                 tc = king_col + co * mult
                 if threat_state[tr, tc] == 0:
@@ -772,7 +635,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             is_two_tile = action in range(10, 18)
             act_dir = action - 10 if is_two_tile else action
             step_multiplier = 2 if is_two_tile else 1
-            row_offset, col_offset = direction_diffs[act_dir]
+            row_offset, col_offset = ACTION_DIRECTIONS[act_dir]
             target_row = king_row + row_offset * step_multiplier
             target_col = king_col + col_offset * step_multiplier
             
@@ -828,14 +691,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             # Shoot (Intel aimed click bypassing the 1-tile move physics rule)
             min_dist = 99
             best_diff = None
-            directions = [
-                (-1, -1), (-1, 0), (-1, 1),
-                (0, -1),           (0, 1),
-                (1, -1),  (1, 0),  (1, 1)
-            ]
             best_is_threat = False
             
-            for r_diff, c_diff in directions:
+            for r_diff, c_diff in ACTION_DIRECTIONS:
                 for dist in range(1, 8):
                     tr = king_row + r_diff * dist
                     tc = king_col + c_diff * dist
@@ -944,51 +802,14 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             self.is_extra_turn_active = False
 
         # Update Enemy Turn Counter Simulation Logically
-        new_enemy_turns = {}
         from specs import ENEMY_SPECS
-
-        # Find matching previous positions for each active enemy piece on current board
-        for cr in range(8):
-            for cc in range(8):
-                val = int(curr_board[cr, cc])
-                if val >= 2:  # Enemy piece detected on current board
-                    # Attempt to find the coordinate this piece moved from
-                    prev_coords = []
-                    for pr in range(8):
-                        for pc in range(8):
-                            if int(board_state[pr, pc]) == val:
-                                prev_coords.append((pr, pc))
-
-                    # Decide the source coordinate (closest to current coord is logical)
-                    matched_prev = None
-                    if len(prev_coords) > 0:
-                        min_d = 99
-                        for pr, pc in prev_coords:
-                            d = abs(cr - pr) + abs(cc - pc)
-                            if d < min_d:
-                                min_d = d
-                                matched_prev = (pr, pc)
-
-                    # Determine if it moved or stood still
-                    is_moved = True
-                    if matched_prev is not None:
-                        if matched_prev == (cr, cc):
-                            is_moved = False
-
-                    # Assign turn state
-                    if is_moved or matched_prev not in self.enemy_turns:
-                        new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
-                    else:
-                        prev_turn = self.enemy_turns[matched_prev]
-                        if is_melee_kill and self.melee_kill_extra_turn:
-                            new_enemy_turns[(cr, cc)] = prev_turn
-                        else:
-                            if prev_turn <= 0.0:
-                                new_enemy_turns[(cr, cc)] = ENEMY_SPECS[val]["turn"]
-                            else:
-                                new_enemy_turns[(cr, cc)] = max(0.0, prev_turn - 1.0)
-
-        self.enemy_turns = new_enemy_turns
+        self.enemy_turns = update_enemy_turns(
+            previous_board=board_state,
+            current_board=curr_board,
+            previous_turns=self.enemy_turns,
+            enemy_specs=ENEMY_SPECS,
+            preserve_turns=is_melee_kill and self.melee_kill_extra_turn,
+        )
 
         # Calculate reward metrics
         
