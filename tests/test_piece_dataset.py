@@ -23,7 +23,7 @@ class PieceDatasetTests(unittest.TestCase):
             summary = build_dataset(ROOT / "data/test_fixtures/piece_annotations", output, True)
             self.assertEqual(summary["cells"], 64)
             self.assertEqual(summary["counts"]["train"]["white_king"], 1)
-            self.assertEqual(summary["missing_classes"], ["rook", "queen"])
+            self.assertEqual(summary["missing_classes"], ["rook", "queen", "special_knight"])
             self.assertFalse(summary["evaluation_ready"])
             records = [json.loads(line) for line in (output / "manifest.jsonl").read_text().splitlines()]
             self.assertEqual({r["split"] for r in records}, {"train"})

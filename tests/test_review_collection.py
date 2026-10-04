@@ -29,8 +29,12 @@ class ReviewCollectionTests(unittest.TestCase):
             relative = 'sessions/test-session/annotations/screen.png.json'
             path, data, _, revision = load_item(collection, relative)
             payload = dict(data, id=relative, revision=revision, floor=1, confirmed=True)
+            payload['board'][0][6] = 'special_knight'
+            payload['screen_state'] = {'stats': {'attack': 4}, 'cards': {'left': ['unknown']}, 'locked_cells': [[1, 2]], 'reviewed': True}
             saved = save_item(collection, payload)
             self.assertTrue(saved['confirmed'])
+            self.assertEqual(json.loads(path.read_text())['screen_state']['stats']['attack'], 4)
+            self.assertEqual(json.loads(path.read_text())['board'][0][6], 'special_knight')
             raw = path.read_bytes()
             self.assertEqual(prepare_session(collection, 'test-session')['created'], 0)
             self.assertEqual(path.read_bytes(), raw)
@@ -55,3 +59,20 @@ class ReviewCollectionTests(unittest.TestCase):
             _, data, _, revision = load_item(collection, relative)
             with self.assertRaisesRegex(ValueError, 'floor'):
                 save_item(collection, dict(data, id=relative, revision=revision, confirmed=True))
+
+
+class ScreenStateTests(unittest.TestCase):
+    def test_unknown_and_empty_cards_are_distinct(self):
+        from review_collection import validate_screen_state
+        unknown = validate_screen_state({})
+        self.assertIsNone(unknown['stats']['attack'])
+        self.assertIsNone(unknown['cards']['left'])
+        reviewed = validate_screen_state({'stats': {'attack': 4, 'range_min': 3, 'range_max': 5}, 'cards': {'left': ['unknown'], 'right': []}, 'locked_cells': [[1, 2]], 'reviewed': True})
+        self.assertEqual(reviewed['locked_cells'], [[1, 2]])
+        self.assertEqual(reviewed['cards']['right'], [])
+
+    def test_invalid_state_is_rejected(self):
+        from review_collection import validate_screen_state
+        for value in ({'stats': {'attack': -1}}, {'stats': {'attack': True}}, {'stats': {'range_min': 5, 'range_max': 3}}, {'cards': {'left': 'knight'}}, {'locked_cells': [[8, 2]]}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_screen_state(value)

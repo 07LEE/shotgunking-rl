@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 from analyzer import crop_chessboard
 
-CLASSES = ("empty", "player_king", "pawn", "knight", "bishop", "rook", "queen", "white_king")
+CLASSES = ("empty", "player_king", "pawn", "knight", "bishop", "rook", "queen", "white_king", "special_knight")
 
 
 def group_split(group):
@@ -91,7 +91,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
                 if not cv2.imwrite(str(target), cell):
                     raise OSError(f"Could not write {target}")
                 counts[split][label] += 1
-                records.append({"path": relative.as_posix(), "label": label, "split": split, "session_id": data["session_id"], "floor": data.get("floor"), "game_crop": data.get("game_crop"), "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col})
+                records.append({"path": relative.as_posix(), "label": label, "split": split, "session_id": data["session_id"], "floor": data.get("floor"), "game_crop": data.get("game_crop"), "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col, "locked": [row, col] in data.get("screen_state", {}).get("locked_cells", []), "screen_state": data.get("screen_state")})
     (output / "manifest.jsonl").write_text("".join(json.dumps(record) + "\n" for record in records))
     summary = {"classes": list(CLASSES), "screens": len(sources), "cells": len(records), "skipped_unconfirmed": skipped, "counts": {split: {label: counts[split][label] for label in CLASSES} for split in counts}, "missing_classes": [label for label in CLASSES if not any(counts[s][label] for s in counts)], "evaluation_ready": all(sum(counts[s].values()) > 0 for s in counts) and all(counts["train"][label] > 0 for label in CLASSES) and all(r["confirmed"] for r in records)}
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

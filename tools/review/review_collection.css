@@ -95,3 +95,7 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
 #grid.show-labels .cell span.empty-label { background: #d3d5dcde; color: #333640; }
 #grid.show-labels .cell.selected span.piece-label { background: #42435ce6; color: #fff; }
 #grid.show-labels .cell.excluded span { background: #63333ce6; color: #ffd5dc; }
+
+#fullImage { width: 100%; display: block; margin: 14px 0; border-radius: 8px; }
+.stat-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+textarea { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 7px 0 14px; font: inherit; resize: vertical; }

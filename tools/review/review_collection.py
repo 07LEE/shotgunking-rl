@@ -42,6 +42,37 @@ def load_item(collection, relative):
     return path, data, image, hashlib.sha256(raw).hexdigest()
 
 
+STAT_FIELDS = ('ammo_loaded', 'ammo_reserve', 'attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent')
+
+
+def validate_screen_state(value):
+    if not isinstance(value, dict):
+        raise ValueError('Invalid screen state')
+    stats = value.get('stats', {})
+    if not isinstance(stats, dict) or set(stats) - set(STAT_FIELDS):
+        raise ValueError('Invalid combat stats')
+    for key, number in stats.items():
+        if number is not None and (type(number) is not int or number < 0):
+            raise ValueError(f'{key} must be a nonnegative integer or unknown')
+    if stats.get('range_min') is not None and stats.get('range_max') is not None and stats['range_min'] > stats['range_max']:
+        raise ValueError('Minimum range exceeds maximum range')
+    if stats.get('knockback_percent') is not None and stats['knockback_percent'] > 100:
+        raise ValueError('Knockback must be at most 100 percent')
+    cards = value.get('cards', {})
+    if not isinstance(cards, dict) or set(cards) - {'left', 'right'}:
+        raise ValueError('Invalid card sides')
+    for entries in cards.values():
+        if entries is not None and (not isinstance(entries, list) or len(entries) > 14 or any(not isinstance(entry, str) or not entry.strip() or len(entry) > 300 for entry in entries)):
+            raise ValueError('Cards must be slot-ordered names or unknown')
+    locked = value.get('locked_cells', [])
+    if not isinstance(locked, list) or any(not isinstance(cell, list) or len(cell) != 2 or any(type(v) is not int or not 0 <= v < 8 for v in cell) for cell in locked):
+        raise ValueError('Invalid locked cells')
+    reviewed = value.get('reviewed', False)
+    if type(reviewed) is not bool:
+        raise ValueError('Invalid screen state review flag')
+    return {'stats': {key: stats.get(key) for key in STAT_FIELDS}, 'cards': {side: cards.get(side) for side in ('left', 'right')}, 'locked_cells': locked, 'reviewed': reviewed}
+
+
 def save_item(collection, payload):
     path, current, image, revision = load_item(collection, payload['id'])
     if payload.get('revision') != revision:
@@ -68,7 +99,8 @@ def save_item(collection, payload):
         other = json.loads(sibling.read_text())
         if sibling != path and other.get('split', group_split(current['session_id'])) != split:
             raise ValueError('Keep the session split unchanged; change the entire session together')
-    current.update(board=board, floor=floor, split=split, confirmed=payload['confirmed'], game_crop=payload['game_crop'], exclude_cells=excluded)
+    screen_state = validate_screen_state(payload.get('screen_state', current.get('screen_state', {})))
+    current.update(screen_state=screen_state, board=board, floor=floor, split=split, confirmed=payload['confirmed'], game_crop=payload['game_crop'], exclude_cells=excluded)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(current, indent=2) + '\n')
     temporary.replace(path)
@@ -114,6 +146,11 @@ def make_server(collection, port=0):
                 path, data, image, revision = load_item(collection, query['id'][0])
                 if self.path.startswith('/api/item?'):
                     return self.reply(json.dumps({'data': data, 'revision': revision}).encode())
+                if self.path.startswith('/api/screen?'):
+                    ok, encoded = cv2.imencode('.png', normalize(image, data['game_crop']))
+                    if not ok:
+                        raise ValueError('Image encoding failed')
+                    return self.reply(encoded.tobytes(), 'image/png')
                 if self.path.startswith('/api/board?'):
                     crop = json.loads(query['crop'][0]) if 'crop' in query else data['game_crop']
                     board = analyzer.crop_chessboard(normalize(image, crop))

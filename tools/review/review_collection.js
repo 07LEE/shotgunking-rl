@@ -1,4 +1,5 @@
-const token = document.querySelector('meta[name=review-token]').content, classes = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king'];
+const statFields = ['ammo_loaded', 'ammo_reserve', 'attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent'];
+const token = document.querySelector('meta[name=review-token]').content, classes = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
 const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '';
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }
@@ -23,7 +24,7 @@ function draw() {
             button.setAttribute('aria-label', button.title);
             const text = document.createElement('span');
             text.className = data.board[r][c] === 'empty' ? 'empty-label' : 'piece-label';
-            text.textContent = data.board[r][c].replace('player_king', 'Player king').replace('white_king', 'White king');
+            text.textContent = data.board[r][c].replace('player_king', 'Player king').replace('white_king', 'White king').replace('special_knight', 'Special N');
             button.append(text);
             button.onclick = () => { selected = [r, c]; draw(); };
             grid.append(button);
@@ -32,6 +33,7 @@ function draw() {
     const [r, c] = selected;
     $('label').value = data.board[r][c];
     $('excluded').checked = exclude(r, c);
+    $('locked').checked = data.screen_state.locked_cells.some(x => x[0] === r && x[1] === c);
     $('cellInfo').textContent = String.fromCharCode(97 + c) + (8 - r) + ': ' + data.board[r][c];
 }
 function labelView() {
@@ -41,10 +43,12 @@ $('showLabels').onchange = labelView;
 labelView();
 function cropValue() { const parts = $('crop').value.split(',').map(x => x.trim()); if (parts.length !== 4 || parts.some(x => !/^\d+$/.test(x))) throw Error('Enter four nonnegative integer crop coordinates'); return parts.map(Number) }
 function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent($('items').value) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
-async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; preview(); draw(); dirty = false; status(data.confirmed ? 'Previously approved. Editing requires saving again.' : 'Draft: review all labels before approval.') } catch (e) { status(e.message) } }
+async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; for (const key of statFields) $(key).value = data.screen_state.stats?.[key] ?? ''; for (const side of ['left', 'right']) $('cards_' + side).value = (data.screen_state.cards?.[side] || []).join('\n'); $('stateReviewed').checked = data.screen_state.reviewed === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; preview(); draw(); dirty = false; status(data.confirmed ? 'Previously approved. Editing requires saving again.' : 'Draft: review all labels before approval.') } catch (e) { status(e.message) } }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
 $('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
 $('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } currentSession = $('sessions').value; const list = sessionItems(); currentId = list.find(x => !x.confirmed)?.id || list[0].id; remember(); renderOptions(); load() };
+$('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked_cells = data.screen_state.locked_cells.filter(x => x[0] !== r || x[1] !== c); if ($('locked').checked) data.screen_state.locked_cells.push([r, c]); dirty = true; draw() };
+for (const id of [...statFields, 'cards_left', 'cards_right', 'stateReviewed']) $(id).oninput = () => { dirty = true };
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; dirty = true; draw() };
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
 for (const id of ['floor', 'crop']) $(id).oninput = () => { dirty = true };
@@ -62,11 +66,16 @@ async function save(confirmed) {
             throw Error('Enter the floor number, then approve again.');
         }
         $('floor').setCustomValidity('');
+        const stats = Object.fromEntries(statFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
+        if (Object.values(stats).some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Combat stats must be nonnegative integers.');
+        const reviewed = $('stateReviewed').checked;
+        const cards = Object.fromEntries(['left', 'right'].map(side => { const entries = $('cards_' + side).value.split('\n').map(x => x.trim()).filter(Boolean); return [side, entries.length || reviewed ? entries : null]; }));
+        data.screen_state = { stats, cards, locked_cells: data.screen_state.locked_cells, reviewed };
         status('Saving review…');
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
-            body: JSON.stringify({ id: currentId, revision, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed })
+            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed })
         });
         revision = result.revision;
         data.confirmed = confirmed;
