@@ -44,6 +44,7 @@ from shotgun_king_rl.runtime.actions import (
     detect_promotion,
     select_shot_target,
 )
+from shotgun_king_rl.runtime.rewards import calculate_step_reward
 from shotgun_king_rl.runtime.transitions import apply_terminal_rules, update_countdown
 import sys
 
@@ -500,6 +501,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         )
         min_dist = shot_target.distance if shot_target is not None else 99
         best_diff = shot_target.direction if shot_target is not None else None
+        shot_was_melee = False
 
         # Ammo, Range & Target Validations for Shoot Guard
         if action == 9:
@@ -611,6 +613,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 if min_dist == 1 and self.melee_damage > 0.0:
                     if self.loaded_ammo <= 0 or self.melee_damage >= self.damage:
                         shoot_dist = 1
+                        shot_was_melee = True
                     else:
                         shoot_dist = 2
                 else:
@@ -645,18 +648,40 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         curr_board = self.current_state[:64].reshape(8, 8)
         curr_threat = self.current_state[64:128].reshape(8, 8)
 
-        # Calculate intermediate kill counts for turn skip decisions
         curr_enemies = np.sum(curr_board >= 2)
-        killed_enemies = max(0, prev_enemies - curr_enemies)
-        if action != 9:
-            killed_enemies = 0
 
-        # Determine if a melee kill actually occurred
-        is_melee_kill = False
-        if action == 9 and killed_enemies > 0:
-            if min_dist == 1 and self.melee_damage > 0.0:
-                if self.loaded_ammo <= 0 or self.melee_damage >= self.damage:
-                    is_melee_kill = True
+        target_hp = 0.0
+        if shot_target is not None:
+            target_row = king_row + shot_target.direction[0] * shot_target.distance
+            target_col = king_col + shot_target.direction[1] * shot_target.distance
+            target_hp = float(hp_matrix[target_row, target_col])
+
+        reward_result = calculate_step_reward(
+            original_action=original_action,
+            executed_action=action,
+            previous_enemy_count=prev_enemies,
+            shot_board=board_state,
+            current_board=curr_board,
+            current_threat=curr_threat,
+            king_position=(king_row, king_col),
+            shot_target=shot_target,
+            valid_shot_target=has_valid_target,
+            shot_was_melee=shot_was_melee,
+            damage=self.damage,
+            melee_damage=self.melee_damage,
+            melee_kill_extra_turn=self.melee_kill_extra_turn,
+            falloff_start=self.falloff_start,
+            range_limit=self.range_limit,
+            spread=self.spread,
+            pierce_chance=self.pierce_chance,
+            knockback_chance=self.knockback_chance,
+            target_hp=target_hp,
+            promotion_detected=promotion_detected,
+        )
+        reward = reward_result.reward
+        killed_enemies = reward_result.killed_enemies
+        is_melee_kill = reward_result.melee_kill
+        is_threatened = reward_result.threatened
 
         # Update extra turn activation state for observation
         if is_melee_kill and self.melee_kill_extra_turn:
@@ -674,119 +699,25 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             preserve_turns=is_melee_kill and self.melee_kill_extra_turn,
         )
 
-        # Calculate reward metrics
-        
-        # Base step penalty (discourage wasting turns)
-        reward = -0.1
-        
-        # Expected damage calculation based on distance and spread if a shoot attempt or action occurs
-        expected_damage = 0.0
-        if original_action == 9 or action == 9:
-            if has_valid_target and min_dist <= self.range_limit:
-                # Determine if melee attack was executed
-                is_melee = False
-                if min_dist == 1 and self.melee_damage > 0.0:
-                    if self.loaded_ammo <= 0 or self.melee_damage >= self.damage:
-                        is_melee = True
-                
-                if is_melee:
-                    expected_damage = self.melee_damage
-                    # If melee kill is expected, add bonus to reflect extra turn advantage
-                    if self.melee_kill_extra_turn:
-                        target_hp = hp_matrix[target_row, target_col]
-                        if self.melee_damage >= target_hp:
-                            expected_damage += 1.5
-                else:
-                    # 1. Distance falloff calculation
-                    if min_dist <= self.falloff_start:
-                        dist_factor = 1.0
-                    else:
-                        denom_falloff = float(self.range_limit - self.falloff_start)
-                        dist_factor = 1.0 - 0.5 * (float(min_dist - self.falloff_start) / denom_falloff) if denom_falloff > 0 else 1.0
-                    
-                    # 2. Spread-based hit probability calculation
-                    denom_range = float(self.range_limit)
-                    hit_prob = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist - 1) / denom_range)) if denom_range > 0 else 1.0
-                    
-                    expected_damage = self.damage * dist_factor * hit_prob
-
-                # 3. Optional pierce damage calculation for a second target behind the first
-                if self.pierce_chance > 0.0 and best_diff is not None:
-                    r_diff, c_diff = best_diff
-                    min_dist_2 = 99
-                    for dist_2 in range(min_dist + 1, self.range_limit + 1):
-                        tr = king_row + r_diff * dist_2
-                        tc = king_col + c_diff * dist_2
-                        if 0 <= tr < 8 and 0 <= tc < 8:
-                            if board_state[tr, tc] >= 2:
-                                min_dist_2 = dist_2
-                                break
-                            elif board_state[tr, tc] == 1:
-                                break
-                        else:
-                            break
-                    
-                    if min_dist_2 <= self.range_limit:
-                        if min_dist_2 <= self.falloff_start:
-                            dist_factor_2 = 1.0
-                        else:
-                            denom_falloff_2 = float(self.range_limit - self.falloff_start)
-                            dist_factor_2 = 1.0 - 0.5 * (float(min_dist_2 - self.falloff_start) / denom_falloff_2) if denom_falloff_2 > 0 else 1.0
-                        
-                        hit_prob_2 = max(0.2, 1.0 - (self.spread / 120.0) * (float(min_dist_2 - 1) / denom_range)) if denom_range > 0 else 1.0
-                        expected_damage_2 = self.damage * dist_factor_2 * hit_prob_2
-                        expected_damage += self.pierce_chance * expected_damage_2
-
-                # 4. Optional knockback / Fall-off instant kill expectation reward
-                expected_knockback_reward = 0.0
-                if self.knockback_chance > 0.0 and best_diff is not None:
-                    r_diff, c_diff = best_diff
-                    tr_back = king_row + r_diff * (min_dist + 1)
-                    tc_back = king_col + c_diff * (min_dist + 1)
-                    is_out_of_bounds = not (0 <= tr_back < 8 and 0 <= tc_back < 8)
-                    
-                    if is_out_of_bounds:
-                        expected_knockback_reward = self.knockback_chance * 2.0
-                    else:
-                        expected_knockback_reward = self.knockback_chance * 0.4
-
-        # Major reward for killing enemies
         if killed_enemies > 0:
-            reward += killed_enemies * 2.0
-            if expected_damage > 0:
-                reward += expected_damage * 0.3
-            if expected_knockback_reward > 0:
-                reward += expected_knockback_reward
-            print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{killed_enemies * 2.0 + expected_damage * 0.3 + expected_knockback_reward:.2f} (including {expected_damage * 0.3:.2f} damage, {expected_knockback_reward:.2f} knockback reward)")
-            
-        # Waste-shooting penalty / Encouragement reward
-        if action == 9:
-            if killed_enemies == 0:
-                if has_valid_target:
-                    reward += expected_damage * 0.3 + expected_knockback_reward
-                    print(f"DQN Reward: Fired shoot action at a target with expected damage {expected_damage:.2f} but killed no enemies. Added +{expected_damage * 0.3 + expected_knockback_reward:.2f} (including {expected_knockback_reward:.2f} knockback reward)")
-                else:
-                    reward -= 0.8
-                    print("DQN Penalty: Fired shoot action but no target was in range. Subtracted -0.8")
-        elif original_action == 9 and action != 9:
-            # Attempted to shoot but got overridden by DQN Guard (e.g. out of range / spread issues)
-            if not has_valid_target:
-                reward -= 0.8
-                print("DQN Penalty: Attempted shoot action but no target was in range (Action Guarded). Subtracted -0.8")
+            added = (
+                killed_enemies * 2.0
+                + reward_result.expected_damage * 0.3
+                + reward_result.expected_knockback_reward
+            )
+            print(f"DQN Reward: Killed {killed_enemies} enemy/enemies! Added +{added:.2f} (including {reward_result.expected_damage * 0.3:.2f} damage, {reward_result.expected_knockback_reward:.2f} knockback reward)")
+        elif action == 9:
+            if has_valid_target:
+                added = reward_result.expected_damage * 0.3 + reward_result.expected_knockback_reward
+                print(f"DQN Reward: Fired shoot action at a target with expected damage {reward_result.expected_damage:.2f} but killed no enemies. Added +{added:.2f} (including {reward_result.expected_knockback_reward:.2f} knockback reward)")
+            else:
+                print("DQN Penalty: Fired shoot action but no target was in range. Subtracted -0.8")
+        elif reward_result.invalid_shot_attempt:
+            print("DQN Penalty: Attempted shoot action but no target was in range (Action Guarded). Subtracted -0.8")
 
-        # Threat exposure evaluation (impose penalty if King stands inside enemy check lines)
-        king_positions = np.argwhere(curr_board == 1)
-        is_threatened = False
-        if len(king_positions) > 0:
-            king_row, king_col = king_positions[0]
-            if curr_threat[king_row, king_col] == 1:
-                reward -= 1.5
-                is_threatened = True
-                print("DQN Penalty: Exposed to enemy checkmate threat zone! Subtracted -1.5")
-
-        # Pawn promotion evaluation
+        if is_threatened:
+            print("DQN Penalty: Exposed to enemy checkmate threat zone! Subtracted -1.5")
         if promotion_detected:
-            reward -= 3.0
             print("DQN Penalty: Enemy Pawn promoted! Subtracted -3.0")
 
         # Evaluate real King presence without force injection for defeat detection

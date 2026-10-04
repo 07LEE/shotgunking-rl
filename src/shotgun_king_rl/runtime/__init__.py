@@ -14,10 +14,12 @@ from .state import (
     build_threat_matrix,
     update_enemy_turns,
 )
+from .rewards import RewardResult, calculate_step_reward
 from .transitions import TerminalResult, apply_terminal_rules, update_countdown
 
 __all__ = [
     "ACTION_DIRECTIONS",
+    "RewardResult",
     "ShotTarget",
     "TerminalResult",
     "action_destination",
@@ -26,6 +28,7 @@ __all__ = [
     "build_action_mask",
     "build_observation",
     "build_threat_matrix",
+    "calculate_step_reward",
     "detect_promotion",
     "select_shot_target",
     "update_countdown",
