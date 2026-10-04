@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / 'src'))
 import analyzer
 from build_piece_dataset import group_split
 from import_collection import import_images
+from screen_state import propose
 
 COLLECTION = ROOT / 'data/collection'
 
@@ -72,6 +73,7 @@ def prepare_session(collection, session_id, crop=None):
             ids = analyzer.get_state_matrix(screen)
             names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king']
             data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_path.name, 'session_id': session_id, 'floor': None, 'split': group_split(session_id), 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
+            data.update(propose(screen, collection))
             annotation.write_text(json.dumps(data, indent=2) + '\n')
             created += 1
         except ValueError as exc:

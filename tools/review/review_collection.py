@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / 'tools/preprocess'))
 import analyzer
 from build_piece_dataset import CLASSES, group_split
 from prepare_collection import prepare_session, normalize
+from screen_state import propose
 
 COLLECTION = ROOT / 'data/collection'
 
@@ -163,7 +164,7 @@ def make_server(collection, port=0):
                 self.reply(json.dumps({'error': str(exc)}).encode(), status=400)
 
         def do_POST(self):
-            if self.path != '/api/save' or self.headers.get('X-Review-Token') != token:
+            if self.path not in ('/api/save', '/api/predict') or self.headers.get('X-Review-Token') != token:
                 return self.reply(b'{"error":"Unauthorized"}', status=403)
             try:
                 size = int(self.headers.get('Content-Length', '0'))
@@ -171,7 +172,13 @@ def make_server(collection, port=0):
                     raise ValueError('Invalid request size')
                 payload = json.loads(self.rfile.read(size))
                 with lock:
-                    result = save_item(collection, payload)
+                    if self.path == '/api/predict':
+                        path, data, image, revision = load_item(collection, payload['id'])
+                        if payload.get('revision') != revision:
+                            raise ValueError('Annotation changed; reload before predicting')
+                        result = propose(normalize(image, payload['game_crop']), collection, exclude=path)
+                    else:
+                        result = save_item(collection, payload)
                 self.reply(json.dumps(result).encode())
             except (ValueError, KeyError, TypeError, OSError) as exc:
                 self.reply(json.dumps({'error': str(exc)}).encode(), status=400)

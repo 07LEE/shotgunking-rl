@@ -60,6 +60,7 @@ async function save(confirmed) {
         const raw = $('floor').value;
         const floor = raw === '' ? null : Number(raw);
         if ((confirmed && floor === null) || (floor !== null && (!Number.isInteger(floor) || floor < 1))) {
+            switchReviewTab('screen');
             $('floor').setCustomValidity('Enter a positive floor number before approval.');
             $('floor').reportValidity();
             $('floor').focus();
@@ -110,3 +111,42 @@ function navigate(delta) { const list = sessionItems(); const index = list.findI
 $('previous').onclick = () => navigate(-1); $('next').onclick = () => navigate(1);
 window.onbeforeunload = e => { if (dirty) { e.preventDefault(); e.returnValue = '' } };
 (async () => { try { items = await api('/api/items'); if (!items.length) { status('No annotations. Run with --session to prepare inbox images.'); return } const sessions = [...new Set(items.map(x => x.session))]; const saved = recalled(); currentSession = sessions.includes(saved.session) ? saved.session : sessions[0]; for (const session of sessions) { const o = document.createElement('option'); o.value = session; o.textContent = session; $('sessions').append(o) } $('sessions').value = currentSession; const list = sessionItems(); currentId = list.some(x => x.id === saved.id) ? saved.id : (list.find(x => !x.confirmed)?.id || list[0].id); remember(); renderOptions(); await load() } catch (e) { status(e.message) } })();
+
+$('predictState').onclick = async () => {
+    $('predictState').disabled = true;
+    try {
+        const result = await api('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': token }, body: JSON.stringify({ id: currentId, revision, game_crop: cropValue() }) });
+        let count = 0;
+        for (const key of statFields) if ($(key).value === '' && result.screen_state.stats[key] !== null) { $(key).value = result.screen_state.stats[key]; count++; }
+        for (const side of ['left', 'right']) if ($('cards_' + side).value.trim() === '' && result.screen_state.cards[side] !== null) { $('cards_' + side).value = result.screen_state.cards[side].join('\n'); count++; }
+        if (count) { dirty = true; $('stateReviewed').checked = false; }
+        status(count ? 'Filled ' + count + ' fields. Review predictions before saving.' : 'No confident matches. Add reviewed examples with known values first.');
+    } catch (error) { status('Prediction failed — ' + error.message, true); }
+    finally { $('predictState').disabled = false; }
+};
+
+function switchReviewTab(name, focus = false) {
+    const main = document.querySelector('main');
+    main.classList.toggle('page-info-mode', name === 'screen');
+    for (const [tab, panel, key] of [['piecesTab', 'piecesView', 'pieces'], ['screenTab', 'screenView', 'screen']]) {
+        const active = name === key;
+        $(tab).setAttribute('aria-selected', String(active));
+        $(tab).tabIndex = active ? 0 : -1;
+        $(panel).hidden = !active;
+        $(key === 'pieces' ? 'piecesControls' : 'screenControls').hidden = !active;
+        if (active && focus) $(tab).focus();
+    }
+}
+for (const [id, name] of [['piecesTab', 'pieces'], ['screenTab', 'screen']]) {
+    $(id).onclick = () => {
+        switchReviewTab(name);
+        history.replaceState(null, '', name === 'screen' ? '#page-info' : '#pieces');
+    };
+    $(id).onkeydown = event => {
+        if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault();
+            switchReviewTab(event.key === 'Home' ? 'pieces' : event.key === 'End' ? 'screen' : name === 'pieces' ? 'screen' : 'pieces', true);
+        }
+    };
+}
+switchReviewTab(location.hash === '#page-info' ? 'screen' : 'pieces');

@@ -14,8 +14,23 @@
             <div><p class="eyebrow">DATA COLLECTION / REVIEW</p><h1>Piece annotation studio</h1><p class="subtitle">Review the board. Correct the labels. Build reliable training data.</p></div>
             <span class="badge"><span class="dot"></span> Local workspace</span>
         </header>
+        <div class="workspace-toolbar">
+        <div class="review-tabs" role="tablist" aria-label="Review category">
+            <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
+            <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Page info</button>
+        </div>
+        <section class="shared-selection" aria-label="Session and screenshot"><section class="panel controls">
+            <label><span>Session</span><select id="sessions"></select></label>
+            <p id="progress" class="progress"></p>
+            <label><span>Screenshot</span><select id="items"></select></label>
+            <div class="button-row"><button id="previous" aria-label="Previous screenshot" title="Previous screenshot">←</button><button id="next" aria-label="Next screenshot" title="Next screenshot">→</button></div>
+        </section></section>
+        </div>
         <main>
-            <section class="panel board-panel" aria-label="Board review">
+
+
+            <div id="piecesView" class="review-view" role="tabpanel" aria-labelledby="piecesTab">
+<section class="panel board-panel" aria-label="Board review">
                 <div class="panel-heading"><div><p class="eyebrow">01 / INSPECT</p><h2>Game board</h2></div><label class="toggle"><input type="checkbox" id="showLabels" checked> Piece names</label></div>
                 <div class="board-frame">
                     <div class="files" aria-label="Board files"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
@@ -25,23 +40,26 @@
                 <div class="board-footer"><p id="cellInfo" aria-live="polite">Select a cell to correct its label.</p><div class="legend"><span class="legend-selected"></span> Selected <span class="legend-excluded"></span> Excluded</div></div>
                 <p class="help">Coordinates sit outside the board. Click any cell to inspect its label.</p>
             </section>
-            <aside>
-                <section class="panel controls"><div class="panel-heading"><div><p class="eyebrow">02 / SELECT</p><h2>Session &amp; screenshot</h2></div></div>
-                    <label>Collection session<select id="sessions"></select></label>
-                    <p id="progress" class="progress"></p>
-                    <label>Screenshot<select id="items"></select></label>
-                    <div class="button-row"><button id="previous">← Previous</button><button id="next">Next →</button></div>
+
+            </div>
+            <div id="screenView" class="review-view" role="tabpanel" aria-labelledby="screenTab" hidden>
+                <section class="panel screen-panel">
+                    <div class="panel-heading"><h2>Full game screen</h2></div>
+                    <div class="screen-overview">
+                        <a id="fullLink" target="_blank" rel="noopener"><img id="fullImage" alt="Full game screen"></a>
+                    </div>
+                    <p class="help">Click the image to inspect it at full size. Page information is entered below.</p>
                 </section>
-                <section class="panel controls"><div class="panel-heading"><div><p class="eyebrow">03 / CORRECT</p><h2>Cell &amp; screen details</h2></div></div>
+
+            </div>
+
+<div class="review-controls"><div class="input-scroll"><aside id="piecesControls"><section class="panel controls"><div class="panel-heading"><div><p class="eyebrow">03 / CORRECT</p><h2>Piece details</h2></div></div>
                     <label>Selected cell label<select id="label"></select></label>
                     <label class="toggle"><input type="checkbox" id="locked"> Locked by ability</label>
                     <label class="toggle exclude-toggle"><input type="checkbox" id="excluded"> Exclude this cell from training</label>
-                    <div class="metadata"><label>Floor · required for approval<input id="floor" type="number" min="1" step="1" placeholder="Enter floor number"></label><p id="split" class="badge"></p></div>
+                </section></aside><aside id="screenControls" hidden><section class="panel controls"><h2>Page details</h2><div class="metadata"><p id="split" class="badge"></p></div><div class="stat-fields quick-fields"><label>Floor<input id="floor" type="number" min="1" step="1" placeholder="Required"></label><label>Loaded ammo<input id="ammo_loaded" type="number" min="0" step="1" placeholder="Unknown"></label><label>Reserve ammo<input id="ammo_reserve" type="number" min="0" step="1" placeholder="Unknown"></label></div>
                     <details><summary>Adjust game crop</summary><label>Left, top, right, bottom<input id="crop" spellcheck="false"></label><button id="preview">Preview crop</button><p class="help">Coordinates refer to the original screenshot. Check alignment before saving.</p></details>
-                </section>
-                <section class="panel controls"><h2>Cards &amp; combat state</h2><p class="help">Blank values mean unknown. Cards: one name per slot, row by row; use unknown for unidentified cards. Empty means no cards only after state review.</p><a id="fullLink" target="_blank" rel="noopener"><img id="fullImage" alt="Full game screen"></a><div class="stat-fields"><label>Loaded ammo<input id="ammo_loaded" type="number" min="0" step="1" placeholder="Unknown"></label><label>Reserve ammo<input id="ammo_reserve" type="number" min="0" step="1" placeholder="Unknown"></label><label>Attack<input id="attack" type="number" min="0" step="1" placeholder="Unknown"></label><label>Minimum range<input id="range_min" type="number" min="0" step="1" placeholder="Unknown"></label><label>Maximum range<input id="range_max" type="number" min="0" step="1" placeholder="Unknown"></label><label>Spread (degrees)<input id="spread_degrees" type="number" min="0" step="1" placeholder="Unknown"></label><label>Knockback (%)<input id="knockback_percent" type="number" min="0" step="1" placeholder="Unknown"></label></div><label>Left cards<textarea id="cards_left" rows="4"></textarea></label><label>Right cards<textarea id="cards_right" rows="4"></textarea></label><label class="toggle"><input id="stateReviewed" type="checkbox"> Cards and combat state reviewed</label></section>
-                <section class="panel controls save-panel"><p class="help">Check every cell, floor and crop. Automatic labels need your review.</p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve screen ✓</button></div><p id="status" role="status" aria-live="polite"></p></section>
-            </aside>
+</section><section class="panel controls"><div class="compact-heading"><h2>Cards &amp; combat state</h2><button id="predictState">Auto-fill unknowns</button></div><p class="help">Blank values mean unknown. Cards: one name per slot, row by row; use unknown for unidentified cards. Empty means no cards only after state review.</p><div class="stat-fields"><label>Attack<input id="attack" type="number" min="0" step="1" placeholder="Unknown"></label><label>Minimum range<input id="range_min" type="number" min="0" step="1" placeholder="Unknown"></label><label>Maximum range<input id="range_max" type="number" min="0" step="1" placeholder="Unknown"></label><label>Spread (degrees)<input id="spread_degrees" type="number" min="0" step="1" placeholder="Unknown"></label><label>Knockback (%)<input id="knockback_percent" type="number" min="0" step="1" placeholder="Unknown"></label></div><div class="card-fields"><label>Left cards<textarea id="cards_left" rows="3"></textarea></label><label>Right cards<textarea id="cards_right" rows="3"></textarea></label></div><label class="toggle"><input id="stateReviewed" type="checkbox"> Cards and combat state reviewed</label></section></aside></div>        <section class="panel controls save-panel"><p class="help">Check every cell, floor and crop. Automatic labels need your review.</p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve screen ✓</button></div><p id="status" role="status" aria-live="polite"></p></section></div>
         </main>
         <footer>Originals stay intact. Only approved annotations enter the final dataset.</footer>
     </div>
