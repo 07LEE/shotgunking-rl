@@ -33,12 +33,18 @@ from analyzer import get_state_matrix, check_retry_popup, check_card_selection_s
 from weapons import WEAPON_PRESETS
 from specs import get_enemy_specs_matrices
 from shotgun_king_rl.runtime.state import (
-    ACTION_DIRECTIONS,
     build_action_mask,
     build_observation,
     build_threat_matrix,
     update_enemy_turns,
 )
+from shotgun_king_rl.runtime.actions import (
+    action_destination,
+    available_moves,
+    detect_promotion,
+    select_shot_target,
+)
+from shotgun_king_rl.runtime.transitions import apply_terminal_rules, update_countdown
 import sys
 
 # Ensure project root is in python path to support tools module imports
@@ -454,9 +460,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         print(f"Step {self.current_step} - Executing action: {action}")
 
         original_action = action
-        has_valid_target = False
-        best_diff = None
-
         # Cache previous board state before sync
         prev_board = self.current_state[:64].reshape(8, 8) if self.current_state is not None else np.zeros((8, 8))
 
@@ -469,19 +472,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         from specs import get_enemy_specs_matrices
         hp_matrix, _ = get_enemy_specs_matrices(board_state, self.enemy_turns, self.rank)
 
-        # Detect pawn promotion: pawn from row 6 (or row 7 if already landed) moving to row 7 and promoting to non-pawn piece
-        promotion_detected = False
-        for col in range(8):
-            if board_state[7, col] in [3, 4, 5, 6]:
-                has_previous_pawn = False
-                for prev_col in [col - 1, col, col + 1]:
-                    if 0 <= prev_col < 8:
-                        if prev_board[6, prev_col] == 2 or prev_board[7, prev_col] == 2:
-                            has_previous_pawn = True
-                            break
-                if has_previous_pawn:
-                    promotion_detected = True
-                    break
+        promotion_detected = detect_promotion(prev_board, board_state)
 
         # Determine Player King position (either detected or logical backup)
         king_positions = np.argwhere(board_state == 1)
@@ -498,59 +489,20 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Count enemies before action execution
         prev_enemies = np.sum(board_state >= 2)
 
+        shot_target = select_shot_target(
+            board_state,
+            (king_row, king_col),
+            royal_guard_active=self.royal_guard_active,
+        )
+        has_valid_target = (
+            shot_target is not None
+            and shot_target.effective_distance <= float(self.range_limit)
+        )
+        min_dist = shot_target.distance if shot_target is not None else 99
+        best_diff = shot_target.direction if shot_target is not None else None
+
         # Ammo, Range & Target Validations for Shoot Guard
         if action == 9:
-            # Check range limit and target existence
-            has_valid_target = False
-            min_dist = 99
-            best_diff = None
-            best_is_threat = False
-            
-            # 8 directions to sweep radially for enemies
-            for r_diff, c_diff in ACTION_DIRECTIONS:
-                for dist in range(1, 8):
-                    tr = king_row + r_diff * dist
-                    tc = king_col + c_diff * dist
-                    if 0 <= tr < 8 and 0 <= tc < 8:
-                        piece = board_state[tr, tc]
-                        if piece >= 2:
-                            if piece == 6 and self.royal_guard_active and np.any(board_state == 3):
-                                # Royal Guard active: King/Queen is immortal while Knight is present. Skip target.
-                                break
-                            is_threat = False
-                            is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
-                            is_straight = (r_diff == 0 or c_diff == 0)
-                            
-                            if piece == 2:  # Pawn: attacks diagonally down
-                                if r_diff == -1 and is_diagonal and dist == 1:
-                                        is_threat = True
-                            elif piece == 4:  # Bishop: diagonal threat
-                                if is_diagonal:
-                                    is_threat = True
-                            elif piece == 5:  # Rook: straight threat
-                                if is_straight:
-                                    is_threat = True
-                            elif piece == 6:  # Queen: straight or diagonal threat
-                                if is_straight or is_diagonal:
-                                    is_threat = True
-                            
-                            if not best_is_threat and is_threat:
-                                min_dist = dist
-                                best_diff = (r_diff, c_diff)
-                                best_is_threat = is_threat
-                            elif is_threat == best_is_threat:
-                                if dist < min_dist:
-                                    min_dist = dist
-                                    best_diff = (r_diff, c_diff)
-                            break
-                        elif board_state[tr, tc] == 1:
-                            break
-                    else:
-                        break
-            # Apply Euclidean distance factor (1.414) for diagonal checks
-            if best_diff is not None and float(min_dist) * (1.414 if (abs(best_diff[0]) == 1 and abs(best_diff[1]) == 1) else 1.0) <= float(self.range_limit):
-                has_valid_target = True
-
             if self.loaded_ammo <= 0:
                 if self.reserve_ammo > 0:
                     print(f"DQN Guard: Shoot action (9) requested but loaded_ammo is {self.loaded_ammo}. Overwriting to Reload (8).")
@@ -575,47 +527,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         # Execute action simulation: 0-7 represents 1-tile move, 10-17 represents 2-tile jump
         if action in range(8) or action in range(10, 18):
-            is_two_tile = action in range(10, 18)
-            act_dir = action - 10 if is_two_tile else action
-            step_multiplier = 2 if is_two_tile else 1
-            row_offset, col_offset = ACTION_DIRECTIONS[act_dir]
-            target_row = king_row + row_offset * step_multiplier
-            target_col = king_col + col_offset * step_multiplier
-            
-            # Calculate all possible candidate actions
-            candidates = list(range(8))
-            if self.move_range_bonus > 0:
-                candidates.extend(range(10, 18))
-            
-            valid_moves = []
-            for cand in candidates:
-                is_two = cand in range(10, 18)
-                d_idx = cand - 10 if is_two else cand
-                mult = 2 if is_two else 1
-                ro, co = ACTION_DIRECTIONS[d_idx]
-                tr = king_row + ro * mult
-                tc = king_col + co * mult
-                
-                if 0 <= tr < 8 and 0 <= tc < 8:
-                    if is_two:
-                        mr, mc = king_row + ro, king_col + co
-                        if board_state[mr, mc] == 0 and board_state[tr, tc] == 0:
-                            valid_moves.append(cand)
-                    else:
-                        if board_state[tr, tc] == 0:
-                            valid_moves.append(cand)
-            
-            # Filter valid moves to only threat-free moves
-            safe_moves = []
-            for mv in valid_moves:
-                is_two = mv in range(10, 18)
-                d_idx = mv - 10 if is_two else mv
-                mult = 2 if is_two else 1
-                ro, co = ACTION_DIRECTIONS[d_idx]
-                tr = king_row + ro * mult
-                tc = king_col + co * mult
-                if threat_state[tr, tc] == 0:
-                    safe_moves.append(mv)
+            valid_moves, safe_moves = available_moves(
+                board_state,
+                threat_state,
+                (king_row, king_col),
+                move_range_bonus=self.move_range_bonus,
+            )
 
             # DQN Guard: Prioritize safe moves if available to prevent suicide moves
             if len(safe_moves) > 0:
@@ -632,12 +549,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     else:
                         print("DQN Guard Warning: No valid moves available. Executing original action.")
             
-            is_two_tile = action in range(10, 18)
-            act_dir = action - 10 if is_two_tile else action
-            step_multiplier = 2 if is_two_tile else 1
-            row_offset, col_offset = ACTION_DIRECTIONS[act_dir]
-            target_row = king_row + row_offset * step_multiplier
-            target_col = king_col + col_offset * step_multiplier
+            target_row, target_col = action_destination(
+                (king_row, king_col), action
+            )
             
             if 0 <= target_row < 8 and 0 <= target_col < 8:
                 # Precise board cell calculation based on standard coordinates:
@@ -689,58 +603,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             
         elif action == 9:
             # Shoot (Intel aimed click bypassing the 1-tile move physics rule)
-            min_dist = 99
-            best_diff = None
-            best_is_threat = False
-            
-            for r_diff, c_diff in ACTION_DIRECTIONS:
-                for dist in range(1, 8):
-                    tr = king_row + r_diff * dist
-                    tc = king_col + c_diff * dist
-                    if 0 <= tr < 8 and 0 <= tc < 8:
-                        piece = board_state[tr, tc]
-                        if piece >= 2:
-                            if piece == 6 and self.royal_guard_active and np.any(board_state == 3):
-                                # Royal Guard active: King/Queen is immortal while Knight is present. Skip target.
-                                break
-                            is_threat = False
-                            is_diagonal = (abs(r_diff) == 1 and abs(c_diff) == 1)
-                            is_straight = (r_diff == 0 or c_diff == 0)
-                            
-                            if piece == 2:  # Pawn: attacks diagonally down
-                                if r_diff == -1 and is_diagonal and dist == 1:
-                                    is_threat = True
-                            elif piece == 4:  # Bishop: diagonal threat
-                                if is_diagonal:
-                                    is_threat = True
-                            elif piece == 5:  # Rook: straight threat
-                                if is_straight:
-                                    is_threat = True
-                            elif piece == 6:  # Queen: straight or diagonal threat
-                                if is_straight or is_diagonal:
-                                    is_threat = True
-                            
-                            if best_diff is None:
-                                min_dist = dist
-                                best_diff = (r_diff, c_diff)
-                                best_is_threat = is_threat
-                            else:
-                                if is_threat and not best_is_threat:
-                                    min_dist = dist
-                                    best_diff = (r_diff, c_diff)
-                                    best_is_threat = is_threat
-                                elif is_threat == best_is_threat:
-                                    if dist < min_dist:
-                                        min_dist = dist
-                                        best_diff = (r_diff, c_diff)
-                            break  # Closest enemy on this ray found
-                        elif board_state[tr, tc] == 1:
-                            break
-                    else:
-                        break
-            
-            # Apply Euclidean distance factor (1.414) for diagonal checks during actual shoot event
-            if best_diff is not None and float(min_dist) * (1.414 if (abs(best_diff[0]) == 1 and abs(best_diff[1]) == 1) else 1.0) <= float(self.range_limit):
+            if has_valid_target:
                 r_diff, c_diff = best_diff
                 # 1-tile distance check: If target is 1-tile away, clicking it moves the King.
                 # Bypassed by shooting 2-tiles away in the same trajectory.
@@ -926,8 +789,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             reward -= 3.0
             print("DQN Penalty: Enemy Pawn promoted! Subtracted -3.0")
 
-        # Threat Exposure Evaluation
-        terminated = False
         # Evaluate real King presence without force injection for defeat detection
         real_obs = self._get_obs(force_inject=False)
         real_board = real_obs[:64].reshape(8, 8)
@@ -969,48 +830,56 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_state = self._get_obs(force_inject=True)
         curr_board = self.current_state[:64].reshape(8, 8)
 
-        # Countdown defeat check: start counter when enemies drop to 6 or below, defeat after 12 turns
-        if self.countdown_active:
-            if self.countdown_trigger_step is None and 0 < curr_enemies <= 6:
-                self.countdown_trigger_step = self.current_step
-                print(f"DQN Countdown: Triggered at step {self.current_step} ({curr_enemies} enemies remain).")
-            if self.countdown_trigger_step is not None and not terminated:
-                turns_elapsed = self.current_step - self.countdown_trigger_step
-                if turns_elapsed >= 12:
-                    reward = -15.0
-                    terminated = True
-                    print(f"DQN Penalty: Countdown defeat! {turns_elapsed} turns elapsed since trigger. Subtracted -15.0.")
+        previous_countdown_trigger = self.countdown_trigger_step
+        self.countdown_trigger_step, countdown_expired = update_countdown(
+            active=self.countdown_active,
+            trigger_step=self.countdown_trigger_step,
+            current_step=self.current_step,
+            enemy_count=curr_enemies,
+        )
+        if previous_countdown_trigger is None and self.countdown_trigger_step is not None:
+            print(f"DQN Countdown: Triggered at step {self.current_step} ({curr_enemies} enemies remain).")
 
-        if is_popup:
-            reward = -15.0 - float(curr_enemies)
-            terminated = True
+        card_selection_detected = False
+        if not is_popup and not king_present:
+            card_image = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
+            card_selection_detected = check_card_selection_screen(card_image)
+
+        terminal = apply_terminal_rules(
+            reward=reward,
+            enemy_count=curr_enemies,
+            king_present=king_present,
+            popup_detected=is_popup,
+            card_selection_detected=card_selection_detected,
+            countdown_expired=countdown_expired,
+        )
+        reward = terminal.reward
+        terminated = terminal.terminated
+
+        if terminal.outcome == "retry_popup_defeat":
             print(f"DQN Penalty: Detected retry popup via screen analysis! Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Clicking YES button (dynamic coordinates enabled).")
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
             tx, ty = self._get_yes_button_coords(img)
             self._check_emergency_stop()
             click_relative_in_window(self.window_title, tx, ty)
             time.sleep(2.5)
-        elif curr_enemies == 0 and king_present:
-            reward += 10.0
-            terminated = True
+        elif terminal.outcome == "board_victory":
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
-        elif not king_present and check_card_selection_screen(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None):
+        elif terminal.outcome == "card_victory":
             try:
                 from tools.extract_cards import extract_game_cards
                 extract_game_cards(image_path=image_path, output_dir=".temp")
                 print("DQN Reset: Successfully extracted and saved new victory cards to '.temp'")
             except Exception as e:
                 print(f"Failed to auto-extract victory cards: {e}")
-            reward += 10.0
-            terminated = True
             print("DQN Reward: Congratulations! Victory/Card selection screen detected! Added +10.0. Episode terminated with victory.")
-        elif not king_present:
-            if curr_enemies == 0:
-                print("DQN Warning: Both Player King and enemies are missing from detection. Suspecting persistent screen capture failure. Bypassing step termination to prevent false defeat.")
-            else:
-                reward = -15.0 - float(curr_enemies)
-                terminated = True
-                print(f"DQN Penalty: Player King missing but retry popup not yet detected. Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Postponing click to reset.")
+        elif terminal.outcome == "missing_king_defeat":
+            print(f"DQN Penalty: Player King missing but retry popup not yet detected. Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Postponing click to reset.")
+        elif terminal.outcome == "countdown_defeat":
+            turns_elapsed = self.current_step - self.countdown_trigger_step
+            print(f"DQN Penalty: Countdown defeat! {turns_elapsed} turns elapsed since trigger. Subtracted -15.0.")
+        elif not king_present and curr_enemies == 0:
+            print("DQN Warning: Both Player King and enemies are missing from detection. Suspecting persistent screen capture failure. Bypassing step termination to prevent false defeat.")
 
         truncated = self.current_step >= self.max_steps
         
