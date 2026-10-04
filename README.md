@@ -4,9 +4,18 @@
 
 Piece templates, training screenshots, annotations, datasets, and model checkpoints are kept locally and excluded from Git. Offline image checks require the private assets and fixtures to be present. Documentation images in `docs/assets/` are included in Git.
 
-This project implements an automated gameplay and reinforcement learning system for the game Shotgun King. It processes the live game window via screen capture to construct state representations, which are then passed to a Deep Q-Network agent to optimize keyboard and mouse control simulations.
+This project is rebuilding a screen-based Shotgun King agent around reviewed visual data. The current maintained workflow collects private screenshots, reviews board and page-state annotations locally, and builds datasets without publishing game assets. The older live-control and DQN runtime remains experimental while its observation and transition logic is audited.
 
-## Project Architecture
+## Maintained Data Workflow
+
+1. Put private screenshots in `data/collection/inbox/`.
+2. Import and prepare one play session with `.venv/bin/python tools/preprocess/prepare_collection.py --session SESSION_ID`.
+3. Review board labels and page state with `.venv/bin/python tools/review/review_collection.py --open`.
+4. Build a new immutable dataset directory with `.venv/bin/python tools/preprocess/build_piece_dataset.py --output data/collection/datasets/NAME`.
+
+The implementation lives in the `shotgun_king_rl.collection` and `shotgun_king_rl.review` packages. Files under `tools/` preserve the existing command-line interface.
+
+## Legacy Runtime Architecture
 
 The system operates in a closed loop across four main phases:
 
@@ -15,7 +24,7 @@ The system operates in a closed loop across four main phases:
 3. Decide: DQN agent inputs the processed state vector and outputs an action.
 4. Control: Simulating inputs through PyAutoGUI mouse clicks or key presses.
 
-## Gymnasium Environment Specification
+## Legacy Gymnasium Environment Specification
 
 The custom environment ShotgunKingEnv maps game frames to the OpenAI Gymnasium standard.
 
@@ -45,7 +54,7 @@ The analyzer module extracts state vectors from raw BGR screenshots.
 - Feature Classification: Employs template matching (resized to 45x45 grayscale signals) for high-accuracy piece identification. Falls back to contour-based geometry analysis when templates are missing.
 - Ammo OCR: Counts the number of active red pixels at predefined UI locations to determine ammunition counts.
 
-## Model Details
+## Legacy Model Details
 
 - Policy Network: Multi-input neural network fusing spatial chess board configurations and non-spatial attributes. The spatial grid data (state, threat, hp, turn speed) is processed via 2-layer Conv2d layers and flat-projected to a 64-unit vector. The meta attributes (ammo, weapon, status) are processed via a 16-unit linear projection. These representations are concatenated and passed through joint decision layers to estimate Q-values.
 - Optimization: Backpropagation via MSE loss and Adam optimizer. Trains on experience tuples sampled from a ReplayBuffer.
@@ -60,4 +69,5 @@ The analyzer module extracts state vectors from raw BGR screenshots.
 ### Setup and Running
 
 1. Installation: Install the required packages listed in pyproject.toml.
-2. Execution: Run `src/train.py` while the game is running and visible on the screen.
+2. Review collected screenshots: Run `.venv/bin/python tools/review/review_collection.py --open`.
+3. Legacy runtime: Run `.venv/bin/python train.py` only when the game is visible and after reviewing the current limitations. Training is never started by the data tools.

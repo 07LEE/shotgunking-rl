@@ -23,7 +23,8 @@ except ImportError:
 
 try:
     import pywinctl as pwc
-except ImportError:
+except Exception:
+    # Window discovery is optional during headless validation.
     pwc = None
 
 

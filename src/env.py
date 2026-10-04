@@ -23,7 +23,8 @@ except ImportError:
 
 try:
     import pyautogui
-except ImportError:
+except Exception:
+    # Importing PyAutoGUI may fail when no desktop display is available.
     pyautogui = None
 
 from capture import capture_screen

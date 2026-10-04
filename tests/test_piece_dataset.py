@@ -8,8 +8,8 @@ import unittest
 import cv2
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tools/preprocess"))
-from build_piece_dataset import build_dataset
+sys.path.insert(0, str(ROOT / "src"))
+from shotgun_king_rl.collection.dataset import build_dataset
 
 
 @unittest.skipUnless((ROOT / "data/test_fixtures/piece_annotations/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists(), "Private fixtures are required")

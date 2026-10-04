@@ -9,9 +9,10 @@ import unittest
 import cv2
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'tools/review'))
-from review_collection import load_item, save_item
-from prepare_collection import prepare_session, detect_crop
+sys.path.insert(0, str(ROOT / 'src'))
+from shotgun_king_rl.collection.images import detect_crop
+from shotgun_king_rl.collection.prepare import prepare_session
+from shotgun_king_rl.review.server import load_item, save_item
 
 
 @unittest.skipUnless((ROOT / 'data/test_fixtures/board_01.png').exists() and (ROOT / 'assets/pieces').is_dir(), 'Private fixtures required')
@@ -63,7 +64,7 @@ class ReviewCollectionTests(unittest.TestCase):
 
 class ScreenStateTests(unittest.TestCase):
     def test_unknown_and_empty_cards_are_distinct(self):
-        from review_collection import validate_screen_state
+        from shotgun_king_rl.review.server import validate_screen_state
         unknown = validate_screen_state({})
         self.assertIsNone(unknown['stats']['attack'])
         self.assertIsNone(unknown['cards']['left'])
@@ -72,7 +73,7 @@ class ScreenStateTests(unittest.TestCase):
         self.assertEqual(reviewed['cards']['right'], [])
 
     def test_invalid_state_is_rejected(self):
-        from review_collection import validate_screen_state
+        from shotgun_king_rl.review.server import validate_screen_state
         for value in ({'stats': {'attack': -1}}, {'stats': {'attack': True}}, {'stats': {'range_min': 5, 'range_max': 3}}, {'cards': {'left': 'knight'}}, {'locked_cells': [[8, 2]]}):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_screen_state(value)

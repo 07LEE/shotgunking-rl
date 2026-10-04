@@ -11,7 +11,8 @@ try:
     import pyautogui
     if pyautogui is not None:
         pyautogui.FAILSAFE = True
-except ImportError:
+except Exception:
+    # Keep pure imports usable in headless validation environments.
     pyautogui = None
 
 from capture import find_window_geometry

@@ -5,8 +5,8 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/preprocess"))
-from import_collection import import_images
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from shotgun_king_rl.collection.importer import import_images
 
 
 class CollectionImportTests(unittest.TestCase):

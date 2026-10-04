@@ -8,8 +8,8 @@ import unittest
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools/preprocess'))
-from screen_state import match, propose
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+from shotgun_king_rl.collection.screen_state import match, propose
 
 
 class ScreenStateRecognitionTests(unittest.TestCase):
