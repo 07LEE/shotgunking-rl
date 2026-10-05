@@ -1,6 +1,8 @@
-const statFields = ['ammo_loaded', 'ammo_reserve', 'attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent'];
+const ammoInputs = { loaded: 'ammo_loaded', reserve: 'ammo_reserve' };
+const combatFields = ['attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent'];
+const reviewInputs = { screen_kind: 'screenKindReviewed', ammo: 'ammoReviewed', combat_stats: 'combatReviewed', cards: 'cardsReviewed' };
 const token = document.querySelector('meta[name=review-token]').content, classes = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
-const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '';
+const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces';
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }
 function sessionItems() { return items.filter(item => item.session === currentSession) }
@@ -43,12 +45,12 @@ $('showLabels').onchange = labelView;
 labelView();
 function cropValue() { const parts = $('crop').value.split(',').map(x => x.trim()); if (parts.length !== 4 || parts.some(x => !/^\d+$/.test(x))) throw Error('Enter four nonnegative integer crop coordinates'); return parts.map(Number) }
 function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent($('items').value) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
-async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; for (const key of statFields) $(key).value = data.screen_state.stats?.[key] ?? ''; for (const side of ['left', 'right']) $('cards_' + side).value = (data.screen_state.cards?.[side] || []).join('\n'); $('stateReviewed').checked = data.screen_state.reviewed === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; preview(); draw(); dirty = false; status(data.confirmed ? 'Previously approved. Editing requires saving again.' : 'Draft: review all labels before approval.') } catch (e) { status(e.message) } }
+async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const side of ['left', 'right']) $('cards_' + side).value = (data.screen_state.cards?.[side] || []).join('\n'); for (const [section, id] of Object.entries(reviewInputs)) $(id).checked = data.screen_state.reviews[section] === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; preview(); draw(); dirty = false; status(data.confirmed ? 'Piece labels approved. Page information can be saved independently.' : 'Piece labels are still a draft.') } catch (e) { status(e.message, true) } }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
 $('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
 $('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } currentSession = $('sessions').value; const list = sessionItems(); currentId = list.find(x => !x.confirmed)?.id || list[0].id; remember(); renderOptions(); load() };
 $('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked_cells = data.screen_state.locked_cells.filter(x => x[0] !== r || x[1] !== c); if ($('locked').checked) data.screen_state.locked_cells.push([r, c]); dirty = true; draw() };
-for (const id of [...statFields, 'cards_left', 'cards_right', 'stateReviewed']) $(id).oninput = () => { dirty = true };
+for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', 'cards_left', 'cards_right', ...Object.values(reviewInputs)]) $(id).oninput = () => { dirty = true };
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; dirty = true; draw() };
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
 for (const id of ['floor', 'crop']) $(id).oninput = () => { dirty = true };
@@ -59,7 +61,7 @@ async function save(confirmed) {
     try {
         const raw = $('floor').value;
         const floor = raw === '' ? null : Number(raw);
-        if ((confirmed && floor === null) || (floor !== null && (!Number.isInteger(floor) || floor < 1))) {
+        if ((currentReviewTab === 'pieces' && confirmed && floor === null) || (floor !== null && (!Number.isInteger(floor) || floor < 1))) {
             switchReviewTab('screen');
             $('floor').setCustomValidity('Enter a positive floor number before approval.');
             $('floor').reportValidity();
@@ -67,36 +69,44 @@ async function save(confirmed) {
             throw Error('Enter the floor number, then approve again.');
         }
         $('floor').setCustomValidity('');
-        const stats = Object.fromEntries(statFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
-        if (Object.values(stats).some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Combat stats must be nonnegative integers.');
-        const reviewed = $('stateReviewed').checked;
-        const cards = Object.fromEntries(['left', 'right'].map(side => { const entries = $('cards_' + side).value.split('\n').map(x => x.trim()).filter(Boolean); return [side, entries.length || reviewed ? entries : null]; }));
-        data.screen_state = { stats, cards, locked_cells: data.screen_state.locked_cells, reviewed };
+        const ammo = Object.fromEntries(Object.entries(ammoInputs).map(([key, id]) => [key, $(id).value === '' ? null : Number($(id).value)]));
+        const combat_stats = Object.fromEntries(combatFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
+        if ([...Object.values(ammo), ...Object.values(combat_stats)].some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Numeric values must be nonnegative integers.');
+        const reviews = Object.fromEntries(Object.entries(reviewInputs).map(([section, id]) => [section, $(id).checked]));
+        const screen_kind = $('screenKind').value || null;
+        if (reviews.screen_kind && screen_kind === null) throw Error('Select a screen kind before marking it reviewed.');
+        const cards = Object.fromEntries(['left', 'right'].map(side => { const entries = $('cards_' + side).value.split('\n').map(x => x.trim()).filter(Boolean); return [side, entries.length || reviews.cards ? entries : null]; }));
+        data.screen_state = { screen_kind, ammo, combat_stats, cards, locked_cells: data.screen_state.locked_cells, reviews };
+        const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : data.confirmed;
         status('Saving review…');
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
-            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed })
+            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed })
         });
         revision = result.revision;
-        data.confirmed = confirmed;
+        data.confirmed = boardConfirmed;
         dirty = false;
-        items.find(item => item.id === currentId).confirmed = confirmed;
+        const item = items.find(candidate => candidate.id === currentId);
+        item.confirmed = boardConfirmed;
+        item.reviews = reviews;
         renderOptions();
         if (!confirmed) {
-            status('Draft saved; excluded from approved datasets.');
+            status(currentReviewTab === 'pieces' ? 'Piece draft saved; excluded from approved datasets.' : 'Page information saved; piece approval is unchanged.');
             return;
         }
         const list = sessionItems();
         const index = list.findIndex(item => item.id === currentId);
-        const next = [...list.slice(index + 1), ...list.slice(0, index)].find(item => !item.confirmed);
+        const next = currentReviewTab === 'pieces'
+            ? [...list.slice(index + 1), ...list.slice(0, index)].find(item => !item.confirmed)
+            : list[index + 1];
         if (next) {
             currentId = next.id;
             remember();
             renderOptions();
             await load();
         } else {
-            status('Session review complete — all ' + list.length + ' screens approved.');
+            status(currentReviewTab === 'pieces' ? 'Session piece review complete — all ' + list.length + ' screens approved.' : 'Page information saved — reached the last screenshot.');
         }
     } catch (error) {
         status('Not saved — ' + error.message, true);
@@ -106,7 +116,7 @@ async function save(confirmed) {
 }
 $('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
-function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = (item.confirmed ? '✓ ' : '○ ') + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; $('progress').textContent = list.filter(x => x.confirmed).length + ' / ' + list.length + ' approved · screenshot ' + (index + 1) + ' / ' + list.length }
+function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = (item.confirmed ? '✓ ' : '○ ') + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; const count = section => list.filter(item => item.reviews?.[section]).length; $('progress').textContent = 'pieces ' + list.filter(x => x.confirmed).length + '/' + list.length + ' · kind ' + count('screen_kind') + ' · ammo ' + count('ammo') + ' · stats ' + count('combat_stats') + ' · cards ' + count('cards') + ' · ' + (index + 1) + '/' + list.length }
 function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); if (index + delta < 0 || index + delta >= list.length) return; if (dirty && !confirm('Discard unsaved edits?')) return; currentId = list[index + delta].id; remember(); renderOptions(); load() }
 $('previous').onclick = () => navigate(-1); $('next').onclick = () => navigate(1);
 window.onbeforeunload = e => { if (dirty) { e.preventDefault(); e.returnValue = '' } };
@@ -117,15 +127,17 @@ $('predictState').onclick = async () => {
     try {
         const result = await api('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': token }, body: JSON.stringify({ id: currentId, revision, game_crop: cropValue() }) });
         let count = 0;
-        for (const key of statFields) if ($(key).value === '' && result.screen_state.stats[key] !== null) { $(key).value = result.screen_state.stats[key]; count++; }
-        for (const side of ['left', 'right']) if ($('cards_' + side).value.trim() === '' && result.screen_state.cards[side] !== null) { $('cards_' + side).value = result.screen_state.cards[side].join('\n'); count++; }
-        if (count) { dirty = true; $('stateReviewed').checked = false; }
+        for (const [key, id] of Object.entries(ammoInputs)) if ($(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
+        for (const key of combatFields) if ($(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
+        for (const side of ['left', 'right']) if ($('cards_' + side).value.trim() === '' && result.screen_state.cards[side] !== null) { $('cards_' + side).value = result.screen_state.cards[side].join('\n'); count++; $('cardsReviewed').checked = false; }
+        if (count) dirty = true;
         status(count ? 'Filled ' + count + ' fields. Review predictions before saving.' : 'No confident matches. Add reviewed examples with known values first.');
     } catch (error) { status('Prediction failed — ' + error.message, true); }
     finally { $('predictState').disabled = false; }
 };
 
 function switchReviewTab(name, focus = false) {
+    currentReviewTab = name;
     const main = document.querySelector('main');
     main.classList.toggle('page-info-mode', name === 'screen');
     for (const [tab, panel, key] of [['piecesTab', 'piecesView', 'pieces'], ['screenTab', 'screenView', 'screen']]) {
@@ -136,6 +148,8 @@ function switchReviewTab(name, focus = false) {
         $(key === 'pieces' ? 'piecesControls' : 'screenControls').hidden = !active;
         if (active && focus) $(tab).focus();
     }
+    $('draft').textContent = name === 'pieces' ? 'Save draft' : 'Save page info';
+    $('approve').textContent = name === 'pieces' ? 'Approve pieces ✓' : 'Save & next →';
 }
 for (const [id, name] of [['piecesTab', 'pieces'], ['screenTab', 'screen']]) {
     $(id).onclick = () => {

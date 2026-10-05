@@ -31,10 +31,20 @@ class ReviewCollectionTests(unittest.TestCase):
             path, data, _, revision = load_item(collection, relative)
             payload = dict(data, id=relative, revision=revision, floor=1, confirmed=True)
             payload['board'][0][6] = 'special_knight'
-            payload['screen_state'] = {'stats': {'attack': 4}, 'cards': {'left': ['unknown']}, 'locked_cells': [[1, 2]], 'reviewed': True}
+            payload['screen_state'] = {
+                'screen_kind': 'gameplay',
+                'ammo': {'loaded': 2, 'reserve': 6},
+                'combat_stats': {'attack': 4},
+                'cards': {'left': ['unknown']},
+                'locked_cells': [[1, 2]],
+                'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True},
+            }
             saved = save_item(collection, payload)
             self.assertTrue(saved['confirmed'])
-            self.assertEqual(json.loads(path.read_text())['screen_state']['stats']['attack'], 4)
+            stored_state = json.loads(path.read_text())['screen_state']
+            self.assertEqual(stored_state['combat_stats']['attack'], 4)
+            self.assertEqual(stored_state['ammo'], {'loaded': 2, 'reserve': 6})
+            self.assertTrue(all(stored_state['reviews'].values()))
             self.assertEqual(json.loads(path.read_text())['board'][0][6], 'special_knight')
             raw = path.read_bytes()
             self.assertEqual(prepare_session(collection, 'test-session')['created'], 0)
@@ -66,14 +76,27 @@ class ScreenStateTests(unittest.TestCase):
     def test_unknown_and_empty_cards_are_distinct(self):
         from shotgun_king_rl.review.server import validate_screen_state
         unknown = validate_screen_state({})
-        self.assertIsNone(unknown['stats']['attack'])
+        self.assertIsNone(unknown['combat_stats']['attack'])
+        self.assertIsNone(unknown['ammo']['loaded'])
         self.assertIsNone(unknown['cards']['left'])
-        reviewed = validate_screen_state({'stats': {'attack': 4, 'range_min': 3, 'range_max': 5}, 'cards': {'left': ['unknown'], 'right': []}, 'locked_cells': [[1, 2]], 'reviewed': True})
+        reviewed = validate_screen_state({'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5}, 'cards': {'left': ['unknown'], 'right': []}, 'locked_cells': [[1, 2]], 'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True}})
         self.assertEqual(reviewed['locked_cells'], [[1, 2]])
         self.assertEqual(reviewed['cards']['right'], [])
+        self.assertEqual(reviewed['screen_kind'], 'gameplay')
+        self.assertTrue(all(reviewed['reviews'].values()))
+
+    def test_legacy_review_flag_maps_without_inventing_screen_kind(self):
+        from shotgun_king_rl.review.server import validate_screen_state
+        state = validate_screen_state({'stats': {'ammo_loaded': 1, 'ammo_reserve': 4, 'attack': 3}, 'reviewed': True})
+        self.assertEqual(state['ammo'], {'loaded': 1, 'reserve': 4})
+        self.assertEqual(state['combat_stats']['attack'], 3)
+        self.assertFalse(state['reviews']['screen_kind'])
+        self.assertTrue(state['reviews']['ammo'])
+        self.assertTrue(state['reviews']['combat_stats'])
+        self.assertTrue(state['reviews']['cards'])
 
     def test_invalid_state_is_rejected(self):
         from shotgun_king_rl.review.server import validate_screen_state
-        for value in ({'stats': {'attack': -1}}, {'stats': {'attack': True}}, {'stats': {'range_min': 5, 'range_max': 3}}, {'cards': {'left': 'knight'}}, {'locked_cells': [[8, 2]]}):
+        for value in ({'combat_stats': {'attack': -1}}, {'combat_stats': {'attack': True}}, {'combat_stats': {'range_min': 5, 'range_max': 3}}, {'ammo': {'loaded': -1}}, {'cards': {'left': 'knight'}}, {'locked_cells': [[8, 2]]}, {'screen_kind': 'menu'}, {'reviews': {'screen_kind': True}}):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_screen_state(value)

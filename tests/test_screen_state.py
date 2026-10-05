@@ -24,9 +24,10 @@ class ScreenStateRecognitionTests(unittest.TestCase):
     def test_no_examples_means_unknown_not_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             result = propose(np.zeros((720, 1280, 3), dtype=np.uint8), Path(directory))
-        self.assertTrue(all(value is None for value in result['screen_state']['stats'].values()))
+        self.assertTrue(all(value is None for value in result['screen_state']['ammo'].values()))
+        self.assertTrue(all(value is None for value in result['screen_state']['combat_stats'].values()))
         self.assertEqual(result['screen_state']['cards'], {'left': None, 'right': None})
-        self.assertFalse(result['screen_state']['reviewed'])
+        self.assertFalse(any(result['screen_state']['reviews'].values()))
         self.assertEqual(result['prediction']['references'], [])
 
     def test_reviewed_train_reference_and_self_exclusion(self):
@@ -38,16 +39,17 @@ class ScreenStateRecognitionTests(unittest.TestCase):
             (session / 'annotations').mkdir()
             cv2.imwrite(str(session / 'originals/screen.png'), screen)
             annotation = session / 'annotations/screen.json'
-            data = {'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'reviewed': True, 'stats': {'attack': 4}, 'cards': {'left': ['known_card']}}}
+            data = {'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4}, 'cards': {'left': ['known_card']}, 'reviews': {'ammo': True, 'combat_stats': True, 'cards': True}}}
             annotation.write_text(json.dumps(data))
             result = propose(screen, collection)
-            self.assertEqual(result['screen_state']['stats']['attack'], 4)
+            self.assertEqual(result['screen_state']['ammo']['loaded'], 2)
+            self.assertEqual(result['screen_state']['combat_stats']['attack'], 4)
             self.assertEqual(result['screen_state']['cards']['left'][0], 'known_card')
-            self.assertIsNone(propose(screen, collection, exclude=annotation)['screen_state']['stats']['attack'])
+            self.assertIsNone(propose(screen, collection, exclude=annotation)['screen_state']['combat_stats']['attack'])
             data['split'] = 'test'
             annotation.write_text(json.dumps(data))
-            self.assertIsNone(propose(screen, collection)['screen_state']['stats']['attack'])
+            self.assertIsNone(propose(screen, collection)['screen_state']['combat_stats']['attack'])
             data['split'] = 'train'
-            data['screen_state']['reviewed'] = False
+            data['screen_state']['reviews'] = {'ammo': False, 'combat_stats': False, 'cards': False}
             annotation.write_text(json.dumps(data))
-            self.assertIsNone(propose(screen, collection)['screen_state']['stats']['attack'])
+            self.assertIsNone(propose(screen, collection)['screen_state']['combat_stats']['attack'])

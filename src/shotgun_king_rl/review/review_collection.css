@@ -137,7 +137,9 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
 .page-info-mode .review-controls { grid-column: 1 / -1; grid-row: 2; height: auto; min-height: 0; }
 .page-info-mode .input-scroll { overflow: visible; padding-right: 0; }
 .page-info-mode #screenControls { grid-template-columns: minmax(260px, .65fr) minmax(0, 1.35fr); align-items: start; }
+.page-info-mode #screenControls > .panel:last-child { grid-column: 1 / -1; }
 .page-info-mode .save-panel { align-self: end; }
+#screenControls .controls > .toggle, .review-section .toggle { margin-top: 12px; }
 @media (max-width: 850px) {
     main { grid-template-columns: 1fr; }
     .review-view > .board-panel, .review-view > .screen-panel { grid-column: 1; grid-row: 1; position: static; }

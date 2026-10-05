@@ -42,22 +42,44 @@ def load_item(collection, relative):
     return path, data, image, hashlib.sha256(raw).hexdigest()
 
 
-STAT_FIELDS = ('ammo_loaded', 'ammo_reserve', 'attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent')
+AMMO_FIELDS = ('loaded', 'reserve')
+COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent')
+REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards')
+SCREEN_KINDS = ('gameplay', 'card_selection', 'retry', 'transition')
 
 
 def validate_screen_state(value):
     if not isinstance(value, dict):
         raise ValueError('Invalid screen state')
-    stats = value.get('stats', {})
-    if not isinstance(stats, dict) or set(stats) - set(STAT_FIELDS):
+
+    legacy_stats = value.get('stats', {})
+    if not isinstance(legacy_stats, dict):
         raise ValueError('Invalid combat stats')
-    for key, number in stats.items():
+    ammo = value.get('ammo')
+    if ammo is None:
+        ammo = {
+            'loaded': legacy_stats.get('ammo_loaded'),
+            'reserve': legacy_stats.get('ammo_reserve'),
+        }
+    if not isinstance(ammo, dict) or set(ammo) - set(AMMO_FIELDS):
+        raise ValueError('Invalid ammo state')
+    for key, number in ammo.items():
         if number is not None and (type(number) is not int or number < 0):
             raise ValueError(f'{key} must be a nonnegative integer or unknown')
-    if stats.get('range_min') is not None and stats.get('range_max') is not None and stats['range_min'] > stats['range_max']:
+
+    combat = value.get('combat_stats')
+    if combat is None:
+        combat = {key: legacy_stats.get(key) for key in COMBAT_FIELDS}
+    if not isinstance(combat, dict) or set(combat) - set(COMBAT_FIELDS):
+        raise ValueError('Invalid combat stats')
+    for key, number in combat.items():
+        if number is not None and (type(number) is not int or number < 0):
+            raise ValueError(f'{key} must be a nonnegative integer or unknown')
+    if combat.get('range_min') is not None and combat.get('range_max') is not None and combat['range_min'] > combat['range_max']:
         raise ValueError('Minimum range exceeds maximum range')
-    if stats.get('knockback_percent') is not None and stats['knockback_percent'] > 100:
+    if combat.get('knockback_percent') is not None and combat['knockback_percent'] > 100:
         raise ValueError('Knockback must be at most 100 percent')
+
     cards = value.get('cards', {})
     if not isinstance(cards, dict) or set(cards) - {'left', 'right'}:
         raise ValueError('Invalid card sides')
@@ -67,10 +89,35 @@ def validate_screen_state(value):
     locked = value.get('locked_cells', [])
     if not isinstance(locked, list) or any(not isinstance(cell, list) or len(cell) != 2 or any(type(v) is not int or not 0 <= v < 8 for v in cell) for cell in locked):
         raise ValueError('Invalid locked cells')
-    reviewed = value.get('reviewed', False)
-    if type(reviewed) is not bool:
+
+    screen_kind = value.get('screen_kind')
+    if screen_kind is not None and screen_kind not in SCREEN_KINDS:
+        raise ValueError('Invalid screen kind')
+    legacy_reviewed = value.get('reviewed', False)
+    if type(legacy_reviewed) is not bool:
         raise ValueError('Invalid screen state review flag')
-    return {'stats': {key: stats.get(key) for key in STAT_FIELDS}, 'cards': {side: cards.get(side) for side in ('left', 'right')}, 'locked_cells': locked, 'reviewed': reviewed}
+    reviews = value.get('reviews', {})
+    if not isinstance(reviews, dict) or set(reviews) - set(REVIEW_SECTIONS):
+        raise ValueError('Invalid section review flags')
+    if any(type(flag) is not bool for flag in reviews.values()):
+        raise ValueError('Invalid section review flag')
+    reviews = {
+        'screen_kind': reviews.get('screen_kind', False),
+        'ammo': reviews.get('ammo', legacy_reviewed),
+        'combat_stats': reviews.get('combat_stats', legacy_reviewed),
+        'cards': reviews.get('cards', legacy_reviewed),
+    }
+    if reviews['screen_kind'] and screen_kind is None:
+        raise ValueError('Select a screen kind before marking it reviewed')
+
+    return {
+        'screen_kind': screen_kind,
+        'ammo': {key: ammo.get(key) for key in AMMO_FIELDS},
+        'combat_stats': {key: combat.get(key) for key in COMBAT_FIELDS},
+        'cards': {side: cards.get(side) for side in ('left', 'right')},
+        'locked_cells': locked,
+        'reviews': reviews,
+    }
 
 
 def save_item(collection, payload):
@@ -139,12 +186,14 @@ def make_server(collection, port=0):
                     items = []
                     for path in annotation_paths(collection):
                         a = json.loads(path.read_text())
-                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False)})
+                        state = validate_screen_state(a.get('screen_state', {}))
+                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'reviews': state['reviews']})
                     return self.reply(json.dumps(items).encode())
                 from urllib.parse import urlparse, parse_qs
                 query = parse_qs(urlparse(self.path).query)
                 path, data, image, revision = load_item(collection, query['id'][0])
                 if self.path.startswith('/api/item?'):
+                    data['screen_state'] = validate_screen_state(data.get('screen_state', {}))
                     return self.reply(json.dumps({'data': data, 'revision': revision}).encode())
                 if self.path.startswith('/api/screen?'):
                     ok, encoded = cv2.imencode('.png', normalize(image, data['game_crop']))

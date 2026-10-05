@@ -8,8 +8,8 @@ from .images import normalize
 
 # Coordinates refer to a normalized 1280x720 gameplay screenshot.
 REGIONS = {
-    'ammo_loaded': (382, 34, 550, 75),
-    'ammo_reserve': (382, 78, 706, 111),
+    'loaded': (382, 34, 550, 75),
+    'reserve': (382, 78, 706, 111),
     'attack': (270, 262, 354, 300),
     'range_min': (270, 326, 354, 365),
     'range_max': (270, 326, 354, 365),
@@ -53,7 +53,8 @@ def propose(screen, collection, exclude=None):
             continue
         data = json.loads(path.read_text())
         state = data.get('screen_state') or {}
-        if data.get('split') != 'train' or not state.get('reviewed'):
+        reviews = _reviews(state)
+        if data.get('split') != 'train' or not any(reviews.values()):
             continue
         image_path = (path.parent / data['image']).resolve()
         if image_path.parent != (path.parent.parent / 'originals').resolve():
@@ -62,20 +63,41 @@ def propose(screen, collection, exclude=None):
         if image is None:
             continue
         image = normalize(image, data['game_crop'])
-        references.append(str(path.relative_to(collection)))
+        used = False
         for key, box in REGIONS.items():
-            value = state.get('stats', {}).get(key)
+            section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
+            if not reviews[section]:
+                continue
+            value = _section(state, section).get(key)
             if type(value) is int and value >= 0:
                 examples[key].append((value, patch(image, box)))
-        for side in ('left', 'right'):
-            for index, label in enumerate(state.get('cards', {}).get(side) or []):
-                if label != 'unknown' and index < 10:
-                    cards.append((label, patch(image, card_box(side, index))))
-    state = {'stats': {}, 'cards': {}, 'locked_cells': [], 'reviewed': False}
+                used = True
+        if reviews['cards']:
+            for side in ('left', 'right'):
+                for index, label in enumerate(state.get('cards', {}).get(side) or []):
+                    if label != 'unknown' and index < 10:
+                        cards.append((label, patch(image, card_box(side, index))))
+                        used = True
+        if used:
+            references.append(str(path.relative_to(collection)))
+    state = {
+        'screen_kind': None,
+        'ammo': {},
+        'combat_stats': {},
+        'cards': {},
+        'locked_cells': [],
+        'reviews': {
+            'screen_kind': False,
+            'ammo': False,
+            'combat_stats': False,
+            'cards': False,
+        },
+    }
     confidence = {}
     for key, box in REGIONS.items():
         result = match(patch(screen, box), examples[key])
-        state['stats'][key] = result[0] if result else None
+        section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
+        state[section][key] = result[0] if result else None
         confidence[key] = result[1] if result else None
     for side in ('left', 'right'):
         # Preserve slot positions; trailing unidentified slots remain unknown too.
@@ -86,6 +108,29 @@ def propose(screen, collection, exclude=None):
             confidence[f'{side}_{index}'] = result[1] if result else None
         state['cards'][side] = values if any(v != 'unknown' for v in values) else None
     return {'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v1', 'confidence': confidence, 'references': references, 'human_review_required': True}}
+
+
+def _reviews(state):
+    reviews = state.get('reviews') or {}
+    legacy = state.get('reviewed') is True
+    return {
+        'screen_kind': reviews.get('screen_kind') is True,
+        'ammo': reviews.get('ammo', legacy) is True,
+        'combat_stats': reviews.get('combat_stats', legacy) is True,
+        'cards': reviews.get('cards', legacy) is True,
+    }
+
+
+def _section(state, name):
+    if name in state:
+        return state.get(name) or {}
+    stats = state.get('stats') or {}
+    if name == 'ammo':
+        return {
+            'loaded': stats.get('ammo_loaded'),
+            'reserve': stats.get('ammo_reserve'),
+        }
+    return {key: stats.get(key) for key in REGIONS if key not in ('loaded', 'reserve')}
 
 
 def card_box(side, index):
