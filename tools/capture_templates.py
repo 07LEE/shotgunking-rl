@@ -7,7 +7,7 @@ Usage:
   3. Automatically takes a screenshot, detects pieces, and saves templates
   4. Visually inspect saved PNGs to verify correct labeling
 
-  uv run python tools/capture_templates.py
+  .venv/bin/python tools/capture_templates.py
 """
 import subprocess
 import sys
@@ -23,7 +23,7 @@ import numpy as np
 try:
     import mss
 except ImportError:
-    print("mss not installed. Install and rerun: uv add mss")
+    print("mss not installed. Install the project with: .venv/bin/python -m pip install -e .")
     sys.exit(1)
 
 # Import dynamic board detection function from analyzer
