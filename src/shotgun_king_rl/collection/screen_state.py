@@ -16,6 +16,7 @@ REGIONS = {
     'spread_degrees': (270, 390, 354, 430),
     'knockback_percent': (270, 454, 354, 492),
 }
+COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent')
 
 
 def patch(image, box):
@@ -83,7 +84,7 @@ def propose(screen, collection, exclude=None):
     state = {
         'screen_kind': None,
         'ammo': {},
-        'combat_stats': {},
+        'combat_stats': {key: None for key in COMBAT_FIELDS},
         'cards': {},
         'locked_cells': [],
         'reviews': {
@@ -130,7 +131,7 @@ def _section(state, name):
             'loaded': stats.get('ammo_loaded'),
             'reserve': stats.get('ammo_reserve'),
         }
-    return {key: stats.get(key) for key in REGIONS if key not in ('loaded', 'reserve')}
+    return {key: stats.get(key) for key in COMBAT_FIELDS}
 
 
 def card_box(side, index):

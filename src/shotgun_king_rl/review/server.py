@@ -43,7 +43,7 @@ def load_item(collection, relative):
 
 
 AMMO_FIELDS = ('loaded', 'reserve')
-COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'knockback_percent')
+COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent')
 REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards')
 SCREEN_KINDS = ('gameplay', 'card_selection', 'retry', 'transition')
 
@@ -77,8 +77,9 @@ def validate_screen_state(value):
             raise ValueError(f'{key} must be a nonnegative integer or unknown')
     if combat.get('range_min') is not None and combat.get('range_max') is not None and combat['range_min'] > combat['range_max']:
         raise ValueError('Minimum range exceeds maximum range')
-    if combat.get('knockback_percent') is not None and combat['knockback_percent'] > 100:
-        raise ValueError('Knockback must be at most 100 percent')
+    for key, label in (('penetration_percent', 'Penetration'), ('knockback_percent', 'Knockback')):
+        if combat.get(key) is not None and combat[key] > 100:
+            raise ValueError(f'{label} must be at most 100 percent')
 
     cards = value.get('cards', {})
     if not isinstance(cards, dict) or set(cards) - {'left', 'right'}:

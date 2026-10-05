@@ -102,14 +102,20 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
 .screen-overview + .help { margin-top: 12px; }
 .screen-input-overlay { position: absolute; inset: 0; pointer-events: none; }
 .screen-field { position: absolute; z-index: 2; pointer-events: auto; }
-.screen-field .field-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.screen-field .field-name { display: block; width: fit-content; max-width: 100%; margin: 0 0 2px 3px; padding: 2px 5px; overflow: hidden; border-radius: 4px; background: #18181bee; color: #d9daf4; font-size: clamp(7px, .68vw, 10px); line-height: 1.15; white-space: nowrap; text-overflow: ellipsis; box-shadow: 0 2px 8px #0007; }
 .screen-field input:not([type=checkbox]) { height: clamp(24px, 3.3vw, 38px); margin: 0; padding: 4px 7px; border-color: #b4b9f590; background: #18181bee; font-size: clamp(8px, .85vw, 12px); text-align: center; box-shadow: 0 3px 12px #0008; }
-.overlay-ammo-loaded { left: 21.5%; top: 4.5%; width: 8.5%; }
-.overlay-ammo-reserve { left: 21.5%; top: 13%; width: 8.5%; }
-.overlay-floor { left: 57.5%; top: 5%; width: 10%; }
-.overlay-attack { left: 31.5%; top: 38.5%; width: 8.5%; }
-.overlay-range { left: 30.5%; top: 50.5%; width: 12%; }
-.overlay-spread { left: 30%; top: 62.5%; width: 13%; }
+.overlay-ammo-loaded { left: 21.5%; top: 2%; width: 8.5%; }
+.overlay-ammo-reserve { left: 21.5%; top: 12%; width: 8.5%; }
+.overlay-floor { left: 57.5%; top: 2%; width: 10%; }
+.overlay-attack { left: 31.5%; top: 35%; width: 8.5%; }
+.overlay-range { left: 30.5%; top: 47%; width: 12%; }
+.overlay-spread { left: 30%; top: 59%; width: 13%; }
+.overlay-penetration { left: 44%; top: 59%; width: 13%; }
+.overlay-knockback { left: 44%; top: 71%; width: 13%; }
+.overlay-review { position: absolute; z-index: 2; display: flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #b4b9f570; border-radius: 7px; background: #18181bee; color: var(--text); font-size: clamp(8px, .75vw, 11px); line-height: 1.2; white-space: nowrap; pointer-events: auto; box-shadow: 0 3px 12px #0008; }
+.overlay-review input { flex: 0 0 auto; }
+.overlay-ammo-review { left: 21.5%; top: 21%; }
+.overlay-combat-review { left: 30%; top: 82%; }
 .range-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 3px; color: var(--accent); }
 .range-pair input:not([type=checkbox]) { min-width: 0; padding-inline: 3px; }
 .stat-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -148,8 +154,8 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
 .page-info-mode .screen-panel { grid-column: 1 / -1; grid-row: 1; position: static; }
 .page-info-mode .review-controls { grid-column: 1 / -1; grid-row: 2; height: auto; min-height: 0; }
 .page-info-mode .input-scroll { overflow: visible; padding-right: 0; }
-.page-info-mode #screenControls { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
-.page-info-mode #screenControls > .panel:last-child { grid-column: 1 / -1; }
+.page-info-mode #screenControls { grid-template-columns: minmax(300px, .7fr) minmax(0, 1.3fr); align-items: start; }
+.page-info-mode #screenControls > .panel:last-child { grid-column: auto; }
 .page-info-mode .save-panel { align-self: end; }
 #screenControls .controls > .toggle, .review-section .toggle { margin-top: 12px; }
 @media (max-width: 850px) {
@@ -166,6 +172,7 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
 @media (max-width: 700px) {
     .screen-input-overlay { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
     .screen-field { position: static; width: auto; }
-    .screen-field .field-name { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+    .overlay-review { position: static; min-height: 38px; white-space: normal; }
+    .screen-field .field-name { width: auto; max-width: none; margin: 0 0 5px; padding: 0; overflow: visible; background: transparent; color: var(--muted); font-size: 11px; box-shadow: none; }
     .screen-field input:not([type=checkbox]) { height: auto; padding: 9px 10px; font-size: 12px; }
 }
