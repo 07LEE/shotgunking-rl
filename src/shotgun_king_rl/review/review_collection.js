@@ -6,6 +6,12 @@ const $ = id => document.getElementById(id); let items = [], data, revision, sel
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }
 function sessionItems() { return items.filter(item => item.session === currentSession) }
+function pageReviewCount(item) { return Object.keys(reviewInputs).filter(section => item.reviews?.[section] === true).length }
+function pageComplete(item) { return pageReviewCount(item) === Object.keys(reviewInputs).length }
+function needsReview(item) { return currentReviewTab === 'pieces' ? !item.confirmed : !pageComplete(item) }
+function firstPending(list) { return list.find(needsReview) || list[0] }
+function reviewMarker(item) { if (currentReviewTab === 'pieces') return item.confirmed ? '✓' : '○'; const count = pageReviewCount(item); return count === Object.keys(reviewInputs).length ? '✓' : count > 0 ? '◐' : '○' }
+function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); status(currentReviewTab === 'pieces' ? (data.confirmed ? 'Piece labels approved.' : 'Piece labels are still a draft.') : (pageComplete(item) ? 'Page information reviewed.' : 'Page information review is incomplete.')) }
 for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c; $('label').append(o) }
 async function api(url, options) { const r = await fetch(url, options); const a = await r.json(); if (!r.ok) throw Error(a.error || r.statusText); return a }
 function status(s, error = false) {
@@ -45,10 +51,10 @@ $('showLabels').onchange = labelView;
 labelView();
 function cropValue() { const parts = $('crop').value.split(',').map(x => x.trim()); if (parts.length !== 4 || parts.some(x => !/^\d+$/.test(x))) throw Error('Enter four nonnegative integer crop coordinates'); return parts.map(Number) }
 function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent($('items').value) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
-async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const side of ['left', 'right']) $('cards_' + side).value = (data.screen_state.cards?.[side] || []).join('\n'); for (const [section, id] of Object.entries(reviewInputs)) $(id).checked = data.screen_state.reviews[section] === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; preview(); draw(); dirty = false; status(data.confirmed ? 'Piece labels approved. Page information can be saved independently.' : 'Piece labels are still a draft.') } catch (e) { status(e.message, true) } }
+async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const side of ['left', 'right']) $('cards_' + side).value = (data.screen_state.cards?.[side] || []).join('\n'); for (const [section, id] of Object.entries(reviewInputs)) $(id).checked = data.screen_state.reviews[section] === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
 $('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
-$('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } currentSession = $('sessions').value; const list = sessionItems(); currentId = list.find(x => !x.confirmed)?.id || list[0].id; remember(); renderOptions(); load() };
+$('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } currentSession = $('sessions').value; const list = sessionItems(); currentId = firstPending(list).id; remember(); renderOptions(); load() };
 $('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked_cells = data.screen_state.locked_cells.filter(x => x[0] !== r || x[1] !== c); if ($('locked').checked) data.screen_state.locked_cells.push([r, c]); dirty = true; draw() };
 for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', 'cards_left', 'cards_right', ...Object.values(reviewInputs)]) $(id).oninput = () => { dirty = true };
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; dirty = true; draw() };
@@ -97,16 +103,14 @@ async function save(confirmed) {
         }
         const list = sessionItems();
         const index = list.findIndex(item => item.id === currentId);
-        const next = currentReviewTab === 'pieces'
-            ? [...list.slice(index + 1), ...list.slice(0, index)].find(item => !item.confirmed)
-            : list[index + 1];
+        const next = [...list.slice(index + 1), ...list.slice(0, index)].find(needsReview);
         if (next) {
             currentId = next.id;
             remember();
             renderOptions();
             await load();
         } else {
-            status(currentReviewTab === 'pieces' ? 'Session piece review complete — all ' + list.length + ' screens approved.' : 'Page information saved — reached the last screenshot.');
+            status(currentReviewTab === 'pieces' ? 'Session piece review complete — all ' + list.length + ' screens approved.' : 'Session page-information review complete — all ' + list.length + ' screens reviewed.');
         }
     } catch (error) {
         status('Not saved — ' + error.message, true);
@@ -116,11 +120,11 @@ async function save(confirmed) {
 }
 $('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
-function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = (item.confirmed ? '✓ ' : '○ ') + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; const count = section => list.filter(item => item.reviews?.[section]).length; $('progress').textContent = 'pieces ' + list.filter(x => x.confirmed).length + '/' + list.length + ' · kind ' + count('screen_kind') + ' · ammo ' + count('ammo') + ' · stats ' + count('combat_stats') + ' · cards ' + count('cards') + ' · ' + (index + 1) + '/' + list.length }
+function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = reviewMarker(item) + ' ' + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; const count = section => list.filter(item => item.reviews?.[section]).length; $('progress').textContent = currentReviewTab === 'pieces' ? 'pieces ' + list.filter(x => x.confirmed).length + '/' + list.length + ' · screenshot ' + (index + 1) + '/' + list.length : 'page info ' + list.filter(pageComplete).length + '/' + list.length + ' · kind ' + count('screen_kind') + ' · ammo ' + count('ammo') + ' · stats ' + count('combat_stats') + ' · cards ' + count('cards') + ' · screenshot ' + (index + 1) + '/' + list.length }
 function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); if (index + delta < 0 || index + delta >= list.length) return; if (dirty && !confirm('Discard unsaved edits?')) return; currentId = list[index + delta].id; remember(); renderOptions(); load() }
 $('previous').onclick = () => navigate(-1); $('next').onclick = () => navigate(1);
 window.onbeforeunload = e => { if (dirty) { e.preventDefault(); e.returnValue = '' } };
-(async () => { try { items = await api('/api/items'); if (!items.length) { status('No annotations. Run with --session to prepare inbox images.'); return } const sessions = [...new Set(items.map(x => x.session))]; const saved = recalled(); currentSession = sessions.includes(saved.session) ? saved.session : sessions[0]; for (const session of sessions) { const o = document.createElement('option'); o.value = session; o.textContent = session; $('sessions').append(o) } $('sessions').value = currentSession; const list = sessionItems(); currentId = list.some(x => x.id === saved.id) ? saved.id : (list.find(x => !x.confirmed)?.id || list[0].id); remember(); renderOptions(); await load() } catch (e) { status(e.message) } })();
+(async () => { try { items = await api('/api/items'); if (!items.length) { status('No annotations. Run with --session to prepare inbox images.'); return } const sessions = [...new Set(items.map(x => x.session))]; const saved = recalled(); currentSession = sessions.includes(saved.session) ? saved.session : sessions[0]; for (const session of sessions) { const o = document.createElement('option'); o.value = session; o.textContent = session; $('sessions').append(o) } $('sessions').value = currentSession; const list = sessionItems(); currentId = list.some(x => x.id === saved.id) ? saved.id : firstPending(list).id; remember(); renderOptions(); await load() } catch (e) { status(e.message) } })();
 
 $('predictState').onclick = async () => {
     $('predictState').disabled = true;
@@ -150,6 +154,8 @@ function switchReviewTab(name, focus = false) {
     }
     $('draft').textContent = name === 'pieces' ? 'Save draft' : 'Save page info';
     $('approve').textContent = name === 'pieces' ? 'Approve pieces ✓' : 'Save & next →';
+    $('saveHelp').textContent = name === 'pieces' ? 'Check every piece label before approval.' : 'Each page-information section has its own review state. Saving this tab preserves piece approval.';
+    if (items.length) { renderOptions(); showReviewStatus(); }
 }
 for (const [id, name] of [['piecesTab', 'pieces'], ['screenTab', 'screen']]) {
     $(id).onclick = () => {

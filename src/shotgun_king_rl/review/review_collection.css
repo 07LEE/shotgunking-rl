@@ -97,9 +97,21 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
 #grid.show-labels .cell.excluded span { background: #63333ce6; color: #ffd5dc; }
 
 #fullImage { width: 100%; display: block; border-radius: 8px; }
-.screen-overview { display: block; }
+.screen-overview { display: block; position: relative; }
 .screen-overview > a { min-width: 0; }
 .screen-overview + .help { margin-top: 12px; }
+.screen-input-overlay { position: absolute; inset: 0; pointer-events: none; }
+.screen-field { position: absolute; z-index: 2; pointer-events: auto; }
+.screen-field .field-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.screen-field input:not([type=checkbox]) { height: clamp(24px, 3.3vw, 38px); margin: 0; padding: 4px 7px; border-color: #b4b9f590; background: #18181bee; font-size: clamp(8px, .85vw, 12px); text-align: center; box-shadow: 0 3px 12px #0008; }
+.overlay-ammo-loaded { left: 21.5%; top: 4.5%; width: 8.5%; }
+.overlay-ammo-reserve { left: 21.5%; top: 13%; width: 8.5%; }
+.overlay-floor { left: 57.5%; top: 5%; width: 10%; }
+.overlay-attack { left: 31.5%; top: 38.5%; width: 8.5%; }
+.overlay-range { left: 30.5%; top: 50.5%; width: 12%; }
+.overlay-spread { left: 30%; top: 62.5%; width: 13%; }
+.range-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 3px; color: var(--accent); }
+.range-pair input:not([type=checkbox]) { min-width: 0; padding-inline: 3px; }
 .stat-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .quick-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14px; }
 textarea { width: 100%; background: var(--field); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 7px 0 14px; font: inherit; resize: vertical; }
@@ -133,10 +145,10 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
 .save-panel { flex-shrink: 0; margin-top: 14px; padding: 16px 22px; }
 .save-panel .button-row { margin-top: 8px; }
 #locked { margin: 12px 0; }
-.page-info-mode .screen-panel { grid-column: 1 / -1; position: static; }
+.page-info-mode .screen-panel { grid-column: 1 / -1; grid-row: 1; position: static; }
 .page-info-mode .review-controls { grid-column: 1 / -1; grid-row: 2; height: auto; min-height: 0; }
 .page-info-mode .input-scroll { overflow: visible; padding-right: 0; }
-.page-info-mode #screenControls { grid-template-columns: minmax(260px, .65fr) minmax(0, 1.35fr); align-items: start; }
+.page-info-mode #screenControls { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
 .page-info-mode #screenControls > .panel:last-child { grid-column: 1 / -1; }
 .page-info-mode .save-panel { align-self: end; }
 #screenControls .controls > .toggle, .review-section .toggle { margin-top: 12px; }
@@ -151,3 +163,9 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
 @media (max-width: 620px) { .shared-selection .progress { display: none; } }
 @media (max-width: 540px) { .quick-fields { grid-template-columns: 1fr; } }
 @media (max-width: 420px) { .screen-panel { padding: 16px; } }
+@media (max-width: 700px) {
+    .screen-input-overlay { position: static; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .screen-field { position: static; width: auto; }
+    .screen-field .field-name { position: static; width: auto; height: auto; overflow: visible; clip: auto; display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+    .screen-field input:not([type=checkbox]) { height: auto; padding: 9px 10px; font-size: 12px; }
+}
