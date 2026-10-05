@@ -414,151 +414,24 @@ def get_state_matrix(img):
 
 
 def extract_ammo_count(img):
-    """Analyze UI pixels at top-left of screenshot to return real-time loaded and reserve ammo count.
+    """Compatibility wrapper for the independent ammunition reader."""
+    from .ammo import extract_ammo_count as extract
 
-    Args:
-        img: 1280x720 BGR image.
-
-    Returns:
-        A tuple containing (loaded_ammo, reserve_ammo).
-    """
-    if img is None or cv2 is None or np is None:
-        return 2, 8
-
-    try:
-        height, width, _ = img.shape
-        if height != 720 or width != 1280:
-            img = cv2.resize(img, (1280, 720))
-
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        # 1. Calculate loaded ammo (Y: 52~72)
-        loaded = 0
-        loaded_region = rgb[52:72, 384:544]
-        red_mask_loaded = (loaded_region[:, :, 0] > 180) & (loaded_region[:, :, 1] < 60) & (loaded_region[:, :, 2] < 80)
-        for i in range(10):
-            start_x = i * 16
-            end_x = start_x + 8
-            if np.sum(red_mask_loaded[:, start_x:end_x]) >= 15:
-                loaded += 1
-            else:
-                break
-
-        # 2. Calculate reserve ammo (Y: 89~108)
-        reserve = 0
-        reserve_region = rgb[89:108, 384:704]
-        red_mask_reserve = (reserve_region[:, :, 0] > 180) & (reserve_region[:, :, 1] < 60) & (reserve_region[:, :, 2] < 80)
-        for i in range(20):
-            start_x = i * 16
-            end_x = start_x + 8
-            if np.sum(red_mask_reserve[:, start_x:end_x]) >= 15:
-                reserve += 1
-            else:
-                break
-
-        return max(0, loaded), max(0, reserve)
-    except Exception as e:
-        print(f"Failed to extract ammo count: {e}")
-        return 2, 8
+    return extract(img)
 
 
 def check_retry_popup(img):
-    """Checks whether the captured screen contains the retry/game-over popup.
+    """Compatibility wrapper for retry overlay recognition."""
+    from .screens import check_retry_popup as check
 
-    It uses geometric properties (contour width, height, coordinates, and symmetry)
-    of the YES/NO buttons to detect if the popup is active in a language-independent manner.
-
-    Args:
-        img: Full 1280x720 BGR game screen screenshot.
-
-    Returns:
-        True if the retry popup is active, False otherwise.
-    """
-    if img is None or cv2 is None or np is None:
-        return False
-
-    try:
-        # Resize input image to 1280x720 for consistent geometric coordinates
-        height, width = img.shape[:2]
-        if height != 720 or width != 1280:
-            img = cv2.resize(img, (1280, 720))
-
-        # Check full chessboard region brightness to verify if the screen is darkened (Game Over state)
-        board = crop_chessboard(img)
-        if board is None:
-            return False
-        board_gray = cv2.cvtColor(board, cv2.COLOR_BGR2GRAY)
-        board_mean = board_gray.mean()
-        # If the board is bright, it cannot be a retry popup (popup always darkens the screen)
-        if board_mean > 60.0:
-            return False
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # Use Otsu's thresholding to segment the bright buttons from the darkened background
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        detected_buttons = []
-        for c in contours:
-            x, y, w, h = cv2.boundingRect(c)
-            # Filter contours matching the expected YES/NO buttons shape & region
-            # Expected buttons: Width ~ 120px (110-130), Height ~ 36px (30-45), Y around 364 (345-385)
-            if 110 <= w <= 130 and 30 <= h <= 45 and 345 <= y <= 385:
-                detected_buttons.append((x, y, w, h))
-
-        if len(detected_buttons) == 2:
-            btn1, btn2 = sorted(detected_buttons, key=lambda b: b[0])
-            y_diff = abs(btn1[1] - btn2[1])
-            # Verify horizontal alignment (small y difference) and lateral symmetry (average X center around 640px)
-            center1 = btn1[0] + btn1[2] / 2
-            center2 = btn2[0] + btn2[2] / 2
-            avg_x = (center1 + center2) / 2
-            if y_diff < 5 and abs(avg_x - 640.0) < 10.0:
-                return True
-
-        return False
-    except Exception as e:
-        print(f"Failed to check retry popup geometrically: {e}")
-        return False
+    return check(img)
 
 
 def check_card_selection_screen(img):
-    """Checks whether the captured screen contains the card selection popup.
+    """Compatibility wrapper for card-screen recognition."""
+    from .screens import check_card_selection_screen as check
 
-    It samples specific card boundary coordinates that contain highly unique
-    bright colors when active.
-
-    Args:
-        img: Full 1280x720 BGR game screen screenshot.
-
-    Returns:
-        True if the card selection popup is active, False otherwise.
-    """
-    if img is None or cv2 is None or np is None:
-        return False
-    try:
-        height, width = img.shape[:2]
-        if height != 720 or width != 1280:
-            img = cv2.resize(img, (1280, 720))
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # Sampling unique bright border pixel locations (16 points) from active card boxes
-        card_borders = [
-            (220, 545), (220, 619), (328, 545), (328, 619),
-            (220, 656), (220, 730), (328, 656), (328, 730),
-            (420, 545), (420, 619), (528, 545), (528, 619),
-            (420, 656), (420, 730), (528, 656), (528, 730)
-        ]
-
-        # All sampled pixels must exhibit bright ivory grayscale color (> 215)
-        for y, x in card_borders:
-            if gray[y, x] < 215:
-                return False
-        return True
-    except Exception as e:
-        print(f"Failed to check card selection screen: {e}")
-        return False
+    return check(img)
 
 
 if __name__ == "__main__":
