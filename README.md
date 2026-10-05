@@ -19,7 +19,7 @@ The project uses standard Python packaging and does not require a specific packa
 
 1. Put private screenshots in `data/collection/inbox/`.
 2. Import and prepare one play session with `.venv/bin/python tools/preprocess/prepare_collection.py --session SESSION_ID`.
-3. Review board labels and page information with `.venv/bin/python tools/review/review_collection.py --open`.
+3. Review board labels and page information with `./scripts/run_review.sh`.
 4. Build an immutable dataset with `.venv/bin/python tools/preprocess/build_piece_dataset.py --output data/collection/datasets/NAME`.
 
 Screenshots from the same play session must use one session ID and one train, validation, or test split.
