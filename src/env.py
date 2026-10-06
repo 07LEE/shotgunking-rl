@@ -47,6 +47,7 @@ from shotgun_king_rl.runtime.actions import (
 from shotgun_king_rl.runtime.rewards import calculate_step_reward
 from shotgun_king_rl.runtime.transitions import apply_terminal_rules, update_countdown
 from shotgun_king_rl.runtime.io import CaptureResult, InputResult
+from shotgun_king_rl.runtime.execution import verify_action_completion
 import sys
 
 # Ensure project root is in python path to support tools module imports
@@ -189,6 +190,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "requested_action": requested_action,
             "action": executed_action,
             "input_succeeded": False,
+            "action_completed": False,
+            "transition_ready": False,
             "input": _result_info(result, "input"),
         }
         return self.current_state, 0.0, False, self.current_step >= self.max_steps, info
@@ -221,13 +224,13 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         
         img_path = "data/screenshot.png"
         if not self._capture_screen(img_path):
-            return self._get_obs()
+            return self._get_obs(force_inject=False)
         if not os.path.exists(img_path) or cv2 is None:
-            return self._get_obs()
+            return self._get_obs(force_inject=False)
             
         img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
         if img is None:
-            return self._get_obs()
+            return self._get_obs(force_inject=False)
             
         # Crop to board ROI to focus on gameplay animations
         y1, y2, x1, x2 = 119, 631, 383, 895
@@ -273,7 +276,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if time.time() - start_time >= max_wait:
             print("Equilibrium: Exited due to maximum wait timeout.")
         time.sleep(0.2)
-        return self._get_obs()
+        return self._get_obs(force_inject=False)
 
     def _get_threat_matrix(self, state):
         """Return the threat matrix through the pure runtime state module."""
@@ -543,7 +546,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         prev_board = self.current_state[:64].reshape(8, 8) if self.current_state is not None else np.zeros((8, 8))
 
         # Force fresh observation update before computing action parameters
-        self.current_state = self._get_obs()
+        self.current_state = self._get_obs(force_inject=False)
 
         # Reconstruct 8x8 matrices from 133-dimensional flat state
         board_state = self.current_state[:64].reshape(8, 8)
@@ -553,17 +556,22 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         promotion_detected = detect_promotion(prev_board, board_state)
 
-        # Determine Player King position (either detected or logical backup)
+        # A requested action is unsafe when the current king position is not observed.
         king_positions = np.argwhere(board_state == 1)
-        if len(king_positions) > 0:
-            king_row, king_col = int(king_positions[0][0]), int(king_positions[0][1])
-            self.king_row, self.king_col = king_row, king_col
-        else:
-            king_row, king_col = self.king_row, self.king_col
-            print(f"King missing in board_state. Using logical tracked position: ({king_row}, {king_col})")
-            # Print actual parsed board_state matrix for vision debugging
-            print("Current Board State Matrix:")
-            print(board_state)
+        if len(king_positions) != 1:
+            info = {
+                "step": self.current_step,
+                "requested_action": original_action,
+                "action": None,
+                "input_succeeded": None,
+                "action_completed": False,
+                "transition_ready": False,
+                "observation_issue": f"player_king_count:{len(king_positions)}",
+            }
+            return self.current_state, 0.0, False, self.current_step >= self.max_steps, info
+        king_row, king_col = int(king_positions[0][0]), int(king_positions[0][1])
+        self.king_row, self.king_col = king_row, king_col
+        before_ammo = (int(self.loaded_ammo), int(self.reserve_ammo))
 
         # Count enemies before action execution
         prev_enemies = np.sum(board_state >= 2)
@@ -657,17 +665,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     return self._input_failure_transition(original_action, action, action_result)
                 time.sleep(2.2)
 
-            # Update tracked position internally
-            self.king_row = target_row
-            self.king_col = target_col
-
-            # Move Rule: Automatically reload loaded_ammo from reserve_ammo when King moves
-            needed = max(0, self.max_ammo - self.loaded_ammo)
-            transfer = min(needed, self.reserve_ammo)
-            self.loaded_ammo += transfer
-            self.reserve_ammo -= transfer
-            print(f"Ammo System: King moved. Auto-reloaded {transfer} shells from reserve. (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
-                
         elif action == 8:
             # Reload
             # Use the keyboard only when the direct reload control cannot be clicked.
@@ -685,7 +682,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 if img is not None:
                     from analyzer import extract_ammo_count
                     self.loaded_ammo, self.reserve_ammo = extract_ammo_count(img)
-            print(f"Ammo System: Manual reload completed. Synced from UI (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
+            print(f"Ammo System: Reload input dispatched. Observed ammo: {self.loaded_ammo}/{self.reserve_ammo}")
             
         elif action == 9:
             # Shoot (Intel aimed click bypassing the 1-tile move physics rule)
@@ -720,9 +717,6 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 # Fallback if target is out of range or missing (normally filtered by action guard)
                 print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
 
-            self.loaded_ammo = max(0, self.loaded_ammo - 1)
-            print(f"Ammo System: Shot fired. Loaded ammo consumed. (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
-
         # Wait for turn transition and board state stabilization actively
         # Shoot action has heavy fire/smoke animation, enforce guaranteed sleep to ensure clean capture
         if action == 9:
@@ -733,6 +727,19 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Reconstruct board state for reward/evaluation after observation update
         curr_board = self.current_state[:64].reshape(8, 8)
         curr_threat = self.current_state[64:128].reshape(8, 8)
+        completion = verify_action_completion(
+            action=action,
+            before_board=board_state,
+            after_board=curr_board,
+            before_ammo=before_ammo,
+            after_ammo=(int(self.loaded_ammo), int(self.reserve_ammo)),
+            destination=(target_row, target_col) if action in range(8) or action in range(10, 18) or shot_was_melee else None,
+            shot_was_melee=shot_was_melee,
+        )
+        if completion.confirmed:
+            observed_king = np.argwhere(curr_board == 1)
+            if len(observed_king) == 1:
+                self.king_row, self.king_col = int(observed_king[0][0]), int(observed_king[0][1])
 
         curr_enemies = np.sum(curr_board >= 2)
 
@@ -844,7 +851,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             attempts += 1
 
         # Sync the final observation state
-        self.current_state = self._get_obs(force_inject=True)
+        self.current_state = self._get_obs(force_inject=False)
         curr_board = self.current_state[:64].reshape(8, 8)
 
         previous_countdown_trigger = self.countdown_trigger_step
@@ -919,6 +926,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "requested_action": original_action,
             "action": action,
             "input_succeeded": bool(action_result),
+            "action_completed": completion.confirmed,
+            "transition_ready": completion.confirmed,
+            "completion": {"status": completion.status.value, "reason": completion.reason},
             "input": _result_info(action_result, "input"),
             "capture": _result_info(self.last_capture_result, "capture"),
         }

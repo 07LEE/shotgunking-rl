@@ -17,10 +17,13 @@ from .state import (
 from .rewards import RewardResult, calculate_step_reward
 from .transitions import TerminalResult, apply_terminal_rules, update_countdown
 from .io import CaptureResult, InputResult, IOStatus
+from .execution import ActionCompletion, CompletionStatus, verify_action_completion
 
 __all__ = [
     "ACTION_DIRECTIONS",
+    "ActionCompletion",
     "CaptureResult",
+    "CompletionStatus",
     "InputResult",
     "IOStatus",
     "RewardResult",
@@ -37,4 +40,5 @@ __all__ = [
     "select_shot_target",
     "update_countdown",
     "update_enemy_turns",
+    "verify_action_completion",
 ]

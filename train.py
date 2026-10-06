@@ -252,6 +252,13 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     if done:
                         break
                     continue
+
+                if not info.get("transition_ready", True):
+                    print(f"Action completion was not verified; transition was not added to replay memory: {info.get('completion') or info.get('observation_issue')}")
+                    state = next_state
+                    if done:
+                        break
+                    continue
                 
                 # Use corrected action from env guard if available
                 actual_action = info.get("action", action)

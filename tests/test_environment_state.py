@@ -85,7 +85,30 @@ class EnvironmentStateTests(unittest.TestCase):
         self.assertTrue(terminated)
         self.assertFalse(truncated)
         self.assertEqual(info["action"], 4)
+        self.assertFalse(info["transition_ready"])
         self.assertEqual(click.call_count, 2)  # move click and one retry click
+
+    def test_move_transition_is_ready_only_after_king_reaches_destination(self):
+        game = env.ShotgunKingEnv(max_steps=10)
+        before_board = np.zeros((8, 8), dtype=np.float32)
+        after_board = np.zeros((8, 8), dtype=np.float32)
+        before_board[4, 4] = 1
+        before_board[0, 0] = 2
+        after_board[4, 5] = 1
+        after_board[0, 0] = 2
+        before = observation(before_board)
+        after = observation(after_board)
+        game.current_state = before
+
+        with patch.object(game, "_check_emergency_stop"), patch.object(game, "_get_obs", side_effect=[before, after, after]), patch.object(game, "_wait_for_equilibrium", return_value=after), patch.object(env, "click_relative_in_window"), patch.object(env, "check_retry_popup", return_value=False), patch.object(env.os.path, "exists", return_value=True), patch.object(env.cv2, "imread", return_value=np.zeros((720, 1280, 3), dtype=np.uint8)), patch.object(env.time, "sleep"):
+            _, _, terminated, _, info = game.step(4)
+
+        self.assertFalse(terminated)
+        self.assertTrue(info["input_succeeded"])
+        self.assertTrue(info["action_completed"])
+        self.assertTrue(info["transition_ready"])
+        self.assertEqual(info["completion"]["reason"], "king_reached_destination")
+        self.assertEqual((game.king_row, game.king_col), (4, 5))
 
 
 if __name__ == "__main__":
