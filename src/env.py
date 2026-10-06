@@ -45,7 +45,12 @@ from shotgun_king_rl.runtime.actions import (
     select_shot_target,
 )
 from shotgun_king_rl.runtime.rewards import calculate_step_reward
-from shotgun_king_rl.runtime.transitions import apply_terminal_rules, update_countdown
+from shotgun_king_rl.runtime.transitions import (
+    RuntimeScreenState,
+    apply_screen_state_rules,
+    classify_runtime_screen,
+    update_countdown,
+)
 from shotgun_king_rl.runtime.io import CaptureResult, InputResult
 from shotgun_king_rl.runtime.execution import verify_action_completion
 import sys
@@ -378,6 +383,28 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             print(f"Failed to find YES button coordinates dynamically: {e}")
             return (540, 410)
 
+    def _assess_screen(self, observation, transition_exhausted=False):
+        """Classify the latest fresh capture before using it as a transition."""
+        board = observation[:64].reshape(8, 8)
+        capture_succeeded = bool(self.last_capture_result)
+        retry_detected = False
+        card_detected = False
+        image_path = "data/screenshot.png"
+        if capture_succeeded and cv2 is not None and os.path.exists(image_path):
+            image = cv2.imread(image_path)
+            if image is not None:
+                retry_detected = check_retry_popup(image)
+                if not retry_detected:
+                    card_detected = check_card_selection_screen(image)
+        return classify_runtime_screen(
+            capture_succeeded=capture_succeeded,
+            king_count=int(np.count_nonzero(board == 1)),
+            enemy_count=int(np.count_nonzero(board >= 2)),
+            retry_detected=retry_detected,
+            card_selection_detected=card_detected,
+            transition_exhausted=transition_exhausted,
+        )
+
     def reset(self, seed=None, options=None):
         """Resets the environment for a new episode.
 
@@ -454,8 +481,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     "input": _result_info(self.last_input_result, "input"),
                 }
         else:
-            # Check if King is already present before attempting fallback force click
-            initial_obs = self._get_obs()
+            initial_obs = self._get_obs(force_inject=False)
             if not self.last_capture_result:
                 self.current_state = initial_obs
                 return initial_obs, {
@@ -463,51 +489,52 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     "capture": _result_info(self.last_capture_result, "capture"),
                     "input": None,
                 }
-            initial_board = initial_obs[:64].reshape(8, 8)
-            if np.any(initial_board == 1):
+            initial_assessment = self._assess_screen(initial_obs)
+            if initial_assessment.state is RuntimeScreenState.GAMEPLAY:
                 print("DQN Reset: Retry popup not detected, but Player King is already present. Bypassing force click.")
             else:
-                # Check card selection screen first to prevent false force retry click
-                if check_card_selection_screen(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None):
-                    self._handle_card_selection(cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None)
-                else:
-                    # Fallback Force Click: If King is missing from the board state, perform force retry YES click
-                    # to break out of potential infinite loading sync loop
-                    print("DQN Reset Warning: Retry popup not verified by pixel variance, and King is missing. Performing force YES click (dynamic coordinates enabled).")
-                    img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
-                    tx, ty = self._get_yes_button_coords(img)
-                    self._check_emergency_stop()
-                    result = self._record_input(click_relative_in_window(self.window_title, tx, ty))
-                    if not result:
-                        self.current_state = initial_obs
-                        return initial_obs, {
-                            "reset_ready": False,
-                            "capture": _result_info(self.last_capture_result, "capture"),
-                            "input": _result_info(result, "input"),
-                        }
-                    time.sleep(2.5)
+                print(f"DQN Reset: Waiting for a gameplay screen ({initial_assessment.reason}).")
         
-        obs = self._get_obs()
+        obs = self._get_obs(force_inject=False)
         
-        # In-game Start Sync Guard: Poll until Player King (1) is detected on the board
+        # Poll for a bounded time and refuse an unrecognized screen without clicking it.
         printed_sync_msg = False
-        while True:
+        assessment = self._assess_screen(obs)
+        for attempt in range(10):
             self._check_emergency_stop()
-            board_state = obs[:64].reshape(8, 8)
-            if np.any(board_state == 1):
+            if assessment.state is RuntimeScreenState.GAMEPLAY:
                 print("In-game Sync: Player King detected. Game play has officially started!")
                 time.sleep(1.5)  # Allow turn intro animation to fully finish before first step
-                obs = self._get_obs()
+                obs = self._get_obs(force_inject=False)
                 fresh_board = obs[:64].reshape(8, 8)
                 king_positions = np.argwhere(fresh_board == 1)
-                if len(king_positions) > 0:
+                if len(king_positions) == 1:
                     self.king_row, self.king_col = int(king_positions[0][0]), int(king_positions[0][1])
-                break
+                    assessment = self._assess_screen(obs)
+                    break
             if not printed_sync_msg:
                 print("In-game Sync: Waiting for game play to start (King not found on board)...")
                 printed_sync_msg = True
             time.sleep(1.0)
-            obs = self._get_obs()
+            obs = self._get_obs(force_inject=False)
+            assessment = self._assess_screen(
+                obs,
+                transition_exhausted=attempt == 9,
+            )
+        else:
+            assessment = self._assess_screen(obs, transition_exhausted=True)
+
+        if assessment.state is not RuntimeScreenState.GAMEPLAY:
+            self.current_state = obs
+            return obs, {
+                "reset_ready": False,
+                "screen_state": {
+                    "state": assessment.state.value,
+                    "reason": assessment.reason,
+                },
+                "capture": _result_info(self.last_capture_result, "capture"),
+                "input": _result_info(self.last_input_result, "input"),
+            }
             
         self.enemy_turns.clear()
         initial_board = obs[:64].reshape(8, 8)
@@ -521,6 +548,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.current_state = obs
         info = {
             "reset_ready": True,
+            "screen_state": {
+                "state": assessment.state.value,
+                "reason": assessment.reason,
+            },
             "capture": _result_info(self.last_capture_result, "capture"),
             "input": _result_info(self.last_input_result, "input"),
         }
@@ -551,6 +582,32 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         # Reconstruct 8x8 matrices from 133-dimensional flat state
         board_state = self.current_state[:64].reshape(8, 8)
         threat_state = self.current_state[64:128].reshape(8, 8)
+        initial_assessment = self._assess_screen(self.current_state)
+        if initial_assessment.state is not RuntimeScreenState.GAMEPLAY:
+            initial_terminal = apply_screen_state_rules(
+                reward=0.0,
+                enemy_count=int(np.count_nonzero(board_state >= 2)),
+                assessment=initial_assessment,
+            )
+            info = {
+                "step": self.current_step,
+                "requested_action": original_action,
+                "action": None,
+                "input_succeeded": None,
+                "action_completed": False,
+                "transition_ready": False,
+                "screen_state": {
+                    "state": initial_assessment.state.value,
+                    "reason": initial_assessment.reason,
+                },
+            }
+            return (
+                self.current_state,
+                initial_terminal.reward,
+                initial_terminal.terminated,
+                self.current_step >= self.max_steps,
+                info,
+            )
         from specs import get_enemy_specs_matrices
         hp_matrix, _ = get_enemy_specs_matrices(board_state, self.enemy_turns, self.rank)
 
@@ -813,46 +870,35 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if promotion_detected:
             print("DQN Penalty: Enemy Pawn promoted! Subtracted -3.0")
 
-        # Evaluate real King presence without force injection for defeat detection
+        # Classify a fresh screen without treating a temporarily missing King as defeat.
         real_obs = self._get_obs(force_inject=False)
         real_board = real_obs[:64].reshape(8, 8)
-        king_present = np.any(real_board == 1)
+        assessment = self._assess_screen(real_obs)
         
-        # If King is threatened or missing immediately after equilibrium, wait and
-        # recapture to prevent 1-step learning delay caused by slow death animations.
-        if is_threatened or not king_present:
+        # A threatened board may still be animating even when it looks playable.
+        if is_threatened and assessment.state is RuntimeScreenState.GAMEPLAY:
             time.sleep(2.0)
             real_obs = self._get_obs(force_inject=False)
             real_board = real_obs[:64].reshape(8, 8)
-            king_present = np.any(real_board == 1)
+            assessment = self._assess_screen(real_obs)
 
-        # Capture screen and verify retry popup actively via screen analysis
-        image_path = "data/screenshot.png"
-        is_popup = False
-        if cv2 is not None and os.path.exists(image_path):
-            img = cv2.imread(image_path)
-            if check_retry_popup(img):
-                is_popup = True
-
-        # If King is missing and no popup is detected, wait and retry capture to handle temporary lags or screen effects
+        # Poll ambiguous animation/loading frames, then reject them as observation failures.
         attempts = 0
-        while not king_present and not is_popup and attempts < 5:
+        while assessment.state is RuntimeScreenState.TRANSITION and attempts < 5:
             time.sleep(1.0)
-            print(f"DQN Guard: Player King missing but retry popup not detected (curr_enemies: {curr_enemies}). Retrying capture/analysis... (Attempt {attempts+1}/5)")
+            print(f"DQN Guard: Screen is still transitioning. Retrying capture/analysis... (Attempt {attempts+1}/5)")
             real_obs = self._get_obs(force_inject=False)
             real_board = real_obs[:64].reshape(8, 8)
-            king_present = np.any(real_board == 1)
-            curr_enemies = np.sum(real_board >= 2)
-            
-            if cv2 is not None and os.path.exists(image_path):
-                img = cv2.imread(image_path)
-                if check_retry_popup(img):
-                    is_popup = True
+            assessment = self._assess_screen(
+                real_obs,
+                transition_exhausted=attempts == 4,
+            )
             attempts += 1
 
-        # Sync the final observation state
-        self.current_state = self._get_obs(force_inject=False)
-        curr_board = self.current_state[:64].reshape(8, 8)
+        # Keep classification and returned state tied to the same capture.
+        self.current_state = real_obs
+        curr_board = real_board
+        curr_enemies = int(np.count_nonzero(curr_board >= 2))
 
         previous_countdown_trigger = self.countdown_trigger_step
         self.countdown_trigger_step, countdown_expired = update_countdown(
@@ -864,17 +910,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         if previous_countdown_trigger is None and self.countdown_trigger_step is not None:
             print(f"DQN Countdown: Triggered at step {self.current_step} ({curr_enemies} enemies remain).")
 
-        card_selection_detected = False
-        if not is_popup and not king_present:
-            card_image = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
-            card_selection_detected = check_card_selection_screen(card_image)
-
-        terminal = apply_terminal_rules(
+        terminal = apply_screen_state_rules(
             reward=reward,
             enemy_count=curr_enemies,
-            king_present=king_present,
-            popup_detected=is_popup,
-            card_selection_detected=card_selection_detected,
+            assessment=assessment,
             countdown_expired=countdown_expired,
         )
         reward = terminal.reward
@@ -882,6 +921,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         if terminal.outcome == "retry_popup_defeat":
             print(f"DQN Penalty: Detected retry popup via screen analysis! Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Clicking YES button (dynamic coordinates enabled).")
+            image_path = "data/screenshot.png"
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
             tx, ty = self._get_yes_button_coords(img)
             self._check_emergency_stop()
@@ -897,13 +937,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             except Exception as e:
                 print(f"Failed to auto-extract victory cards: {e}")
             print("DQN Reward: Congratulations! Victory/Card selection screen detected! Added +10.0. Episode terminated with victory.")
-        elif terminal.outcome == "missing_king_defeat":
-            print(f"DQN Penalty: Player King missing but retry popup not yet detected. Subtracted {-15.0 - float(curr_enemies):.1f} (including {curr_enemies} enemies penalty). Postponing click to reset.")
         elif terminal.outcome == "countdown_defeat":
             turns_elapsed = self.current_step - self.countdown_trigger_step
             print(f"DQN Penalty: Countdown defeat! {turns_elapsed} turns elapsed since trigger. Subtracted -15.0.")
-        elif not king_present and curr_enemies == 0:
-            print("DQN Warning: Both Player King and enemies are missing from detection. Suspecting persistent screen capture failure. Bypassing step termination to prevent false defeat.")
+        elif assessment.state is RuntimeScreenState.OBSERVATION_FAILURE:
+            print(f"DQN Warning: Observation rejected ({assessment.reason}).")
 
         truncated = self.current_step >= self.max_steps
         
@@ -927,8 +965,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "action": action,
             "input_succeeded": bool(action_result),
             "action_completed": completion.confirmed,
-            "transition_ready": completion.confirmed,
+            "transition_ready": completion.confirmed and assessment.state not in {
+                RuntimeScreenState.TRANSITION,
+                RuntimeScreenState.OBSERVATION_FAILURE,
+            },
             "completion": {"status": completion.status.value, "reason": completion.reason},
+            "screen_state": {"state": assessment.state.value, "reason": assessment.reason},
             "input": _result_info(action_result, "input"),
             "capture": _result_info(self.last_capture_result, "capture"),
         }

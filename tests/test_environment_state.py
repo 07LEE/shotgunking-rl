@@ -10,6 +10,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 import env
+from shotgun_king_rl.runtime.io import CaptureResult, IOStatus
 
 
 def observation(board, threat=None, marker=0.0):
@@ -63,6 +64,10 @@ class EnvironmentStateTests(unittest.TestCase):
         real = observation(board, marker=3)
         final = observation(board, marker=4)
         game.current_state = before
+        game.last_capture_result = CaptureResult(
+            IOStatus.SUCCEEDED,
+            "data/screenshot.png",
+        )
 
         with patch.object(game, "_check_emergency_stop"), patch.object(
             game, "_get_obs", side_effect=[before, real, final]
@@ -71,7 +76,7 @@ class EnvironmentStateTests(unittest.TestCase):
         ), patch.object(
             env, "click_relative_in_window"
         ) as click, patch.object(
-            env, "check_retry_popup", return_value=True
+            env, "check_retry_popup", side_effect=[False, True]
         ), patch.object(
             env.os.path, "exists", return_value=True
         ), patch.object(
@@ -79,8 +84,8 @@ class EnvironmentStateTests(unittest.TestCase):
         ), patch.object(env.time, "sleep"):
             result, reward, terminated, truncated, info = game.step(4)
 
-        np.testing.assert_array_equal(result, final)
-        np.testing.assert_array_equal(game.current_state, final)
+        np.testing.assert_array_equal(result, real)
+        np.testing.assert_array_equal(game.current_state, real)
         self.assertEqual(reward, -16.0)
         self.assertTrue(terminated)
         self.assertFalse(truncated)
@@ -99,6 +104,10 @@ class EnvironmentStateTests(unittest.TestCase):
         before = observation(before_board)
         after = observation(after_board)
         game.current_state = before
+        game.last_capture_result = CaptureResult(
+            IOStatus.SUCCEEDED,
+            "data/screenshot.png",
+        )
 
         with patch.object(game, "_check_emergency_stop"), patch.object(game, "_get_obs", side_effect=[before, after, after]), patch.object(game, "_wait_for_equilibrium", return_value=after), patch.object(env, "click_relative_in_window"), patch.object(env, "check_retry_popup", return_value=False), patch.object(env.os.path, "exists", return_value=True), patch.object(env.cv2, "imread", return_value=np.zeros((720, 1280, 3), dtype=np.uint8)), patch.object(env.time, "sleep"):
             _, _, terminated, _, info = game.step(4)

@@ -43,9 +43,14 @@ class DesktopIOTests(unittest.TestCase):
         game = env.ShotgunKingEnv(max_steps=10)
         board = np.zeros((8, 8), dtype=np.float32)
         board[4, 4] = 1
+        board[0, 0] = 2
         state = np.zeros(281, dtype=np.float32)
         state[:64] = board.reshape(-1)
         game.current_state = state
+        game.last_capture_result = CaptureResult(
+            IOStatus.SUCCEEDED,
+            "data/screenshot.png",
+        )
         loaded_before = game.loaded_ammo
         reserve_before = game.reserve_ammo
         failure = InputResult(IOStatus.FAILED, "click", "window_not_found", (733, 408))
@@ -83,6 +88,22 @@ class DesktopIOTests(unittest.TestCase):
         np.testing.assert_array_equal(observation, np.zeros(281, dtype=np.float32))
         self.assertFalse(info["reset_ready"])
         self.assertEqual(info["capture"]["reason"], "window_not_found")
+        click.assert_not_called()
+
+    def test_reset_does_not_click_an_unrecognized_screen(self):
+        game = env.ShotgunKingEnv()
+        success = CaptureResult(IOStatus.SUCCEEDED, "data/screenshot.png")
+
+        with patch.object(game, "_check_emergency_stop"), patch.object(
+            env, "capture_screen", return_value=success
+        ), patch.object(env.os.path, "exists", return_value=False), patch.object(
+            env, "click_relative_in_window"
+        ) as click, patch.object(env.time, "sleep"):
+            observation, info = game.reset()
+
+        np.testing.assert_array_equal(observation, np.zeros(281, dtype=np.float32))
+        self.assertFalse(info["reset_ready"])
+        self.assertEqual(info["screen_state"]["state"], "observation_failure")
         click.assert_not_called()
 
 

@@ -15,7 +15,15 @@ from .state import (
     update_enemy_turns,
 )
 from .rewards import RewardResult, calculate_step_reward
-from .transitions import TerminalResult, apply_terminal_rules, update_countdown
+from .transitions import (
+    RuntimeScreenState,
+    ScreenAssessment,
+    TerminalResult,
+    apply_screen_state_rules,
+    apply_terminal_rules,
+    classify_runtime_screen,
+    update_countdown,
+)
 from .io import CaptureResult, InputResult, IOStatus
 from .execution import ActionCompletion, CompletionStatus, verify_action_completion
 
@@ -27,15 +35,19 @@ __all__ = [
     "InputResult",
     "IOStatus",
     "RewardResult",
+    "RuntimeScreenState",
+    "ScreenAssessment",
     "ShotTarget",
     "TerminalResult",
     "action_destination",
     "apply_terminal_rules",
+    "apply_screen_state_rules",
     "available_moves",
     "build_action_mask",
     "build_observation",
     "build_threat_matrix",
     "calculate_step_reward",
+    "classify_runtime_screen",
     "detect_promotion",
     "select_shot_target",
     "update_countdown",
