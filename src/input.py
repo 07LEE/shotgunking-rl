@@ -7,6 +7,8 @@ the Shotgun King game window automatically.
 import os
 import time
 
+from shotgun_king_rl.runtime.io import IOStatus, InputResult
+
 try:
     import pyautogui
     if pyautogui is not None:
@@ -30,22 +32,30 @@ def click_at(x, y, duration=0.1):
         duration: Time in seconds taken to move the mouse pointer.
 
     Returns:
-        True if click succeeded, False otherwise.
+        A structured result describing success or failure.
     """
     if pyautogui is None:
         print("Error: 'pyautogui' is not installed.")
-        return False
+        return InputResult(IOStatus.UNAVAILABLE, "click", "pyautogui_unavailable", (x, y))
 
+    mouse_down = False
     try:
         # Move mouse and perform an explicit click hold (mouseDown -> sleep -> mouseUp)
         pyautogui.moveTo(x, y, duration=duration)
         pyautogui.mouseDown()
+        mouse_down = True
         time.sleep(0.05)
         pyautogui.mouseUp()
-        return True
+        mouse_down = False
+        return InputResult(IOStatus.SUCCEEDED, "click", target=(x, y))
     except Exception as e:
         print(f"Failed to click at ({x}, {y}): {e}")
-        return False
+        if mouse_down:
+            try:
+                pyautogui.mouseUp()
+            except Exception:
+                pass
+        return InputResult(IOStatus.FAILED, "click", f"click_error:{type(e).__name__}", (x, y))
 
 
 def click_relative_in_window(window_title, rel_x, rel_y, duration=0.1):
@@ -58,12 +68,12 @@ def click_relative_in_window(window_title, rel_x, rel_y, duration=0.1):
         duration: Mouse pointer move duration in seconds.
 
     Returns:
-        True if click succeeded, False otherwise.
+        A structured result describing success or failure.
     """
     rect = find_window_geometry(window_title)
     if rect is None:
         print(f"Error: Target window '{window_title}' could not be located. Relative click bypassed.")
-        return False
+        return InputResult(IOStatus.FAILED, "click", "window_not_found", (rel_x, rel_y))
 
     abs_x = rect["left"] + rel_x
     abs_y = rect["top"] + rel_y
@@ -79,21 +89,29 @@ def press_key(key, press_duration=0.05):
         press_duration: Duration to hold the key down in seconds.
 
     Returns:
-        True if press succeeded, False otherwise.
+        A structured result describing success or failure.
     """
     if pyautogui is None:
         print("Error: 'pyautogui' is not installed.")
-        return False
+        return InputResult(IOStatus.UNAVAILABLE, "key", "pyautogui_unavailable", key)
 
+    key_down = False
     try:
         pyautogui.keyDown(key)
+        key_down = True
         time.sleep(press_duration)
         pyautogui.keyUp(key)
+        key_down = False
         print(f"Successfully simulated key press: '{key}'")
-        return True
+        return InputResult(IOStatus.SUCCEEDED, "key", target=key)
     except Exception as e:
         print(f"Failed to press key '{key}': {e}")
-        return False
+        if key_down:
+            try:
+                pyautogui.keyUp(key)
+            except Exception:
+                pass
+        return InputResult(IOStatus.FAILED, "key", f"key_error:{type(e).__name__}", key)
 
 
 if __name__ == "__main__":

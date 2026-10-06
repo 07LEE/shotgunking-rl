@@ -84,6 +84,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         for ep in range(1, episodes + 1):
             print(f"\n--- Episode {ep}/{episodes} (Epsilon: {epsilon:.3f}) ---")
             state, info = env.reset()
+            if not info.get("reset_ready", True):
+                print(f"Environment reset failed; stopping before input: {info}")
+                break
             
             episode_reward = 0.0
             step_idx = 0
@@ -242,6 +245,13 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 # Perform action in game environment
                 next_state, reward, term, trunc, info = env.step(action)
                 done = term or trunc
+
+                if not info.get("input_succeeded", True):
+                    print(f"Input failed; transition was not added to replay memory: {info.get('input')}")
+                    state = next_state
+                    if done:
+                        break
+                    continue
                 
                 # Use corrected action from env guard if available
                 actual_action = info.get("action", action)

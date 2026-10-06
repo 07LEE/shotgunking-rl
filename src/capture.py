@@ -9,6 +9,8 @@ import os
 import subprocess
 import time
 
+from shotgun_king_rl.runtime.io import CaptureResult, IOStatus
+
 try:
     import cv2
     import numpy as np
@@ -90,11 +92,11 @@ def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King
         window_title: Target window title to crop the capture region.
 
     Returns:
-        True if the capture was successful and saved, False otherwise.
+        A structured result describing success or failure.
     """
     if mss is None:
         print("Error: 'mss' library is not installed. Please install it using 'pip install mss'.")
-        return False
+        return CaptureResult(IOStatus.UNAVAILABLE, output_path, "mss_unavailable")
 
     # Ensure output directory exists
     output_dir = os.path.dirname(output_path)
@@ -119,8 +121,9 @@ def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King
                     msg = f"Game window is out of monitor bounds! Window: {monitor}, Screen: {screen}. Please move the window inside the monitor."
                     print(f"Error: {msg}")
                     raise RuntimeError(msg)
+            elif window_title:
+                return CaptureResult(IOStatus.FAILED, output_path, "window_not_found")
             else:
-                print("Falling back to primary monitor capture...")
                 monitor = sct.monitors[1]
 
             screenshot = sct.grab(monitor)
@@ -128,17 +131,18 @@ def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King
             if cv2 is not None and np is not None:
                 img = np.array(screenshot)
                 img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-                cv2.imwrite(output_path, img)
+                if not cv2.imwrite(output_path, img):
+                    return CaptureResult(IOStatus.FAILED, output_path, "image_write_failed", monitor)
             else:
                 from PIL import Image
                 img = Image.frombytes("RGB", screenshot.size, screenshot.bgra, "raw", "BGRX")
                 img.save(output_path)
             
             # print(f"Screen successfully captured and saved to {output_path}")
-            return True
+            return CaptureResult(IOStatus.SUCCEEDED, output_path, geometry=dict(monitor))
     except Exception as e:
         print(f"Failed to capture screen: {e}")
-        return False
+        return CaptureResult(IOStatus.FAILED, output_path, f"capture_error:{type(e).__name__}")
 
 
 def detect_grid_prototype(image_path, output_path="data/grid_detected.png"):

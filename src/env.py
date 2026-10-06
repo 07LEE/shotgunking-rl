@@ -46,12 +46,26 @@ from shotgun_king_rl.runtime.actions import (
 )
 from shotgun_king_rl.runtime.rewards import calculate_step_reward
 from shotgun_king_rl.runtime.transitions import apply_terminal_rules, update_countdown
+from shotgun_king_rl.runtime.io import CaptureResult, InputResult
 import sys
 
 # Ensure project root is in python path to support tools module imports
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
+
+
+def _result_info(result, operation):
+    """Normalize structured and legacy boolean operation results for Gym info."""
+    if isinstance(result, (CaptureResult, InputResult)):
+        return result.as_info()
+    if result is None:
+        return None
+    return {
+        "status": "succeeded" if bool(result) else "failed",
+        "operation": operation,
+        "reason": "legacy_result",
+    }
 
 
 def suppress_stdout_if(cond_attr):
@@ -93,6 +107,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.max_steps = max_steps
         self.current_step = 0
         self.current_state = None
+        self.last_capture_result = None
+        self.last_input_result = None
         self.rank = rank
         self.verbose = verbose
 
@@ -155,6 +171,28 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.king_col = 4
         self.enemy_turns = {}
 
+    def _capture_screen(self, output_path):
+        """Capture the configured game window and retain the structured result."""
+        result = capture_screen(output_path=output_path, window_title=self.window_title)
+        self.last_capture_result = result
+        return result
+
+    def _record_input(self, result):
+        """Retain one input result before any logical state is committed."""
+        self.last_input_result = result
+        return result
+
+    def _input_failure_transition(self, requested_action, executed_action, result):
+        """Return without reward or state mutation when desktop input fails."""
+        info = {
+            "step": self.current_step,
+            "requested_action": requested_action,
+            "action": executed_action,
+            "input_succeeded": False,
+            "input": _result_info(result, "input"),
+        }
+        return self.current_state, 0.0, False, self.current_step >= self.max_steps, info
+
     def _check_emergency_stop(self):
         """Checks if the mouse cursor is located in the top-left corner (0,0) of the screen.
 
@@ -182,7 +220,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         start_time = time.time()
         
         img_path = "data/screenshot.png"
-        capture_screen(output_path=img_path, window_title=self.window_title)
+        if not self._capture_screen(img_path):
+            return self._get_obs()
         if not os.path.exists(img_path) or cv2 is None:
             return self._get_obs()
             
@@ -200,7 +239,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         
         while time.time() - start_time < max_wait:
             time.sleep(0.15)
-            capture_screen(output_path=img_path, window_title=self.window_title)
+            if not self._capture_screen(img_path):
+                continue
             if not os.path.exists(img_path):
                 continue
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
@@ -266,7 +306,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         image_path = "data/screenshot.png"
         
         # Ensure fresh screen capture
-        if not capture_screen(output_path=image_path, window_title=self.window_title):
+        if not self._capture_screen(image_path):
             return np.zeros((281,), dtype=np.float32)
         
         if cv2 is not None and os.path.exists(image_path):
@@ -346,6 +386,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             A tuple containing (observation, info).
         """
         self._check_emergency_stop()
+        self.last_capture_result = None
+        self.last_input_result = None
         if gym is not None:
             super().reset(seed=seed)
         
@@ -369,7 +411,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         popup_detected = False
         card_detected = False
         for attempt in range(10):
-            capture_screen(output_path=image_path, window_title=self.window_title)
+            if not self._capture_screen(image_path):
+                time.sleep(0.5)
+                continue
             if cv2 is not None and os.path.exists(image_path):
                 img = cv2.imread(image_path)
                 if check_retry_popup(img):
@@ -385,15 +429,37 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
             tx, ty = self._get_yes_button_coords(img)
             self._check_emergency_stop()
-            click_relative_in_window(self.window_title, tx, ty)
+            result = self._record_input(click_relative_in_window(self.window_title, tx, ty))
+            if not result:
+                obs = self._get_obs()
+                self.current_state = obs
+                return obs, {
+                    "reset_ready": False,
+                    "capture": _result_info(self.last_capture_result, "capture"),
+                    "input": _result_info(result, "input"),
+                }
             time.sleep(2.5)
         elif card_detected:
             print("DQN Reset: Detected card selection screen during reset. Transitioning to automatic choice.")
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
-            self._handle_card_selection(img)
+            if not self._handle_card_selection(img):
+                obs = self._get_obs()
+                self.current_state = obs
+                return obs, {
+                    "reset_ready": False,
+                    "capture": _result_info(self.last_capture_result, "capture"),
+                    "input": _result_info(self.last_input_result, "input"),
+                }
         else:
             # Check if King is already present before attempting fallback force click
             initial_obs = self._get_obs()
+            if not self.last_capture_result:
+                self.current_state = initial_obs
+                return initial_obs, {
+                    "reset_ready": False,
+                    "capture": _result_info(self.last_capture_result, "capture"),
+                    "input": None,
+                }
             initial_board = initial_obs[:64].reshape(8, 8)
             if np.any(initial_board == 1):
                 print("DQN Reset: Retry popup not detected, but Player King is already present. Bypassing force click.")
@@ -408,7 +474,14 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
                     tx, ty = self._get_yes_button_coords(img)
                     self._check_emergency_stop()
-                    click_relative_in_window(self.window_title, tx, ty)
+                    result = self._record_input(click_relative_in_window(self.window_title, tx, ty))
+                    if not result:
+                        self.current_state = initial_obs
+                        return initial_obs, {
+                            "reset_ready": False,
+                            "capture": _result_info(self.last_capture_result, "capture"),
+                            "input": _result_info(result, "input"),
+                        }
                     time.sleep(2.5)
         
         obs = self._get_obs()
@@ -443,7 +516,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     self.enemy_turns[(r, c)] = ENEMY_SPECS[val]["turn"]
 
         self.current_state = obs
-        info = {}
+        info = {
+            "reset_ready": True,
+            "capture": _result_info(self.last_capture_result, "capture"),
+            "input": _result_info(self.last_input_result, "input"),
+        }
         return obs, info
 
     @suppress_stdout_if("verbose")
@@ -461,6 +538,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         print(f"Step {self.current_step} - Executing action: {action}")
 
         original_action = action
+        action_result = None
         # Cache previous board state before sync
         prev_board = self.current_state[:64].reshape(8, 8) if self.current_state is not None else np.zeros((8, 8))
 
@@ -562,7 +640,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 y = int(127 + target_row * 62.5 + 31.25)
                 print(f"Calculated target coordinate for King from ({king_row}, {king_col}) to ({target_row}, {target_col}) -> ({x}, {y})")
                 self._check_emergency_stop()
-                click_relative_in_window(self.window_title, x, y)
+                action_result = self._record_input(click_relative_in_window(self.window_title, x, y))
+                if not action_result:
+                    return self._input_failure_transition(original_action, action, action_result)
                 time.sleep(2.2)
             else:
                 # Absolute fallback clipping if loop somehow fails to find inside direction
@@ -572,7 +652,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 y = int(127 + target_row * 62.5 + 31.25)
                 print(f"Safety Clip target coordinate to ({target_row}, {target_col}) -> ({x}, {y}) due to out of bounds fallback.")
                 self._check_emergency_stop()
-                click_relative_in_window(self.window_title, x, y)
+                action_result = self._record_input(click_relative_in_window(self.window_title, x, y))
+                if not action_result:
+                    return self._input_failure_transition(original_action, action, action_result)
                 time.sleep(2.2)
 
             # Update tracked position internally
@@ -588,15 +670,17 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 
         elif action == 8:
             # Reload
-            # Perform both relative click and keypress reload for redundant reliability
-            click_relative_in_window(self.window_title, 640, 650)
-            time.sleep(0.2)
-            press_key("r")
+            # Use the keyboard only when the direct reload control cannot be clicked.
+            action_result = self._record_input(click_relative_in_window(self.window_title, 640, 650))
+            if not action_result:
+                action_result = self._record_input(press_key("r"))
+            if not action_result:
+                return self._input_failure_transition(original_action, action, action_result)
             time.sleep(1.8)
             # Re-capture and sync real ammo from UI to prevent logical mismatch
             image_path = "data/screenshot.png"
-            capture_screen(output_path=image_path, window_title=self.window_title)
-            if cv2 is not None and os.path.exists(image_path):
+            capture_result = self._capture_screen(image_path)
+            if capture_result and cv2 is not None and os.path.exists(image_path):
                 img = cv2.imread(image_path)
                 if img is not None:
                     from analyzer import extract_ammo_count
@@ -628,7 +712,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 print(f"Intel Shoot: Found enemy at dist {min_dist} (dir: {best_diff}). Aiming at ({target_row}, {target_col}) -> ({x}, {y})")
                 time.sleep(0.4)
                 self._check_emergency_stop()
-                click_relative_in_window(self.window_title, x, y)
+                action_result = self._record_input(click_relative_in_window(self.window_title, x, y))
+                if not action_result:
+                    return self._input_failure_transition(original_action, action, action_result)
                 time.sleep(1.8)
             else:
                 # Fallback if target is out of range or missing (normally filtered by action guard)
@@ -792,7 +878,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
             tx, ty = self._get_yes_button_coords(img)
             self._check_emergency_stop()
-            click_relative_in_window(self.window_title, tx, ty)
+            self._record_input(click_relative_in_window(self.window_title, tx, ty))
             time.sleep(2.5)
         elif terminal.outcome == "board_victory":
             print("DQN Reward: Congratulations! Level 1 cleared! Added +10.0. Episode terminated with victory.")
@@ -828,7 +914,14 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             except Exception as e:
                 print(f"DQN Cards: Failed to record card outcome: {e}")
 
-        info = {"step": self.current_step, "action": action}
+        info = {
+            "step": self.current_step,
+            "requested_action": original_action,
+            "action": action,
+            "input_succeeded": bool(action_result),
+            "input": _result_info(action_result, "input"),
+            "capture": _result_info(self.last_capture_result, "capture"),
+        }
         return self.current_state, reward, terminated, truncated, info
 
 
@@ -841,10 +934,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             self._last_card_choice = choice
             if choice == "top":
                 print("DQN Cards: Choosing Top Pair. Clicking top-left card.")
-                click_relative_in_window(self.window_title, 582, 274)
+                result = self._record_input(click_relative_in_window(self.window_title, 582, 274))
             else:
                 print("DQN Cards: Choosing Bottom Pair. Clicking bottom-left card.")
-                click_relative_in_window(self.window_title, 582, 474)
+                result = self._record_input(click_relative_in_window(self.window_title, 582, 474))
+            if not result:
+                return False
             # Activate countdown debuff if countdown card is in the chosen pair
             if choice == "top":
                 chosen_keys = [detected.get("top_left"), detected.get("top_right")]
@@ -853,9 +948,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             if "countdown" in chosen_keys:
                 self.countdown_active = True
                 print("DQN Cards: Countdown debuff activated.")
+            time.sleep(2.5)
+            return True
         except Exception as e:
             print(f"Failed to auto-select card pair: {e}")
-        time.sleep(2.5)
+            return False
 
 
 if __name__ == "__main__":

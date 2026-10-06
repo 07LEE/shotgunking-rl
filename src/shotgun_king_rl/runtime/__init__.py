@@ -1,4 +1,4 @@
-"""Pure runtime state calculations shared by legacy control code."""
+"""Runtime state calculations and operation results shared by control code."""
 
 from .actions import (
     ShotTarget,
@@ -16,9 +16,13 @@ from .state import (
 )
 from .rewards import RewardResult, calculate_step_reward
 from .transitions import TerminalResult, apply_terminal_rules, update_countdown
+from .io import CaptureResult, InputResult, IOStatus
 
 __all__ = [
     "ACTION_DIRECTIONS",
+    "CaptureResult",
+    "InputResult",
+    "IOStatus",
     "RewardResult",
     "ShotTarget",
     "TerminalResult",
