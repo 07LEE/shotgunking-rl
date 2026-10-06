@@ -119,6 +119,54 @@ class EnvironmentStateTests(unittest.TestCase):
         self.assertEqual(info["completion"]["reason"], "king_reached_destination")
         self.assertEqual((game.king_row, game.king_col), (4, 5))
 
+    def test_time_limit_reset_continues_the_same_live_game(self):
+        game = env.ShotgunKingEnv(max_steps=3)
+        board = np.zeros((8, 8), dtype=np.float32)
+        board[4, 4] = 1
+        board[0, 0] = 2
+        state = observation(board)
+        game.current_state = state
+        game.current_step = 3
+        game.loaded_ammo = 1
+        game.reserve_ammo = 4
+        game.enemy_turns = {(0, 0): 2}
+        game.countdown_active = True
+        game.countdown_trigger_step = 1
+
+        self.assertTrue(game._truncation_status())
+
+        def fresh_observation(*args, **kwargs):
+            game.last_capture_result = CaptureResult(
+                IOStatus.SUCCEEDED,
+                "data/screenshot.png",
+            )
+            return state
+
+        with patch.object(game, "_check_emergency_stop"), patch.object(
+            game, "_get_obs", side_effect=fresh_observation
+        ), patch.object(env.os.path, "exists", return_value=False), patch.object(
+            env, "click_relative_in_window"
+        ) as click:
+            resumed, info = game.reset()
+
+        np.testing.assert_array_equal(resumed, state)
+        self.assertTrue(info["reset_ready"])
+        self.assertTrue(info["continued_after_truncation"])
+        self.assertEqual(game.current_step, 0)
+        self.assertEqual((game.loaded_ammo, game.reserve_ammo), (1, 4))
+        self.assertEqual(game.enemy_turns, {(0, 0): 2})
+        self.assertTrue(game.countdown_active)
+        self.assertEqual(game.countdown_trigger_step, -2)
+        click.assert_not_called()
+
+    def test_terminal_step_at_limit_is_not_also_truncated(self):
+        game = env.ShotgunKingEnv(max_steps=3)
+        game.current_step = 3
+        game._continue_after_truncation = True
+
+        self.assertFalse(game._truncation_status(terminated=True))
+        self.assertFalse(game._continue_after_truncation)
+
 
 if __name__ == "__main__":
     unittest.main()

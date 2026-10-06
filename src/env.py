@@ -112,6 +112,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.window_title = window_title
         self.max_steps = max_steps
         self.current_step = 0
+        self._continue_after_truncation = False
         self.current_state = None
         self.last_capture_result = None
         self.last_input_result = None
@@ -199,7 +200,16 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "transition_ready": False,
             "input": _result_info(result, "input"),
         }
-        return self.current_state, 0.0, False, self.current_step >= self.max_steps, info
+        return self.current_state, 0.0, False, self._truncation_status(), info
+
+    def _truncation_status(self, terminated=False):
+        """Track a time-limit boundary without resetting the live game."""
+        truncated = not terminated and self.current_step >= self.max_steps
+        if terminated:
+            self._continue_after_truncation = False
+        elif truncated:
+            self._continue_after_truncation = True
+        return truncated
 
     def _check_emergency_stop(self):
         """Checks if the mouse cursor is located in the top-left corner (0,0) of the screen.
@@ -405,6 +415,46 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             transition_exhausted=transition_exhausted,
         )
 
+    def _resume_after_truncation(self):
+        """Start a new learning segment from the unchanged live game state."""
+        elapsed_steps = self.current_step
+        self.current_step = 0
+        if self.countdown_trigger_step is not None:
+            self.countdown_trigger_step -= elapsed_steps
+
+        obs = self._get_obs(force_inject=False)
+        assessment = self._assess_screen(obs)
+        self.current_state = obs
+        if assessment.state is not RuntimeScreenState.GAMEPLAY:
+            return obs, {
+                "reset_ready": False,
+                "continued_after_truncation": True,
+                "screen_state": {
+                    "state": assessment.state.value,
+                    "reason": assessment.reason,
+                },
+                "capture": _result_info(self.last_capture_result, "capture"),
+                "input": None,
+            }
+
+        board = obs[:64].reshape(8, 8)
+        king_positions = np.argwhere(board == 1)
+        self.king_row, self.king_col = (
+            int(king_positions[0][0]),
+            int(king_positions[0][1]),
+        )
+        self._continue_after_truncation = False
+        return obs, {
+            "reset_ready": True,
+            "continued_after_truncation": True,
+            "screen_state": {
+                "state": assessment.state.value,
+                "reason": assessment.reason,
+            },
+            "capture": _result_info(self.last_capture_result, "capture"),
+            "input": None,
+        }
+
     def reset(self, seed=None, options=None):
         """Resets the environment for a new episode.
 
@@ -420,8 +470,13 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.last_input_result = None
         if gym is not None:
             super().reset(seed=seed)
+
+        if self._continue_after_truncation:
+            print("Continuing the live game after an episode time limit...")
+            return self._resume_after_truncation()
         
         self.current_step = 0
+        self._continue_after_truncation = False
         self.loaded_ammo = self.max_ammo
         self.is_extra_turn_active = False
         self.countdown_active = False
@@ -605,7 +660,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 self.current_state,
                 initial_terminal.reward,
                 initial_terminal.terminated,
-                self.current_step >= self.max_steps,
+                self._truncation_status(initial_terminal.terminated),
                 info,
             )
         from specs import get_enemy_specs_matrices
@@ -625,7 +680,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 "transition_ready": False,
                 "observation_issue": f"player_king_count:{len(king_positions)}",
             }
-            return self.current_state, 0.0, False, self.current_step >= self.max_steps, info
+            return self.current_state, 0.0, False, self._truncation_status(), info
         king_row, king_col = int(king_positions[0][0]), int(king_positions[0][1])
         self.king_row, self.king_col = king_row, king_col
         before_ammo = (int(self.loaded_ammo), int(self.reserve_ammo))
@@ -943,7 +998,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         elif assessment.state is RuntimeScreenState.OBSERVATION_FAILURE:
             print(f"DQN Warning: Observation rejected ({assessment.reason}).")
 
-        truncated = self.current_step >= self.max_steps
+        truncated = self._truncation_status(terminated)
         
         if truncated:
             print("Episode truncated due to max steps limit.")

@@ -269,7 +269,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 next_action_mask = env.get_action_mask()
 
                 # Store experience in replay memory with masks included
-                agent.remember(state, actual_action, reward, next_state, action_mask, next_action_mask, done)
+                agent.remember(state, actual_action, reward, next_state, action_mask, next_action_mask, term)
                 
                 # Perform optimization step via replay
                 loss = agent.replay(batch_size=batch_size)
