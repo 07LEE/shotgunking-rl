@@ -40,7 +40,6 @@ from shotgun_king_rl.runtime.state import (
 )
 from shotgun_king_rl.runtime.actions import (
     action_destination,
-    available_moves,
     detect_promotion,
     select_shot_target,
 )
@@ -309,6 +308,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             range_limit=self.range_limit,
             royal_guard_active=self.royal_guard_active,
             move_range_bonus=self.move_range_bonus,
+            melee_damage=self.melee_damage,
         )
 
     def _get_obs(self, force_inject=True):
@@ -623,8 +623,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             A tuple of (observation, reward, terminated, truncated, info).
         """
         self._check_emergency_stop()
-        self.current_step += 1
-        print(f"Step {self.current_step} - Executing action: {action}")
+        next_step = self.current_step + 1
+        print(f"Step {next_step} - Executing action: {action}")
 
         original_action = action
         action_result = None
@@ -692,6 +692,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             board_state,
             (king_row, king_col),
             royal_guard_active=self.royal_guard_active,
+            range_limit=self.range_limit,
         )
         has_valid_target = (
             shot_target is not None
@@ -701,54 +702,25 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         best_diff = shot_target.direction if shot_target is not None else None
         shot_was_melee = False
 
-        # Ammo, Range & Target Validations for Shoot Guard
-        if action == 9:
-            if self.loaded_ammo <= 0:
-                if self.reserve_ammo > 0:
-                    print(f"DQN Guard: Shoot action (9) requested but loaded_ammo is {self.loaded_ammo}. Overwriting to Reload (8).")
-                    action = 8
-                else:
-                    import random
-                    action = random.randint(0, 7)
-                    print(f"DQN Guard: Shoot action (9) requested but ammo fully depleted. Overwriting to Random Move ({action}).")
-            elif not has_valid_target:
-                import random
-                action = random.randint(0, 7)
-                reason = f"closest target is out of range (dist: {min_dist} > limit: {self.range_limit})" if min_dist != 99 else "no enemies detected on 8-way radial paths"
-                print(f"DQN Guard: Shoot action (9) requested but {reason}. Overwriting to Random Move ({action}).")
-        elif action == 8 and self.loaded_ammo >= self.max_ammo:
-            import random
-            action = random.randint(0, 7)
-            print(f"DQN Guard: Reload action (8) requested but ammo already full. Overwriting to Random Move ({action}).")
-        elif action == 8 and self.reserve_ammo <= 0 and self.loaded_ammo < self.max_ammo:
-            import random
-            action = random.randint(0, 7)
-            print(f"DQN Guard: Reload action (8) requested but reserve_ammo is 0. Overwriting to Random Move ({action}).")
+        action_mask = self.get_action_mask()
+        action_is_integer = isinstance(action, (int, np.integer))
+        action_in_range = action_is_integer and 0 <= int(action) < len(action_mask)
+        if not action_in_range or action_mask[int(action)] == 0:
+            info = {
+                "step": self.current_step,
+                "requested_action": original_action,
+                "action": None,
+                "input_succeeded": None,
+                "action_completed": False,
+                "transition_ready": False,
+                "action_issue": "not_permitted_by_action_mask",
+            }
+            return self.current_state, 0.0, False, self._truncation_status(), info
+        action = int(action)
+        self.current_step = next_step
 
         # Execute action simulation: 0-7 represents 1-tile move, 10-17 represents 2-tile jump
         if action in range(8) or action in range(10, 18):
-            valid_moves, safe_moves = available_moves(
-                board_state,
-                threat_state,
-                (king_row, king_col),
-                move_range_bonus=self.move_range_bonus,
-            )
-
-            # DQN Guard: Prioritize safe moves if available to prevent suicide moves
-            if len(safe_moves) > 0:
-                if action not in safe_moves:
-                    import random
-                    action = random.choice(safe_moves)
-                    print(f"DQN Guard: Action overridden to safe move: {action}")
-            else:
-                if action not in valid_moves:
-                    if len(valid_moves) > 0:
-                        import random
-                        action = random.choice(valid_moves)
-                        print(f"DQN Guard: Action overridden to valid move due to collision: {action}")
-                    else:
-                        print("DQN Guard Warning: No valid moves available. Executing original action.")
-            
             target_row, target_col = action_destination(
                 (king_row, king_col), action
             )

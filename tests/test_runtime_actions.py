@@ -15,6 +15,7 @@ from shotgun_king_rl.runtime.actions import (
     detect_promotion,
     select_shot_target,
 )
+from shotgun_king_rl.runtime.state import build_action_mask
 from shotgun_king_rl.runtime.transitions import (
     apply_terminal_rules,
     update_countdown,
@@ -49,6 +50,17 @@ class RuntimeActionTests(unittest.TestCase):
         self.assertEqual(target.piece, 3)
         self.assertEqual(target.direction, (0, 1))
 
+    def test_target_selection_ignores_out_of_range_priority(self):
+        board = np.zeros((8, 8), dtype=np.float32)
+        board[4, 4] = 1
+        board[0, 4] = 5
+        board[4, 6] = 3
+
+        target = select_shot_target(board, (4, 4), range_limit=3)
+
+        self.assertEqual(target.piece, 3)
+        self.assertEqual(target.distance, 2)
+
     def test_available_moves_share_action_destinations(self):
         board = np.zeros((8, 8), dtype=np.float32)
         threat = np.zeros((8, 8), dtype=np.float32)
@@ -68,6 +80,47 @@ class RuntimeActionTests(unittest.TestCase):
         self.assertIn(4, valid)
         self.assertNotIn(4, safe)
         self.assertEqual(action_destination((4, 4), 14), (4, 6))
+
+    def test_action_mask_uses_valid_moves_when_none_are_safe(self):
+        board = np.full((8, 8), 2, dtype=np.float32)
+        threat = np.ones((8, 8), dtype=np.float32)
+        board[4, 4] = 1
+        board[4, 5] = 0
+        observation = np.zeros(281, dtype=np.float32)
+        observation[:64] = board.reshape(-1)
+        observation[64:128] = threat.reshape(-1)
+
+        mask = build_action_mask(
+            observation,
+            action_count=10,
+            tracked_king=(4, 4),
+            loaded_ammo=0,
+            max_ammo=2,
+            reserve_ammo=0,
+            range_limit=5,
+        )
+
+        self.assertEqual(np.flatnonzero(mask).tolist(), [4])
+
+    def test_action_mask_allows_adjacent_melee_without_ammo(self):
+        board = np.zeros((8, 8), dtype=np.float32)
+        board[4, 4] = 1
+        board[4, 5] = 2
+        observation = np.zeros(281, dtype=np.float32)
+        observation[:64] = board.reshape(-1)
+
+        mask = build_action_mask(
+            observation,
+            action_count=10,
+            tracked_king=(4, 4),
+            loaded_ammo=0,
+            max_ammo=2,
+            reserve_ammo=0,
+            range_limit=5,
+            melee_damage=3,
+        )
+
+        self.assertEqual(mask[9], 1)
 
     def test_promotion_uses_adjacent_previous_pawn(self):
         previous = np.zeros((8, 8), dtype=np.float32)

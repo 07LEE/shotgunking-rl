@@ -4,7 +4,17 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .state import ACTION_DIRECTIONS
+
+ACTION_DIRECTIONS = (
+    (-1, -1),
+    (-1, 0),
+    (-1, 1),
+    (0, -1),
+    (0, 1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+)
 
 
 @dataclass(frozen=True)
@@ -74,7 +84,12 @@ def detect_promotion(previous_board, current_board):
     return False
 
 
-def select_shot_target(board, king_position, royal_guard_active=False):
+def select_shot_target(
+    board,
+    king_position,
+    royal_guard_active=False,
+    range_limit=None,
+):
     """Select the closest threatening target, then the closest other target."""
     best = None
     knights_present = np.any(board == 3)
@@ -102,6 +117,11 @@ def select_shot_target(board, king_position, royal_guard_active=False):
                     piece=piece,
                     threatens_king=threatens,
                 )
+                if (
+                    range_limit is not None
+                    and candidate.effective_distance > float(range_limit)
+                ):
+                    break
                 if best is None or (
                     candidate.threatens_king and not best.threatens_king
                 ) or (

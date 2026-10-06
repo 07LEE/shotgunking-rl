@@ -167,6 +167,33 @@ class EnvironmentStateTests(unittest.TestCase):
         self.assertFalse(game._truncation_status(terminated=True))
         self.assertFalse(game._continue_after_truncation)
 
+    def test_action_rejected_by_mask_sends_no_input(self):
+        game = env.ShotgunKingEnv(max_steps=10)
+        board = np.zeros((8, 8), dtype=np.float32)
+        board[4, 4] = 1
+        board[3, 4] = 2
+        state = observation(board)
+        game.current_state = state
+        game.last_capture_result = CaptureResult(
+            IOStatus.SUCCEEDED,
+            "data/screenshot.png",
+        )
+
+        with patch.object(game, "_check_emergency_stop"), patch.object(
+            game, "_get_obs", return_value=state
+        ), patch.object(env.os.path, "exists", return_value=False), patch.object(
+            env, "click_relative_in_window"
+        ) as click:
+            _, reward, terminated, truncated, info = game.step(1)
+
+        self.assertEqual(reward, 0.0)
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        self.assertFalse(info["transition_ready"])
+        self.assertEqual(info["action_issue"], "not_permitted_by_action_mask")
+        self.assertEqual(game.current_step, 0)
+        click.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

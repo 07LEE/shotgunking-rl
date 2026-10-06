@@ -2,17 +2,7 @@
 
 import numpy as np
 
-
-ACTION_DIRECTIONS = (
-    (-1, -1),
-    (-1, 0),
-    (-1, 1),
-    (0, -1),
-    (0, 1),
-    (1, -1),
-    (1, 0),
-    (1, 1),
-)
+from .actions import ACTION_DIRECTIONS, available_moves, select_shot_target
 
 
 def build_threat_matrix(board):
@@ -69,6 +59,7 @@ def build_action_mask(
     range_limit,
     royal_guard_active=False,
     move_range_bonus=0,
+    melee_damage=0.0,
 ):
     """Return valid legacy actions from an observation and scalar state."""
     mask = np.zeros(action_count, dtype=np.float32)
@@ -78,57 +69,36 @@ def build_action_mask(
     board = observation[:64].reshape(8, 8)
     threat = observation[64:128].reshape(8, 8)
     king_positions = np.argwhere(board == 1)
-    if len(king_positions) > 0:
-        king_row, king_col = (int(value) for value in king_positions[0])
-    else:
-        king_row, king_col = tracked_king
+    if len(king_positions) != 1:
+        return mask
+    king_row, king_col = (int(value) for value in king_positions[0])
 
-    for action, (row_offset, col_offset) in enumerate(ACTION_DIRECTIONS):
-        target_row = king_row + row_offset
-        target_col = king_col + col_offset
-        if 0 <= target_row < 8 and 0 <= target_col < 8:
-            mask[action] = float(
-                board[target_row, target_col] == 0
-                and threat[target_row, target_col] == 0
-            )
+    valid_moves, safe_moves = available_moves(
+        board,
+        threat,
+        (king_row, king_col),
+        move_range_bonus=move_range_bonus,
+    )
+    permitted_moves = safe_moves if safe_moves else valid_moves
+    for action in permitted_moves:
+        if action < action_count:
+            mask[action] = 1.0
 
     mask[8] = float(loaded_ammo < max_ammo and reserve_ammo > 0)
-    if loaded_ammo > 0:
-        for row_offset, col_offset in ACTION_DIRECTIONS:
-            for distance in range(1, 8):
-                target_row = king_row + row_offset * distance
-                target_col = king_col + col_offset * distance
-                if not (0 <= target_row < 8 and 0 <= target_col < 8):
-                    break
-                piece = board[target_row, target_col]
-                if piece >= 2:
-                    diagonal = row_offset != 0 and col_offset != 0
-                    effective_distance = distance * (1.414 if diagonal else 1.0)
-                    target_is_guarded = (
-                        piece == 6
-                        and royal_guard_active
-                        and np.any(board == 3)
-                    )
-                    if effective_distance <= range_limit and not target_is_guarded:
-                        mask[9] = 1.0
-                    break
-                if piece == 1:
-                    break
-            if mask[9]:
-                break
-
-    if move_range_bonus > 0:
-        for direction_index, (row_offset, col_offset) in enumerate(ACTION_DIRECTIONS):
-            middle_row = king_row + row_offset
-            middle_col = king_col + col_offset
-            target_row = king_row + row_offset * 2
-            target_col = king_col + col_offset * 2
-            if 0 <= target_row < 8 and 0 <= target_col < 8:
-                mask[10 + direction_index] = float(
-                    board[middle_row, middle_col] == 0
-                    and board[target_row, target_col] == 0
-                    and threat[target_row, target_col] == 0
-                )
+    shot_target = select_shot_target(
+        board,
+        (king_row, king_col),
+        royal_guard_active=royal_guard_active,
+        range_limit=range_limit,
+    )
+    melee_available = (
+        shot_target is not None
+        and shot_target.distance == 1
+        and melee_damage > 0
+    )
+    mask[9] = float(
+        shot_target is not None and (loaded_ammo > 0 or melee_available)
+    )
     return mask
 
 
