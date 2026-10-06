@@ -26,10 +26,12 @@ from .transitions import (
 )
 from .io import CaptureResult, InputResult, IOStatus
 from .execution import ActionCompletion, CompletionStatus, verify_action_completion
+from .scope import AssistanceScope, assess_assistance_scope, format_assistance_scope
 
 __all__ = [
     "ACTION_DIRECTIONS",
     "ActionCompletion",
+    "AssistanceScope",
     "CaptureResult",
     "CompletionStatus",
     "InputResult",
@@ -42,6 +44,7 @@ __all__ = [
     "action_destination",
     "apply_terminal_rules",
     "apply_screen_state_rules",
+    "assess_assistance_scope",
     "available_moves",
     "build_action_mask",
     "build_observation",
@@ -49,6 +52,7 @@ __all__ = [
     "calculate_step_reward",
     "classify_runtime_screen",
     "detect_promotion",
+    "format_assistance_scope",
     "select_shot_target",
     "update_countdown",
     "update_enemy_turns",

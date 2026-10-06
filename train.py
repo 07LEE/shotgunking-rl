@@ -18,6 +18,11 @@ except ImportError:
 
 from env import ShotgunKingEnv
 from agent import DQNAgent
+from weapons import WEAPON_PRESETS
+from shotgun_king_rl.runtime.scope import (
+    assess_assistance_scope,
+    format_assistance_scope,
+)
 from shotgun_king_rl.runtime.state import ACTION_DIRECTIONS
 try:
     from torch.utils.tensorboard import SummaryWriter
@@ -38,7 +43,7 @@ def remember_manual_defeat(agent, state, action, action_mask):
     )
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, target_floor=1, buffs=None, verbose=True):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
@@ -49,16 +54,35 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         learning_rate: Optimizer parameter for step adjustments.
         epsilon_decay: Exploration factor multiplier.
         epsilon_min: Minimum exploration cutoff limit.
+        rank: Configured story rank shown to the operator.
+        weapon_type: Configured weapon preset ID.
+        target_floor: Configured floor for the limited assistance scope.
+        buffs: Optional active player buffs.
+        verbose: Enable environment diagnostic output.
     """
+    preset = WEAPON_PRESETS.get(weapon_type)
+    weapon_name = preset["name"] if preset is not None else "Unknown weapon"
+    scope = assess_assistance_scope(
+        rank=rank,
+        weapon_type=weapon_type,
+        weapon_name=weapon_name,
+        floor=target_floor,
+    )
+    print("\n=== LIVE ASSISTANCE SCOPE ===")
+    print(format_assistance_scope(scope))
+    if not scope.supported:
+        print("Runtime stopped before capture or input because this scope is unsupported.")
+        return False
+
     writer = SummaryWriter('runs/shotgun_king_dqn') if SummaryWriter is not None else None
     print("Initializing Shotgun King Gymnasium Environment...")
     env = ShotgunKingEnv(
         window_title="Shotgun King",
         max_steps=max_steps_per_episode,
-        weapon_type=config.get("weapon_type", 0),
-        rank=config.get("rank", 1),
-        buffs=config.get("buffs", None),
-        verbose=config.get("verbose", True),
+        weapon_type=weapon_type,
+        rank=rank,
+        buffs=buffs,
+        verbose=verbose,
     )
     
     print("Initializing DQN Agent...")
@@ -337,7 +361,8 @@ def load_config(config_path="config.yaml"):
         "epsilon_decay": 0.95,
         "epsilon_min": 0.05,
         "rank": 1,
-        "weapon_type": 0
+        "weapon_type": 0,
+        "target_floor": 1
     }
 
     if not os.path.exists(config_path):
@@ -379,7 +404,12 @@ if __name__ == "__main__":
             mode=config["mode"],
             learning_rate=config["learning_rate"],
             epsilon_decay=config["epsilon_decay"],
-            epsilon_min=config["epsilon_min"]
+            epsilon_min=config["epsilon_min"],
+            rank=config["rank"],
+            weapon_type=config["weapon_type"],
+            target_floor=config["target_floor"],
+            buffs=config.get("buffs"),
+            verbose=config.get("verbose", True)
         )
     else:
         print("Error: Numpy is not available.")

@@ -9,6 +9,7 @@ epsilon_decay: 0.95
 epsilon_min: 0.05
 rank: 1
 weapon_type: 0
+current_floor: 1
 buffs:
   melee_kill_extra_turn: false
   move_range_bonus: 0
