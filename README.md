@@ -36,4 +36,6 @@ The legacy runtime requires Shotgun King in a visible 1280x720 window:
 
 The assistance scope accepts every registered weapon preset. Rank scaling comes from configuration, while floor is recorded for context and does not restrict support. The operator must confirm the weapon, rank and floor on the game screen and ensure card and buff effects match the runtime configuration.
 
+Each attempted runtime action is appended to a private JSONL session under `data/runtime_traces`. The trace records the observed state, valid actions, recommendation, selected action, input and completion results, and whether the transition entered replay memory.
+
 Move the mouse pointer to the top-left corner to trigger the emergency stop. Data tools do not start reinforcement-learning training.

@@ -28,6 +28,7 @@ from shotgun_king_rl.runtime.suggestions import (
     build_suggestion_view,
     format_suggestion_view,
 )
+from shotgun_king_rl.runtime.tracing import ActionTraceWriter, build_action_trace
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
@@ -47,7 +48,7 @@ def remember_manual_defeat(agent, state, action, action_mask):
     )
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True, trace_directory="data/runtime_traces"):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
@@ -63,6 +64,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         current_floor: Floor recorded for operator context.
         buffs: Optional active player buffs.
         verbose: Enable environment diagnostic output.
+        trace_directory: Private directory for one JSONL action trace per run.
     """
     preset = WEAPON_PRESETS.get(weapon_type)
     weapon_name = preset["name"] if preset is not None else "Unknown weapon"
@@ -78,6 +80,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     if not scope.supported:
         print("Runtime stopped before capture or input because this scope is unsupported.")
         return False
+
+    trace_writer = ActionTraceWriter(trace_directory)
+    print(f"Runtime action trace: {trace_writer.path}")
 
     writer = SummaryWriter('runs/shotgun_king_dqn') if SummaryWriter is not None else None
     print("Initializing Shotgun King Gymnasium Environment...")
@@ -138,8 +143,21 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     with torch.no_grad():
                         q_values = agent.policy_net(state_tensor).cpu().numpy()[0]
 
+                decision_view = build_suggestion_view(
+                    state,
+                    action_mask,
+                    q_values,
+                    loaded_ammo=env.loaded_ammo,
+                    max_ammo=env.max_ammo,
+                    reserve_ammo=env.reserve_ammo,
+                    range_limit=env.range_limit,
+                    royal_guard_active=env.royal_guard_active,
+                    melee_damage=env.melee_damage,
+                )
+
                 # Decide action based on current state and mask
                 action = agent.act(state, action_mask=action_mask, epsilon=epsilon)
+                selection_source = "epsilon_greedy"
 
                 # Handle decision suggestion and override in suggest mode
                 if mode == "suggest":
@@ -147,17 +165,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         raise RuntimeError(
                             "Suggest mode requires model Q-values before any input"
                         )
-                    view = build_suggestion_view(
-                        state,
-                        action_mask,
-                        q_values,
-                        loaded_ammo=env.loaded_ammo,
-                        max_ammo=env.max_ammo,
-                        reserve_ammo=env.reserve_ammo,
-                        range_limit=env.range_limit,
-                        royal_guard_active=env.royal_guard_active,
-                        melee_damage=env.melee_damage,
-                    )
+                    view = decision_view
                     print("\n" + format_suggestion_view(view))
                     if not view.recommendations:
                         raise RuntimeError(
@@ -189,6 +197,35 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         if user_choice == ".":
                             print("User flagged defeat. Forcing episode termination...")
                             remember_manual_defeat(agent, state, action, action_mask)
+                            trace_writer.write(build_action_trace(
+                                episode=ep,
+                                step=step_idx,
+                                mode=mode,
+                                rank=rank,
+                                floor=current_floor,
+                                weapon_type=weapon_type,
+                                weapon_name=weapon_name,
+                                observation=state,
+                                action_mask=action_mask,
+                                q_values=q_values,
+                                recommendations=view.recommendations,
+                                selected_action=action,
+                                selection_source="user_reported_defeat",
+                                loaded_ammo=env.loaded_ammo,
+                                max_ammo=env.max_ammo,
+                                reserve_ammo=env.reserve_ammo,
+                                next_observation=state,
+                                reward=-15.0,
+                                terminated=True,
+                                truncated=False,
+                                info={
+                                    "action": None,
+                                    "input_succeeded": None,
+                                    "transition_ready": True,
+                                    "outcome": "user_reported_defeat",
+                                },
+                                accepted_for_replay=True,
+                            ))
                             break
                         
                         temp_action = action
@@ -214,6 +251,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         # If validation passed
                         action = temp_action
                         if user_choice != "":
+                            selection_source = "user_override"
                             if user_choice.lower() == 'r':
                                 print(f"Action overridden by user to: {ACTION_NAMES[action]} (r key input)")
                             elif user_choice in numpad_map:
@@ -221,15 +259,50 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             else:
                                 print(f"Action overridden by user to: {ACTION_NAMES[action]}")
                         else:
+                            selection_source = "recommendation_confirmed"
                             print(f"Executing recommended action: {ACTION_NAMES[action]}")
                         break
                         
                     if user_choice == ".":
                         break
                 
+                pre_action_ammo = (
+                    env.loaded_ammo,
+                    env.max_ammo,
+                    env.reserve_ammo,
+                )
+
                 # Perform action in game environment
                 next_state, reward, term, trunc, info = env.step(action)
                 done = term or trunc
+                accepted_for_replay = bool(
+                    info.get("input_succeeded", True)
+                    and info.get("transition_ready", True)
+                )
+                trace_writer.write(build_action_trace(
+                    episode=ep,
+                    step=step_idx,
+                    mode=mode,
+                    rank=rank,
+                    floor=current_floor,
+                    weapon_type=weapon_type,
+                    weapon_name=weapon_name,
+                    observation=state,
+                    action_mask=action_mask,
+                    q_values=q_values,
+                    recommendations=decision_view.recommendations,
+                    selected_action=action,
+                    selection_source=selection_source,
+                    loaded_ammo=pre_action_ammo[0],
+                    max_ammo=pre_action_ammo[1],
+                    reserve_ammo=pre_action_ammo[2],
+                    next_observation=next_state,
+                    reward=reward,
+                    terminated=term,
+                    truncated=trunc,
+                    info=info,
+                    accepted_for_replay=accepted_for_replay,
+                ))
 
                 if not info.get("input_succeeded", True):
                     print(f"Input failed; transition was not added to replay memory: {info.get('input')}")
@@ -323,7 +396,8 @@ def load_config(config_path="config.yaml"):
         "epsilon_min": 0.05,
         "rank": 1,
         "weapon_type": 0,
-        "current_floor": 1
+        "current_floor": 1,
+        "trace_directory": "data/runtime_traces",
     }
 
     if not os.path.exists(config_path):
@@ -370,7 +444,8 @@ if __name__ == "__main__":
             weapon_type=config["weapon_type"],
             current_floor=config["current_floor"],
             buffs=config.get("buffs"),
-            verbose=config.get("verbose", True)
+            verbose=config.get("verbose", True),
+            trace_directory=config.get("trace_directory", "data/runtime_traces")
         )
     else:
         print("Error: Numpy is not available.")

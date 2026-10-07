@@ -35,12 +35,14 @@ from .suggestions import (
     build_suggestion_view,
     format_suggestion_view,
 )
+from .tracing import ActionTraceWriter, TRACE_SCHEMA, build_action_trace
 
 __all__ = [
     "ACTION_DIRECTIONS",
     "ACTION_KEYS",
     "ACTION_NAMES",
     "ActionCompletion",
+    "ActionTraceWriter",
     "AssistanceScope",
     "CaptureResult",
     "CompletionStatus",
@@ -53,12 +55,14 @@ __all__ = [
     "SuggestedAction",
     "SuggestionView",
     "TerminalResult",
+    "TRACE_SCHEMA",
     "action_destination",
     "apply_terminal_rules",
     "apply_screen_state_rules",
     "assess_assistance_scope",
     "available_moves",
     "build_action_mask",
+    "build_action_trace",
     "build_observation",
     "build_threat_matrix",
     "build_suggestion_view",
