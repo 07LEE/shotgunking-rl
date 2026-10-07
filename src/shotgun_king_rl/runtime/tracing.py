@@ -1,6 +1,7 @@
 """Private JSONL traces for inspectable live assistance sessions."""
 
 from datetime import datetime, timezone
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -11,6 +12,7 @@ from .suggestions import ACTION_NAMES
 
 
 TRACE_SCHEMA = "runtime-action-trace-v1"
+MANIFEST_SCHEMA = "runtime-run-manifest-v1"
 
 
 class ActionTraceWriter:
@@ -20,6 +22,7 @@ class ActionTraceWriter:
         now = datetime.now(timezone.utc)
         self.session_id = session_id or now.strftime("%Y%m%dT%H%M%S.%fZ")
         self.path = Path(directory) / f"{self.session_id}.jsonl"
+        self.manifest_path = Path(directory) / f"{self.session_id}.manifest.json"
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def write(self, record):
@@ -33,6 +36,31 @@ class ActionTraceWriter:
             stream.write(json.dumps(_json_value(payload), ensure_ascii=False) + "\n")
             stream.flush()
         return payload
+
+    def write_manifest(self, manifest):
+        payload = {
+            "schema": MANIFEST_SCHEMA,
+            "session_id": self.session_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **manifest,
+        }
+        self.manifest_path.write_text(
+            json.dumps(_json_value(payload), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return payload
+
+
+def file_sha256(path):
+    """Return a local artifact hash without loading the whole file into memory."""
+    path = Path(path)
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def build_action_trace(
@@ -111,6 +139,10 @@ def build_action_trace(
             "reward": float(reward),
             "terminated": bool(terminated),
             "truncated": bool(truncated),
+            "transition_verified": bool(
+                info.get("input_succeeded", True)
+                and info.get("transition_ready", True)
+            ),
             "accepted_for_replay": bool(accepted_for_replay),
             "info": info,
             "next_board": next_observation[:64].reshape(8, 8),

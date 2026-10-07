@@ -2,6 +2,8 @@
 
 This document describes the keyboard shortcuts and action mapping layout utilized when interacting with the Console input in Suggest Mode.
 
+Start a bounded validation session with `./scripts/run_suggest.sh`. The launcher uses one episode and at most ten actions by default, while additional command-line arguments may override these values.
+
 ## Important Technical Limitations
 
 Because Console text inputs (via Python's input function) process standard number keystrokes and Numpad keystrokes as identical characters, the system cannot distinguish between the Numpad layout and the standard numeric row.
@@ -10,9 +12,11 @@ To prioritize directional grid movement, the numpad_map is enforced by default. 
 
 Before requesting input, Suggest Mode prints the recognized 8x8 board, loaded and reserve ammunition, every action permitted by the current action mask, and the targeting or movement rule that makes each action available. It ranks up to three valid actions by raw model Q-value. Q-values are model scores, not probabilities or calibrated confidence, and the displayed reasons explain the deterministic validity and targeting rules rather than the model's internal reasoning.
 
+Suggest Mode requires an existing readable model checkpoint. It records the result but never updates replay memory, optimizer state, target weights or model checkpoints. Use `train` explicitly when model updates are intended.
+
 ## Runtime traces
 
-Every attempted action in Suggest and Autonomous modes is appended to a private JSONL file under `data/runtime_traces`. Each line contains the configured weapon, rank and floor, the exact board and ammunition state used for the decision, the action mask and Q-values, recommendations, the selected and executed actions, input and completion results, the next board, reward and terminal status. Failed input and rejected observations remain in the trace with `accepted_for_replay: false` so they can be diagnosed without entering replay memory.
+Every attempted action in Suggest, Collect, Evaluate and Train modes is appended to a private JSONL file under `data/runtime_traces`. Each line contains the configured weapon, rank and floor, the exact board and ammunition state used for the decision, the action mask and Q-values, recommendations, the selected and executed actions, input and completion results, the next board, reward and terminal status. A matching manifest records the mode, learning and checkpoint permissions, epsilon, scope and pre-run model hash. Failed input, rejected observations and all non-training sessions remain `accepted_for_replay: false`.
 
 Immediately before input, the runtime captures a fresh observation and compares its board and ammunition with the state used to choose the action. A mismatch blocks input, keeps the action counter unchanged and records `pre_action_observation_changed` with changed squares and ammunition values in the trace.
 

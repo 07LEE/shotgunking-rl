@@ -28,7 +28,12 @@ from shotgun_king_rl.runtime.suggestions import (
     build_suggestion_view,
     format_suggestion_view,
 )
-from shotgun_king_rl.runtime.tracing import ActionTraceWriter, build_action_trace
+from shotgun_king_rl.runtime.modes import resolve_runtime_mode
+from shotgun_king_rl.runtime.tracing import (
+    ActionTraceWriter,
+    build_action_trace,
+    file_sha256,
+)
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
@@ -48,14 +53,14 @@ def remember_manual_defeat(agent, state, action, action_mask):
     )
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True, trace_directory="data/runtime_traces"):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True, trace_directory="data/runtime_traces", collect_epsilon=0.05, model_path="models/model.pth"):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
         episodes: Total number of game episodes to run.
         batch_size: Mini-batch size for DQN experience replay.
         max_steps_per_episode: Maximum steps limit per episode.
-        mode: Game control execution mode.
+        mode: Explicit suggest, collect, evaluate, or train mode.
         learning_rate: Optimizer parameter for step adjustments.
         epsilon_decay: Exploration factor multiplier.
         epsilon_min: Minimum exploration cutoff limit.
@@ -65,7 +70,10 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         buffs: Optional active player buffs.
         verbose: Enable environment diagnostic output.
         trace_directory: Private directory for one JSONL action trace per run.
+        collect_epsilon: Fixed exploration rate used only in collect mode.
+        model_path: Checkpoint loaded by every mode and written only by train.
     """
+    runtime_mode = resolve_runtime_mode(mode, collect_epsilon)
     preset = WEAPON_PRESETS.get(weapon_type)
     weapon_name = preset["name"] if preset is not None else "Unknown weapon"
     scope = assess_assistance_scope(
@@ -84,7 +92,42 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     trace_writer = ActionTraceWriter(trace_directory)
     print(f"Runtime action trace: {trace_writer.path}")
 
-    writer = SummaryWriter('runs/shotgun_king_dqn') if SummaryWriter is not None else None
+    epsilon = runtime_mode.initial_epsilon
+    trace_writer.write_manifest({
+        "mode": runtime_mode.name,
+        "interactive": runtime_mode.interactive,
+        "learning_enabled": runtime_mode.learning_enabled,
+        "checkpoint_writes": runtime_mode.checkpoint_writes,
+        "requires_checkpoint": runtime_mode.requires_checkpoint,
+        "epsilon": epsilon,
+        "scope": {
+            "rank": rank,
+            "floor": current_floor,
+            "weapon_type": weapon_type,
+            "weapon_name": weapon_name,
+            "buffs": buffs or {},
+        },
+        "model": {
+            "path": model_path,
+            "sha256_before_run": file_sha256(model_path),
+        },
+        "limits": {
+            "episodes": episodes,
+            "max_steps_per_episode": max_steps_per_episode,
+        },
+    })
+    print(f"Runtime manifest: {trace_writer.manifest_path}")
+    print(
+        f"Mode: {runtime_mode.name} | learning: "
+        f"{'enabled' if runtime_mode.learning_enabled else 'disabled'} | "
+        f"checkpoint writes: {'enabled' if runtime_mode.checkpoint_writes else 'disabled'}"
+    )
+
+    writer = (
+        SummaryWriter('runs/shotgun_king_dqn')
+        if runtime_mode.learning_enabled and SummaryWriter is not None
+        else None
+    )
     print("Initializing Shotgun King Gymnasium Environment...")
     env = ShotgunKingEnv(
         window_title="Shotgun King",
@@ -101,18 +144,23 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
     # plus 64 enemy turn speed is 281
     agent = DQNAgent(state_size=281, action_size=env.action_space.n, lr=learning_rate)
     
-    # Auto-load existing model weights if available to resume continuous learning
-    agent.load("models/model.pth")
+    # Every mode may read the same fixed checkpoint; only train may write it.
+    model_loaded = agent.load(model_path)
+    if runtime_mode.requires_checkpoint and not model_loaded:
+        print(
+            f"Runtime stopped before input because {runtime_mode.name} mode "
+            f"requires a readable checkpoint at {model_path}."
+        )
+        return False
     
     # Exploration parameters
-    epsilon = 1.0
     epsilon_min = epsilon_min
     epsilon_decay = epsilon_decay
     
     update_target_steps = 10
     total_step_count = 0
     
-    print("\n=== STARTING SHOTGUN KING DQN REINFORCEMENT LEARNING ===")
+    print(f"\n=== STARTING SHOTGUN KING {runtime_mode.name.upper()} SESSION ===")
     
     try:
         for ep in range(1, episodes + 1):
@@ -157,7 +205,11 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
 
                 # Decide action based on current state and mask
                 action = agent.act(state, action_mask=action_mask, epsilon=epsilon)
-                selection_source = "epsilon_greedy"
+                selection_source = (
+                    "greedy_policy"
+                    if runtime_mode.name == "evaluate"
+                    else "epsilon_greedy"
+                )
 
                 # Handle decision suggestion and override in suggest mode
                 if mode == "suggest":
@@ -196,7 +248,8 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         user_choice = input(f"\nRecommended: [{ACTION_NAMES[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad/r): ").strip()
                         if user_choice == ".":
                             print("User flagged defeat. Forcing episode termination...")
-                            remember_manual_defeat(agent, state, action, action_mask)
+                            if runtime_mode.learning_enabled:
+                                remember_manual_defeat(agent, state, action, action_mask)
                             trace_writer.write(build_action_trace(
                                 episode=ep,
                                 step=step_idx,
@@ -224,7 +277,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                                     "transition_ready": True,
                                     "outcome": "user_reported_defeat",
                                 },
-                                accepted_for_replay=True,
+                                accepted_for_replay=runtime_mode.learning_enabled,
                             ))
                             break
                         
@@ -275,7 +328,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 # Perform action in game environment
                 next_state, reward, term, trunc, info = env.step(action)
                 done = term or trunc
-                accepted_for_replay = bool(
+                transition_verified = bool(
                     info.get("input_succeeded", True)
                     and info.get("transition_ready", True)
                 )
@@ -301,7 +354,9 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     terminated=term,
                     truncated=trunc,
                     info=info,
-                    accepted_for_replay=accepted_for_replay,
+                    accepted_for_replay=(
+                        transition_verified and runtime_mode.learning_enabled
+                    ),
                 ))
 
                 if not info.get("input_succeeded", True):
@@ -323,26 +378,34 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 
                 episode_reward += reward
                 
-                # Calculate next action mask for replay updates
-                next_action_mask = env.get_action_mask()
-
-                # Store experience in replay memory with masks included
-                agent.remember(state, actual_action, reward, next_state, action_mask, next_action_mask, term)
-                
-                # Perform optimization step via replay
-                loss = agent.replay(batch_size=batch_size)
-                
-                # Synchronize target network weights
-                if total_step_count % update_target_steps == 0:
-                    agent.update_target_network()
-                    print("Target network weights synchronized.")
+                loss = 0.0
+                if runtime_mode.learning_enabled:
+                    next_action_mask = env.get_action_mask()
+                    agent.remember(
+                        state,
+                        actual_action,
+                        reward,
+                        next_state,
+                        action_mask,
+                        next_action_mask,
+                        term,
+                    )
+                    loss = agent.replay(batch_size=batch_size)
+                    if total_step_count % update_target_steps == 0:
+                        agent.update_target_network()
+                        print("Target network weights synchronized.")
                     
                 if loss > 0:
                     print(f"Step {step_idx} - Action: {action}, Reward: {reward:.2f}, Loss: {loss:.4f}")
                     if writer is not None:
                         writer.add_scalar('Loss/train', loss, total_step_count)
-                else:
+                elif runtime_mode.learning_enabled:
                     print(f"Step {step_idx} - Action: {action}, Reward: {reward:.2f} (Filling Memory...)")
+                else:
+                    print(
+                        f"Step {step_idx} - Action: {action}, Reward: {reward:.2f} "
+                        f"(Recorded without learning)"
+                    )
                     
                 state = next_state
                 
@@ -351,30 +414,34 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                     
                 time.sleep(1.0)
                 
-            # Decay exploration factor
-            epsilon = max(epsilon_min, epsilon * epsilon_decay)
+            if runtime_mode.decay_epsilon:
+                epsilon = max(epsilon_min, epsilon * epsilon_decay)
             print(f"Episode {ep} Finished. Total Reward Collected: {episode_reward:.2f}")
             if writer is not None:
                 writer.add_scalar('Reward/episode', episode_reward, ep)
                 writer.add_scalar('Epsilon/episode', epsilon, ep)
             
-            # Save model weights at the end of every episode for safety
-            agent.save("models/model.pth")
+            if runtime_mode.checkpoint_writes:
+                agent.save(model_path)
             
     except KeyboardInterrupt:
-        print("\nTraining interrupted by user. Saving current model weights before exiting...")
-        agent.save("models/model.pth")
-        print("Model weights successfully saved after emergency interruption.")
+        print("\nRuntime interrupted by user.")
+        if runtime_mode.checkpoint_writes:
+            agent.save(model_path)
+            print("Training checkpoint saved after emergency interruption.")
     except Exception as e:
-        print(f"\nUnexpected error occurred: {e}. Saving model weights before crash...")
-        agent.save("models/model.pth")
+        print(f"\nUnexpected runtime error occurred: {e}.")
+        if runtime_mode.checkpoint_writes:
+            agent.save(model_path)
+            print("Training checkpoint saved before exit.")
         raise e
     finally:
         if writer is not None:
             writer.close()
             print("TensorBoard SummaryWriter closed.")
         
-    print("\n=== SHOTGUN KING DQN TRAINING COMPLETED ===")
+    print(f"\n=== SHOTGUN KING {runtime_mode.name.upper()} SESSION COMPLETED ===")
+    return True
 
 
 def load_config(config_path="config.yaml"):
@@ -390,7 +457,7 @@ def load_config(config_path="config.yaml"):
         "episodes": 50,
         "batch_size": 16,
         "max_steps_per_episode": 30,
-        "mode": "autonomous",
+        "mode": "collect",
         "learning_rate": 0.001,
         "epsilon_decay": 0.95,
         "epsilon_min": 0.05,
@@ -398,6 +465,8 @@ def load_config(config_path="config.yaml"):
         "weapon_type": 0,
         "current_floor": 1,
         "trace_directory": "data/runtime_traces",
+        "collect_epsilon": 0.05,
+        "model_path": "models/model.pth",
     }
 
     if not os.path.exists(config_path):
@@ -425,13 +494,22 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, default="config.yaml",
                         help="Path to the training configuration YAML file")
     parser.add_argument("--mode", type=str, default=None,
-                        help="Execution mode override (autonomous or suggest)")
+                        choices=("suggest", "collect", "evaluate", "train"),
+                        help="Execution mode override")
+    parser.add_argument("--episodes", type=int, default=None,
+                        help="Episode count override")
+    parser.add_argument("--max-steps", type=int, default=None,
+                        help="Maximum actions per episode override")
     args = parser.parse_args()
 
     if np is not None:
         config = load_config(args.config)
         if args.mode is not None:
             config["mode"] = args.mode
+        if args.episodes is not None:
+            config["episodes"] = args.episodes
+        if args.max_steps is not None:
+            config["max_steps_per_episode"] = args.max_steps
         train_dqn(
             episodes=config["episodes"],
             batch_size=config["batch_size"],
@@ -445,7 +523,9 @@ if __name__ == "__main__":
             current_floor=config["current_floor"],
             buffs=config.get("buffs"),
             verbose=config.get("verbose", True),
-            trace_directory=config.get("trace_directory", "data/runtime_traces")
+            trace_directory=config.get("trace_directory", "data/runtime_traces"),
+            collect_epsilon=config.get("collect_epsilon", 0.05),
+            model_path=config.get("model_path", "models/model.pth"),
         )
     else:
         print("Error: Numpy is not available.")

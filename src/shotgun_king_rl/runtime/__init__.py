@@ -36,7 +36,14 @@ from .suggestions import (
     build_suggestion_view,
     format_suggestion_view,
 )
-from .tracing import ActionTraceWriter, TRACE_SCHEMA, build_action_trace
+from .tracing import (
+    ActionTraceWriter,
+    MANIFEST_SCHEMA,
+    TRACE_SCHEMA,
+    build_action_trace,
+    file_sha256,
+)
+from .modes import RuntimeMode, resolve_runtime_mode
 
 __all__ = [
     "ACTION_DIRECTIONS",
@@ -49,9 +56,11 @@ __all__ = [
     "CompletionStatus",
     "InputResult",
     "IOStatus",
+    "MANIFEST_SCHEMA",
     "ObservationConsistency",
     "RewardResult",
     "RuntimeScreenState",
+    "RuntimeMode",
     "ScreenAssessment",
     "ShotTarget",
     "SuggestedAction",
@@ -74,6 +83,8 @@ __all__ = [
     "detect_promotion",
     "format_assistance_scope",
     "format_suggestion_view",
+    "file_sha256",
+    "resolve_runtime_mode",
     "select_shot_target",
     "update_countdown",
     "update_enemy_turns",
