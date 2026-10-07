@@ -52,6 +52,7 @@ from shotgun_king_rl.runtime.transitions import (
 )
 from shotgun_king_rl.runtime.io import CaptureResult, InputResult
 from shotgun_king_rl.runtime.execution import verify_action_completion
+from shotgun_king_rl.runtime.consistency import compare_policy_observation
 import sys
 
 # Ensure project root is in python path to support tools module imports
@@ -628,6 +629,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         original_action = action
         action_result = None
+        policy_observation = (
+            None if self.current_state is None else self.current_state.copy()
+        )
         # Cache previous board state before sync
         prev_board = self.current_state[:64].reshape(8, 8) if self.current_state is not None else np.zeros((8, 8))
 
@@ -663,6 +667,28 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 self._truncation_status(initial_terminal.terminated),
                 info,
             )
+
+        consistency = compare_policy_observation(
+            policy_observation,
+            self.current_state,
+        )
+        if not consistency.consistent:
+            info = {
+                "step": self.current_step,
+                "requested_action": original_action,
+                "action": None,
+                "input_succeeded": None,
+                "action_completed": False,
+                "transition_ready": False,
+                "observation_issue": "pre_action_observation_changed",
+                "observation_consistency": consistency.as_info(),
+                "screen_state": {
+                    "state": initial_assessment.state.value,
+                    "reason": initial_assessment.reason,
+                },
+                "capture": _result_info(self.last_capture_result, "capture"),
+            }
+            return self.current_state, 0.0, False, self._truncation_status(), info
         from specs import get_enemy_specs_matrices
         hp_matrix, _ = get_enemy_specs_matrices(board_state, self.enemy_turns, self.rank)
 

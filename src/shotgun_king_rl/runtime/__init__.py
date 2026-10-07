@@ -26,6 +26,7 @@ from .transitions import (
 )
 from .io import CaptureResult, InputResult, IOStatus
 from .execution import ActionCompletion, CompletionStatus, verify_action_completion
+from .consistency import ObservationConsistency, compare_policy_observation
 from .scope import AssistanceScope, assess_assistance_scope, format_assistance_scope
 from .suggestions import (
     ACTION_KEYS,
@@ -48,6 +49,7 @@ __all__ = [
     "CompletionStatus",
     "InputResult",
     "IOStatus",
+    "ObservationConsistency",
     "RewardResult",
     "RuntimeScreenState",
     "ScreenAssessment",
@@ -68,6 +70,7 @@ __all__ = [
     "build_suggestion_view",
     "calculate_step_reward",
     "classify_runtime_screen",
+    "compare_policy_observation",
     "detect_promotion",
     "format_assistance_scope",
     "format_suggestion_view",

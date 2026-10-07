@@ -194,6 +194,40 @@ class EnvironmentStateTests(unittest.TestCase):
         self.assertEqual(game.current_step, 0)
         click.assert_not_called()
 
+    def test_changed_pre_action_observation_sends_no_input(self):
+        game = env.ShotgunKingEnv(max_steps=10)
+        planned_board = np.zeros((8, 8), dtype=np.float32)
+        fresh_board = np.zeros((8, 8), dtype=np.float32)
+        planned_board[4, 4] = 1
+        planned_board[0, 0] = 2
+        fresh_board[4, 5] = 1
+        fresh_board[0, 0] = 2
+        planned = observation(planned_board)
+        fresh = observation(fresh_board)
+        game.current_state = planned
+        game.last_capture_result = CaptureResult(
+            IOStatus.SUCCEEDED,
+            "data/screenshot.png",
+        )
+
+        with patch.object(game, "_check_emergency_stop"), patch.object(
+            game, "_get_obs", return_value=fresh
+        ), patch.object(env, "click_relative_in_window") as click:
+            result, reward, terminated, truncated, info = game.step(4)
+
+        np.testing.assert_array_equal(result, fresh)
+        self.assertEqual(reward, 0.0)
+        self.assertFalse(terminated)
+        self.assertFalse(truncated)
+        self.assertFalse(info["transition_ready"])
+        self.assertEqual(info["observation_issue"], "pre_action_observation_changed")
+        self.assertEqual(
+            info["observation_consistency"]["reason"],
+            "board_changed",
+        )
+        self.assertEqual(game.current_step, 0)
+        click.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

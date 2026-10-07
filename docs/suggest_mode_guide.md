@@ -14,6 +14,8 @@ Before requesting input, Suggest Mode prints the recognized 8x8 board, loaded an
 
 Every attempted action in Suggest and Autonomous modes is appended to a private JSONL file under `data/runtime_traces`. Each line contains the configured weapon, rank and floor, the exact board and ammunition state used for the decision, the action mask and Q-values, recommendations, the selected and executed actions, input and completion results, the next board, reward and terminal status. Failed input and rejected observations remain in the trace with `accepted_for_replay: false` so they can be diagnosed without entering replay memory.
 
+Immediately before input, the runtime captures a fresh observation and compares its board and ammunition with the state used to choose the action. A mismatch blocks input, keeps the action counter unchanged and records `pre_action_observation_changed` with changed squares and ammunition values in the trace.
+
 The trace is operational evidence, not verified perception training data. Screenshots and labels for piece, ammunition and screen readers still require the collection and human-review pipeline.
 
 ## Keyboard Input Action Mapping
