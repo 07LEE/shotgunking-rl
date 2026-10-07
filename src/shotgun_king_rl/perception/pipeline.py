@@ -1,11 +1,18 @@
 """Gate independent screen, board, and HUD readers before policy use."""
 
 from dataclasses import dataclass
+from numbers import Real
 from typing import Any, Protocol, TypeVar
 
 import numpy as np
 
-from .types import AmmoReading, FusedPerception, Prediction, ScreenKind
+from .types import (
+    AmmoReading,
+    CombatStatsReading,
+    FusedPerception,
+    Prediction,
+    ScreenKind,
+)
 
 
 T = TypeVar("T")
@@ -24,6 +31,7 @@ class PerceptionPipeline:
     screen_reader: Reader[ScreenKind]
     board_reader: Reader[np.ndarray]
     ammo_reader: Reader[AmmoReading]
+    combat_stats_reader: Reader[CombatStatsReading]
 
     def observe(self, image: Any) -> FusedPerception:
         screen = self.screen_reader.read(image)
@@ -32,6 +40,7 @@ class PerceptionPipeline:
                 screen_kind=None,
                 board=None,
                 ammo=None,
+                combat_stats=None,
                 ready_for_policy=False,
                 issues=(_issue("screen", screen),),
                 sources=(screen.source,),
@@ -42,6 +51,7 @@ class PerceptionPipeline:
                 screen_kind=screen.value,
                 board=None,
                 ammo=None,
+                combat_stats=None,
                 ready_for_policy=False,
                 issues=(f"screen:{screen.value.value}",),
                 sources=(screen.source,),
@@ -49,9 +59,11 @@ class PerceptionPipeline:
 
         board = self.board_reader.read(image)
         ammo = self.ammo_reader.read(image)
+        combat_stats = self.combat_stats_reader.read(image)
         issues = []
         accepted_board = None
         accepted_ammo = None
+        accepted_combat_stats = None
 
         if board.is_accepted and _valid_board(board.value):
             accepted_board = board.value
@@ -67,13 +79,21 @@ class PerceptionPipeline:
         else:
             issues.append(_issue("ammo", ammo))
 
+        if combat_stats.is_accepted and _valid_combat_stats(combat_stats.value):
+            accepted_combat_stats = combat_stats.value
+        elif combat_stats.is_accepted:
+            issues.append("combat_stats:invalid_values")
+        else:
+            issues.append(_issue("combat_stats", combat_stats))
+
         return FusedPerception(
             screen_kind=screen.value,
             board=accepted_board,
             ammo=accepted_ammo,
+            combat_stats=accepted_combat_stats,
             ready_for_policy=not issues,
             issues=tuple(issues),
-            sources=(screen.source, board.source, ammo.source),
+            sources=(screen.source, board.source, ammo.source, combat_stats.source),
         )
 
 
@@ -100,4 +120,36 @@ def _valid_ammo(ammo: AmmoReading | None) -> bool:
         and not isinstance(ammo.reserve, bool)
         and ammo.loaded >= 0
         and ammo.reserve >= 0
+    )
+
+
+def _valid_combat_stats(stats: CombatStatsReading | None) -> bool:
+    if stats is None:
+        return False
+    required = (
+        stats.attack,
+        stats.range_min,
+        stats.range_max,
+        stats.spread_degrees,
+        stats.penetration_percent,
+        stats.knockback_percent,
+    )
+    if not all(_is_finite_nonnegative(value) for value in required):
+        return False
+    if stats.melee_damage is not None and not _is_finite_nonnegative(stats.melee_damage):
+        return False
+    return (
+        stats.range_min <= stats.range_max
+        and stats.spread_degrees <= 360
+        and stats.penetration_percent <= 100
+        and stats.knockback_percent <= 100
+    )
+
+
+def _is_finite_nonnegative(value: object) -> bool:
+    return (
+        isinstance(value, Real)
+        and not isinstance(value, (bool, np.bool_))
+        and bool(np.isfinite(value))
+        and value >= 0
     )

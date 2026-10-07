@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from shotgun_king_rl.perception.types import CombatStatsReading
+
 from .actions import ACTION_DIRECTIONS, available_moves, select_shot_target
 
 
@@ -127,6 +129,18 @@ def build_observation(
             np.asarray(hp_matrix, dtype=np.float32).reshape(-1),
             np.asarray(turn_matrix, dtype=np.float32).reshape(-1),
         ]
+    )
+
+
+def legacy_weapon_features(combat_stats: CombatStatsReading) -> np.ndarray:
+    """Map observed combat values into the existing three model features."""
+    return np.array(
+        [
+            combat_stats.attack,
+            combat_stats.range_max,
+            combat_stats.spread_degrees,
+        ],
+        dtype=np.float32,
     )
 
 

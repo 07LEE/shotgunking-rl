@@ -11,9 +11,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT))
 
+from shotgun_king_rl.perception import CombatStatsReading
 from shotgun_king_rl.runtime.state import (
     build_observation,
     build_threat_matrix,
+    legacy_weapon_features,
     update_enemy_turns,
 )
 from train import remember_manual_defeat
@@ -56,6 +58,21 @@ class RuntimeStateTests(unittest.TestCase):
         self.assertEqual(result[133], 1)
         np.testing.assert_array_equal(result[153:217], hp.reshape(-1))
         np.testing.assert_array_equal(result[217:281], turns.reshape(-1))
+
+    def test_observed_combat_stats_map_to_legacy_weapon_features(self):
+        stats = CombatStatsReading(
+            attack=6,
+            range_min=2,
+            range_max=7,
+            spread_degrees=40,
+            penetration_percent=25,
+            knockback_percent=10,
+        )
+
+        result = legacy_weapon_features(stats)
+
+        np.testing.assert_array_equal(result, [6, 7, 40])
+        self.assertEqual(result.dtype, np.float32)
 
     def test_enemy_turns_decrement_or_reset_after_movement(self):
         specs = {2: {"turn": 5.0}, 3: {"turn": 3.0}}

@@ -92,12 +92,26 @@ class AmmoReading:
 
 
 @dataclass(frozen=True)
+class CombatStatsReading:
+    """Current combat values read from the gameplay HUD."""
+
+    attack: float
+    range_min: float
+    range_max: float
+    spread_degrees: float
+    penetration_percent: float
+    knockback_percent: float
+    melee_damage: float | None = None
+
+
+@dataclass(frozen=True)
 class FusedPerception:
     """Validated perception state exposed to an action policy."""
 
     screen_kind: ScreenKind | None
     board: np.ndarray | None
     ammo: AmmoReading | None
+    combat_stats: CombatStatsReading | None
     ready_for_policy: bool
     issues: tuple[str, ...]
     sources: tuple[str, ...]
