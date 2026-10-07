@@ -27,9 +27,19 @@ from .transitions import (
 from .io import CaptureResult, InputResult, IOStatus
 from .execution import ActionCompletion, CompletionStatus, verify_action_completion
 from .scope import AssistanceScope, assess_assistance_scope, format_assistance_scope
+from .suggestions import (
+    ACTION_KEYS,
+    ACTION_NAMES,
+    SuggestedAction,
+    SuggestionView,
+    build_suggestion_view,
+    format_suggestion_view,
+)
 
 __all__ = [
     "ACTION_DIRECTIONS",
+    "ACTION_KEYS",
+    "ACTION_NAMES",
     "ActionCompletion",
     "AssistanceScope",
     "CaptureResult",
@@ -40,6 +50,8 @@ __all__ = [
     "RuntimeScreenState",
     "ScreenAssessment",
     "ShotTarget",
+    "SuggestedAction",
+    "SuggestionView",
     "TerminalResult",
     "action_destination",
     "apply_terminal_rules",
@@ -49,10 +61,12 @@ __all__ = [
     "build_action_mask",
     "build_observation",
     "build_threat_matrix",
+    "build_suggestion_view",
     "calculate_step_reward",
     "classify_runtime_screen",
     "detect_promotion",
     "format_assistance_scope",
+    "format_suggestion_view",
     "select_shot_target",
     "update_countdown",
     "update_enemy_turns",

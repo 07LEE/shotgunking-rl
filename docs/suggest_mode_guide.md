@@ -8,6 +8,8 @@ Because Console text inputs (via Python's input function) process standard numbe
 
 To prioritize directional grid movement, the numpad_map is enforced by default. Therefore, standard numeric actions (such as typing 8 for manual Reload) are overridden by the Numpad layout mapping (which redirects 8 to Move Up).
 
+Before requesting input, Suggest Mode prints the recognized 8x8 board, loaded and reserve ammunition, every action permitted by the current action mask, and the targeting or movement rule that makes each action available. It ranks up to three valid actions by raw model Q-value. Q-values are model scores, not probabilities or calibrated confidence, and the displayed reasons explain the deterministic validity and targeting rules rather than the model's internal reasoning.
+
 ## Keyboard Input Action Mapping
 
 The table below outlines the exact action triggered by each specific character entered in the Console prompt.

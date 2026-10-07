@@ -3,11 +3,6 @@
 from dataclasses import dataclass
 
 
-SUPPORTED_RANK = 1
-SUPPORTED_WEAPON_TYPE = 0
-SUPPORTED_FLOOR = 1
-
-
 @dataclass(frozen=True)
 class AssistanceScope:
     """Configured play conditions and whether this runtime supports them."""
@@ -21,15 +16,15 @@ class AssistanceScope:
     floor_verified: bool = False
 
 
-def assess_assistance_scope(rank, weapon_type, weapon_name, floor):
-    """Accept only the rank-one, basic-weapon, first-floor milestone."""
+def assess_assistance_scope(rank, weapon_type, weapon_name, floor, weapon_registered=True):
+    """Accept registered weapons while treating rank and floor as configuration."""
     issues = []
-    if rank != SUPPORTED_RANK:
-        issues.append(f"rank:{rank}")
-    if weapon_type != SUPPORTED_WEAPON_TYPE:
-        issues.append(f"weapon_type:{weapon_type}")
-    if floor != SUPPORTED_FLOOR:
-        issues.append(f"floor:{floor}")
+    if type(rank) is not int or rank < 1:
+        issues.append(f"invalid_rank:{rank}")
+    if not weapon_registered:
+        issues.append(f"unknown_weapon_type:{weapon_type}")
+    if type(floor) is not int or floor < 1:
+        issues.append(f"invalid_floor:{floor}")
     return AssistanceScope(
         rank=rank,
         weapon_type=weapon_type,
@@ -43,14 +38,12 @@ def assess_assistance_scope(rank, weapon_type, weapon_name, floor):
 def format_assistance_scope(scope):
     """Return a concise operator-facing description of configured conditions."""
     status = "supported" if scope.supported else "unsupported"
-    weapon_label = (
-        f"{scope.weapon_name} (basic, weapon {scope.weapon_type})"
-        if scope.weapon_type == SUPPORTED_WEAPON_TYPE
-        else f"{scope.weapon_name} (weapon {scope.weapon_type})"
-    )
+    weapon_label = f"{scope.weapon_name} (weapon {scope.weapon_type})"
     details = (
         f"Rank {scope.rank} | {weapon_label} | Floor {scope.floor}"
     )
-    floor_note = "Floor is configured only; confirm it on the game screen."
+    floor_note = "Floor is recorded only and does not restrict support; confirm it on the game screen."
+    rank_note = " Rank scaling uses configuration and is not verified from the game screen."
+    effect_note = " Card and buff effects must match runtime configuration; live verification is unavailable."
     issue_note = "" if scope.supported else f" Unsupported: {', '.join(scope.issues)}."
-    return f"Play scope [{status}]: {details}\n{floor_note}{issue_note}"
+    return f"Play scope [{status}]: {details}\n{floor_note}{rank_note}{effect_note}{issue_note}"

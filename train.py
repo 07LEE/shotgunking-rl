@@ -23,7 +23,11 @@ from shotgun_king_rl.runtime.scope import (
     assess_assistance_scope,
     format_assistance_scope,
 )
-from shotgun_king_rl.runtime.state import ACTION_DIRECTIONS
+from shotgun_king_rl.runtime.suggestions import (
+    ACTION_NAMES,
+    build_suggestion_view,
+    format_suggestion_view,
+)
 try:
     from torch.utils.tensorboard import SummaryWriter
 except ImportError:
@@ -43,7 +47,7 @@ def remember_manual_defeat(agent, state, action, action_mask):
     )
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, target_floor=1, buffs=None, verbose=True):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonomous", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
@@ -56,7 +60,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         epsilon_min: Minimum exploration cutoff limit.
         rank: Configured story rank shown to the operator.
         weapon_type: Configured weapon preset ID.
-        target_floor: Configured floor for the limited assistance scope.
+        current_floor: Floor recorded for operator context.
         buffs: Optional active player buffs.
         verbose: Enable environment diagnostic output.
     """
@@ -66,7 +70,8 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
         rank=rank,
         weapon_type=weapon_type,
         weapon_name=weapon_name,
-        floor=target_floor,
+        floor=current_floor,
+        weapon_registered=preset is not None,
     )
     print("\n=== LIVE ASSISTANCE SCOPE ===")
     print(format_assistance_scope(scope))
@@ -137,27 +142,29 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                 action = agent.act(state, action_mask=action_mask, epsilon=epsilon)
 
                 # Handle decision suggestion and override in suggest mode
-                if mode == "suggest" and q_values is not None:
-                    action_names = {
-                        0: "Move Up-Left", 1: "Move Up", 2: "Move Up-Right",
-                        3: "Move Left", 4: "Move Right",
-                        5: "Move Down-Left", 6: "Move Down", 7: "Move Down-Right",
-                        8: "Reload", 9: "Shoot"
-                    }
-                    
-                    # Sort Q-values descending for suggestions, filtering out invalid moves
-                    top_actions = []
-                    ranked_actions = np.argsort(q_values)[::-1]
-                    for act_idx in ranked_actions:
-                        if is_action_valid(act_idx):
-                            top_actions.append(act_idx)
-                            if len(top_actions) == 3:
-                                break
-                                
-                    # Calculate softmax probabilities for Top 3 actions to project relative confidence %
-                    exp_q = np.exp(q_values - np.max(q_values))
-                    softmax_probs = exp_q / np.sum(exp_q)
-                    
+                if mode == "suggest":
+                    if q_values is None:
+                        raise RuntimeError(
+                            "Suggest mode requires model Q-values before any input"
+                        )
+                    view = build_suggestion_view(
+                        state,
+                        action_mask,
+                        q_values,
+                        loaded_ammo=env.loaded_ammo,
+                        max_ammo=env.max_ammo,
+                        reserve_ammo=env.reserve_ammo,
+                        range_limit=env.range_limit,
+                        royal_guard_active=env.royal_guard_active,
+                        melee_damage=env.melee_damage,
+                    )
+                    print("\n" + format_suggestion_view(view))
+                    if not view.recommendations:
+                        raise RuntimeError(
+                            "No valid recommendation is available for the observed state"
+                        )
+                    action = view.recommendations[0].action
+
                     # Convert Numpad inputs to internal action index
                     numpad_map = {
                         "7": 0, "8": 1, "9": 2,
@@ -165,40 +172,20 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                         "1": 5, "2": 6, "3": 7,
                         "0": 9
                     }
-                    reverse_numpad_map = {v: k for k, v in numpad_map.items()}
 
                     def print_valid_action_hints():
-                        valid_keys = []
-                        check_order = [0, 1, 2, 3, 8, 4, 5, 6, 7, 9]
-                        for act_i in check_order:
-                            is_ok = is_action_valid(act_i)
-                            if act_i == 9:
-                                is_ok = is_ok and env.loaded_ammo > 0
-                            elif act_i == 8:
-                                is_ok = is_ok and env.loaded_ammo < env.max_ammo and env.reserve_ammo > 0
-                            
-                            if is_ok:
-                                key_hint = reverse_numpad_map.get(act_i, "?")
-                                if act_i == 9:
-                                    valid_keys.append(f"{key_hint} (Shoot)")
-                                elif act_i == 8:
-                                    valid_keys.append(f"{key_hint} or r (Reload)")
-                                else:
-                                    valid_keys.append(key_hint)
-                        print(f"Valid choices for current board state: {', '.join(valid_keys)}")
-
-                    print("\n=== AI Decision Suggestion ===")
-                    for rank, act_idx in enumerate(top_actions, 1):
-                        confidence = softmax_probs[act_idx] * 100
-                        key_hint = reverse_numpad_map.get(act_idx, "?")
-                        if act_idx == 8:
-                            print(f"Rank {rank}: {action_names[act_idx]} [Key: {key_hint} or r] (Confidence: {confidence:.1f}%, Q-value: {q_values[act_idx]:.4f})")
-                        else:
-                            print(f"Rank {rank}: {action_names[act_idx]} [Key: {key_hint}] (Confidence: {confidence:.1f}%, Q-value: {q_values[act_idx]:.4f})")
+                        valid_choices = [
+                            f"{item.key} ({item.name})"
+                            for item in view.valid_actions
+                        ]
+                        print(
+                            "Valid choices for current board state: "
+                            + ", ".join(valid_choices)
+                        )
 
                     # Validation loop for user choice
                     while True:
-                        user_choice = input(f"\nRecommended: [{action_names[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad/r): ").strip()
+                        user_choice = input(f"\nRecommended: [{ACTION_NAMES[action]}]. Press Enter to confirm, or enter custom action ID (0-9/Numpad/r): ").strip()
                         if user_choice == ".":
                             print("User flagged defeat. Forcing episode termination...")
                             remember_manual_defeat(agent, state, action, action_mask)
@@ -219,48 +206,22 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="autonom
                             print_valid_action_hints()
                             continue
 
-                        # Wall boundary and collision check details for move actions
-                        if temp_action in range(8):
-                            row_offset, col_offset = ACTION_DIRECTIONS[temp_action]
-                            target_row = env.king_row + row_offset
-                            target_col = env.king_col + col_offset
-                            
-                            if not (0 <= target_row < 8 and 0 <= target_col < 8):
-                                print(f"Move blocked by wall! Target ({target_row}, {target_col}) is out of bounds. Current King: ({env.king_row}, {env.king_col}). Choose another action.")
-                                print_valid_action_hints()
-                                continue
-                                
-                            board_state = env.current_state[:64].reshape(8, 8) if env.current_state is not None else np.zeros((8, 8))
-                            if board_state[target_row, target_col] != 0:
-                                print(f"Move blocked by piece! Target ({target_row}, {target_col}) contains a piece (Type {board_state[target_row, target_col]}). Current King: ({env.king_row}, {env.king_col}). Choose another action.")
-                                print_valid_action_hints()
-                                continue
-                        elif temp_action == 9:
-                            if env.loaded_ammo <= 0:
-                                print(f"Shoot blocked by ammo! Loaded ammo is 0. Current ammo: {env.loaded_ammo}/{env.max_ammo}. Choose another action.")
-                                print_valid_action_hints()
-                                continue
-                        elif temp_action == 8:
-                            if env.loaded_ammo >= env.max_ammo:
-                                print(f"Reload blocked! Loaded ammo is already full ({env.loaded_ammo}/{env.max_ammo}). Choose another action.")
-                                print_valid_action_hints()
-                                continue
-                            if env.reserve_ammo <= 0:
-                                print(f"Reload blocked by reserve! Reserve ammo is 0. Choose another action.")
-                                print_valid_action_hints()
-                                continue
+                        if temp_action >= len(action_mask) or not is_action_valid(temp_action):
+                            print("That action is not permitted by the displayed action mask.")
+                            print_valid_action_hints()
+                            continue
                             
                         # If validation passed
                         action = temp_action
                         if user_choice != "":
                             if user_choice.lower() == 'r':
-                                print(f"Action overridden by user to: {action_names[action]} (r key input)")
+                                print(f"Action overridden by user to: {ACTION_NAMES[action]} (r key input)")
                             elif user_choice in numpad_map:
-                                print(f"Action overridden by user to: {action_names[action]} (Numpad input: {user_choice})")
+                                print(f"Action overridden by user to: {ACTION_NAMES[action]} (Numpad input: {user_choice})")
                             else:
-                                print(f"Action overridden by user to: {action_names[action]}")
+                                print(f"Action overridden by user to: {ACTION_NAMES[action]}")
                         else:
-                            print(f"Executing recommended action: {action_names[action]}")
+                            print(f"Executing recommended action: {ACTION_NAMES[action]}")
                         break
                         
                     if user_choice == ".":
@@ -362,7 +323,7 @@ def load_config(config_path="config.yaml"):
         "epsilon_min": 0.05,
         "rank": 1,
         "weapon_type": 0,
-        "target_floor": 1
+        "current_floor": 1
     }
 
     if not os.path.exists(config_path):
@@ -407,7 +368,7 @@ if __name__ == "__main__":
             epsilon_min=config["epsilon_min"],
             rank=config["rank"],
             weapon_type=config["weapon_type"],
-            target_floor=config["target_floor"],
+            current_floor=config["current_floor"],
             buffs=config.get("buffs"),
             verbose=config.get("verbose", True)
         )
