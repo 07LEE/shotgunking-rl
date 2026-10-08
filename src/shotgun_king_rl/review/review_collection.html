@@ -15,13 +15,12 @@
             <span class="badge"><span class="dot"></span> Local workspace</span>
         </header>
         <div class="workspace-toolbar">
-        <div class="review-tabs" role="tablist" aria-label="Review category">
+        <div class="review-toolbar-summary"><div class="review-tabs" role="tablist" aria-label="Review category">
             <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
             <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Page info</button>
-        </div>
+        </div><p id="progress" class="progress"></p></div>
         <section class="shared-selection" aria-label="Session and screenshot"><section class="panel controls">
             <label><span>Session</span><select id="sessions"></select></label>
-            <p id="progress" class="progress"></p>
             <label><span>Screenshot</span><select id="items"></select></label>
             <div class="button-row"><button id="previous" aria-label="Previous screenshot" title="Previous screenshot">←</button><button id="next" aria-label="Next screenshot" title="Next screenshot">→</button></div>
         </section></section>

@@ -10,6 +10,31 @@ function pageReviewCount(item) { return Object.keys(reviewInputs).filter(section
 function pageComplete(item) { return pageReviewCount(item) === Object.keys(reviewInputs).length }
 function needsReview(item) { return currentReviewTab === 'pieces' ? !item.confirmed : !pageComplete(item) }
 function firstPending(list) { return list.find(needsReview) || list[0] }
+function otherSessionPending() {
+    const sessions = [...new Set(items.map(item => item.session))];
+    const index = sessions.indexOf(currentSession);
+    const ordered = [...sessions.slice(index + 1), ...sessions.slice(0, index)];
+    for (const session of ordered) {
+        const pending = items.find(item => item.session === session && needsReview(item));
+        if (pending) return pending;
+    }
+    return null;
+}
+function nextPending() {
+    const list = sessionItems();
+    const index = list.findIndex(item => item.id === currentId);
+    return list.slice(index + 1).find(needsReview) || otherSessionPending();
+}
+async function moveTo(item) {
+    if (item.session !== currentSession) {
+        currentSession = item.session;
+        $('sessions').value = currentSession;
+    }
+    currentId = item.id;
+    remember();
+    renderOptions();
+    await load();
+}
 function reviewMarker(item) { if (currentReviewTab === 'pieces') return item.confirmed ? '✓' : '○'; const count = pageReviewCount(item); return count === Object.keys(reviewInputs).length ? '✓' : count > 0 ? '◐' : '○' }
 function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); status(currentReviewTab === 'pieces' ? (data.confirmed ? 'Piece labels approved.' : 'Piece labels are still a draft.') : (pageComplete(item) ? 'Page information reviewed.' : 'Page information review is incomplete.')) }
 for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c; $('label').append(o) }
@@ -101,16 +126,13 @@ async function save(confirmed) {
             status(currentReviewTab === 'pieces' ? 'Piece draft saved; excluded from approved datasets.' : 'Page information saved; piece approval is unchanged.');
             return;
         }
-        const list = sessionItems();
-        const index = list.findIndex(item => item.id === currentId);
-        const next = [...list.slice(index + 1), ...list.slice(0, index)].find(needsReview);
+        const next = nextPending();
         if (next) {
-            currentId = next.id;
-            remember();
-            renderOptions();
-            await load();
+            await moveTo(next);
         } else {
-            status(currentReviewTab === 'pieces' ? 'Session piece review complete — all ' + list.length + ' screens approved.' : 'Session page-information review complete — all ' + list.length + ' screens reviewed.');
+            const remaining = items.filter(needsReview).length;
+            if (remaining) status('No later unreviewed screen — ' + remaining + ' earlier screen' + (remaining === 1 ? '' : 's') + ' still need review.');
+            else status(currentReviewTab === 'pieces' ? 'Piece review complete — all ' + items.length + ' screens approved.' : 'Page-information review complete — all ' + items.length + ' screens reviewed.');
         }
     } catch (error) {
         status('Not saved — ' + error.message, true);
@@ -120,8 +142,8 @@ async function save(confirmed) {
 }
 $('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
-function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = reviewMarker(item) + ' ' + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1; const count = section => list.filter(item => item.reviews?.[section]).length; $('progress').textContent = currentReviewTab === 'pieces' ? 'pieces ' + list.filter(x => x.confirmed).length + '/' + list.length + ' · screenshot ' + (index + 1) + '/' + list.length : 'page info ' + list.filter(pageComplete).length + '/' + list.length + ' · kind ' + count('screen_kind') + ' · ammo ' + count('ammo') + ' · stats ' + count('combat_stats') + ' · cards ' + count('cards') + ' · screenshot ' + (index + 1) + '/' + list.length }
-function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); if (index + delta < 0 || index + delta >= list.length) return; if (dirty && !confirm('Discard unsaved edits?')) return; currentId = list[index + delta].id; remember(); renderOptions(); load() }
+function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = reviewMarker(item) + ' ' + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1 && !otherSessionPending(); const count = section => list.filter(item => item.reviews?.[section]).length; $('progress').textContent = currentReviewTab === 'pieces' ? 'pieces ' + list.filter(x => x.confirmed).length + '/' + list.length + ' · screenshot ' + (index + 1) + '/' + list.length : 'page info ' + list.filter(pageComplete).length + '/' + list.length + ' · kind ' + count('screen_kind') + ' · ammo ' + count('ammo') + ' · stats ' + count('combat_stats') + ' · cards ' + count('cards') + ' · screenshot ' + (index + 1) + '/' + list.length }
+async function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); const target = delta < 0 ? list[index - 1] : list[index + 1] || otherSessionPending(); if (!target) return; if (dirty && !confirm('Discard unsaved edits?')) return; await moveTo(target) }
 $('previous').onclick = () => navigate(-1); $('next').onclick = () => navigate(1);
 window.onbeforeunload = e => { if (dirty) { e.preventDefault(); e.returnValue = '' } };
 (async () => { try { items = await api('/api/items'); if (!items.length) { status('No annotations. Run with --session to prepare inbox images.'); return } const sessions = [...new Set(items.map(x => x.session))]; const saved = recalled(); currentSession = sessions.includes(saved.session) ? saved.session : sessions[0]; for (const session of sessions) { const o = document.createElement('option'); o.value = session; o.textContent = session; $('sessions').append(o) } $('sessions').value = currentSession; const list = sessionItems(); currentId = list.some(x => x.id === saved.id) ? saved.id : firstPending(list).id; remember(); renderOptions(); await load() } catch (e) { status(e.message) } })();
