@@ -11,18 +11,20 @@
 <body>
     <div class="app">
         <header class="page-header">
-            <div><p class="eyebrow">DATA COLLECTION / REVIEW</p><h1>Piece annotation studio</h1><p class="subtitle">Review the board. Correct the labels. Build reliable training data.</p></div>
+            <div><p class="eyebrow">DATA COLLECTION / REVIEW</p><h1>Piece annotation studio</h1></div>
             <span class="badge"><span class="dot"></span> Local workspace</span>
         </header>
         <div class="workspace-toolbar">
-        <div class="review-toolbar-summary"><div class="review-tabs" role="tablist" aria-label="Review category">
+        <div class="review-tabs" role="tablist" aria-label="Review category">
             <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
             <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Page info</button>
-        </div><p id="progress" class="progress"></p></div>
+        </div>
         <section class="shared-selection" aria-label="Session and screenshot"><section class="panel controls">
+            <div class="selection-row">
             <label><span>Session</span><select id="sessions"></select></label>
             <label><span>Screenshot</span><select id="items"></select></label>
             <div class="button-row"><button id="previous" aria-label="Previous screenshot" title="Previous screenshot">←</button><button id="next" aria-label="Next screenshot" title="Next screenshot">→</button></div>
+            </div>
         </section></section>
         </div>
         <main>
@@ -43,7 +45,7 @@
             </div>
             <div id="screenView" class="review-view" role="tabpanel" aria-labelledby="screenTab" hidden>
                 <section class="panel screen-panel">
-                    <div class="panel-heading"><h2>Full game screen</h2></div>
+                    <div class="panel-heading"><h2>Full game screen</h2><p id="progress" class="progress"></p></div>
                     <div class="screen-overview">
                         <a id="fullLink" target="_blank" rel="noopener"><img id="fullImage" alt="Full game screen"></a>
                         <div class="screen-input-overlay" aria-label="Values positioned over the game screen">
