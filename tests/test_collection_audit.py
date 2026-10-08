@@ -46,6 +46,8 @@ def add_annotation(root, session_id, split, name, *, complete=True, image=b"imag
                 "spread_degrees": 65,
                 "penetration_percent": 0,
                 "knockback_percent": 0,
+                "grenades_remaining": 0,
+                "melee_damage": 0,
             },
             "cards": {"left": [], "right": []},
             "reviews": reviews,

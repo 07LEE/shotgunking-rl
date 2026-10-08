@@ -43,7 +43,7 @@ def load_item(collection, relative):
 
 
 AMMO_FIELDS = ('loaded', 'reserve')
-COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent')
+COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'melee_damage')
 REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards')
 SCREEN_KINDS = ('gameplay', 'card_selection', 'retry', 'transition')
 

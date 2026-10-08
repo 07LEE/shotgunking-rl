@@ -67,6 +67,8 @@ class RuntimeStateTests(unittest.TestCase):
             spread_degrees=40,
             penetration_percent=25,
             knockback_percent=10,
+            grenades_remaining=1,
+            melee_damage=3,
         )
 
         result = legacy_weapon_features(stats)

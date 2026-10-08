@@ -16,7 +16,7 @@ REGIONS = {
     'spread_degrees': (270, 390, 354, 430),
     'knockback_percent': (270, 454, 354, 492),
 }
-COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent')
+COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'melee_damage')
 
 
 def patch(image, box):

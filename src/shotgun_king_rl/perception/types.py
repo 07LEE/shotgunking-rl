@@ -101,7 +101,8 @@ class CombatStatsReading:
     spread_degrees: float
     penetration_percent: float
     knockback_percent: float
-    melee_damage: float | None = None
+    grenades_remaining: int
+    melee_damage: float
 
 
 @dataclass(frozen=True)

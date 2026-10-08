@@ -79,12 +79,14 @@ class ScreenStateTests(unittest.TestCase):
         self.assertIsNone(unknown['combat_stats']['attack'])
         self.assertIsNone(unknown['ammo']['loaded'])
         self.assertIsNone(unknown['cards']['left'])
-        reviewed = validate_screen_state({'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'penetration_percent': 25, 'knockback_percent': 40}, 'cards': {'left': ['unknown'], 'right': []}, 'locked_cells': [[1, 2]], 'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True}})
+        reviewed = validate_screen_state({'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'penetration_percent': 25, 'knockback_percent': 40, 'grenades_remaining': 0, 'melee_damage': 3}, 'cards': {'left': ['unknown'], 'right': []}, 'locked_cells': [[1, 2]], 'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True}})
         self.assertEqual(reviewed['locked_cells'], [[1, 2]])
         self.assertEqual(reviewed['cards']['right'], [])
         self.assertEqual(reviewed['screen_kind'], 'gameplay')
         self.assertEqual(reviewed['combat_stats']['penetration_percent'], 25)
         self.assertEqual(reviewed['combat_stats']['knockback_percent'], 40)
+        self.assertEqual(reviewed['combat_stats']['grenades_remaining'], 0)
+        self.assertEqual(reviewed['combat_stats']['melee_damage'], 3)
         self.assertTrue(all(reviewed['reviews'].values()))
 
     def test_legacy_review_flag_maps_without_inventing_screen_kind(self):

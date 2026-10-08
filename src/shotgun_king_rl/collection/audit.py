@@ -17,6 +17,8 @@ COMBAT_FIELDS = (
     "spread_degrees",
     "penetration_percent",
     "knockback_percent",
+    "grenades_remaining",
+    "melee_damage",
 )
 
 
