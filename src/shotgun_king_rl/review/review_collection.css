@@ -179,3 +179,20 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
     .screen-field .field-name { width: auto; max-width: none; margin: 0 0 5px; padding: 0; overflow: visible; background: transparent; color: var(--muted); font-size: 11px; box-shadow: none; }
     .screen-field input:not([type=checkbox]) { height: auto; padding: 9px 10px; font-size: 12px; }
 }
+
+/* Keep the screenshot readable; expand only the field being edited. */
+.screen-field:not(.editing) input:not([type=checkbox]),
+.screen-field:not(.editing) .range-pair {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 0;
+    opacity: 0;
+    pointer-events: none;
+}
+.screen-field .field-name { cursor: pointer; }
+.screen-field.editing { z-index: 4; }
+.screen-field.editing .field-name { background: var(--accent); color: #22223a; }
