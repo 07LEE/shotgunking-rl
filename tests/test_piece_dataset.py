@@ -60,3 +60,21 @@ class PieceDatasetTests(unittest.TestCase):
             self.assertEqual(summary["counts"]["train"]["player_king"], 0)
             records = [json.loads(line) for line in (output / "manifest.jsonl").read_text().splitlines()]
             self.assertTrue(all(r["floor"] == 2 for r in records))
+
+    def test_non_gameplay_screen_is_excluded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            annotations = base / "annotations"
+            annotations.mkdir()
+            data = json.loads((ROOT / "data/test_fixtures/piece_annotations/board_01.json").read_text())
+            data.update(image=str(ROOT / "data/test_fixtures/board_01.png"), confirmed=True)
+            gameplay = {**data, "screen_state": {"screen_kind": "gameplay", "reviews": {"screen_kind": True}}}
+            cards = {**data, "screen_state": {"screen_kind": "card_selection", "reviews": {"screen_kind": True}}}
+            (annotations / "gameplay.json").write_text(json.dumps(gameplay))
+            (annotations / "cards.json").write_text(json.dumps(cards))
+
+            summary = build_dataset(annotations, base / "output")
+
+        self.assertEqual(summary["screens"], 1)
+        self.assertEqual(summary["cells"], 64)
+        self.assertEqual(summary["skipped_non_gameplay"], 1)

@@ -16,7 +16,7 @@ from shotgun_king_rl.collection.audit import audit_collection
 BOARD = [["empty"] * 8 for _ in range(8)]
 
 
-def add_annotation(root, session_id, split, name, *, complete=True, cards_reviewed=None, image=b"image"):
+def add_annotation(root, session_id, split, name, *, complete=True, cards_reviewed=None, screen_kind="gameplay", confirmed=True, image=b"image"):
     session = root / session_id
     originals = session / "originals"
     annotations = session / "annotations"
@@ -34,10 +34,10 @@ def add_annotation(root, session_id, split, name, *, complete=True, cards_review
         "image": f"../originals/{name}.png",
         "session_id": session_id,
         "split": split,
-        "confirmed": True,
+        "confirmed": confirmed,
         "board": BOARD,
         "screen_state": {
-            "screen_kind": "gameplay",
+            "screen_kind": screen_kind,
             "ammo": {"loaded": 2, "reserve": 6},
             "combat_stats": {
                 "attack": 4,
@@ -90,6 +90,20 @@ class CollectionAuditTests(unittest.TestCase):
         self.assertEqual(report["page_info_complete"], 3)
         self.assertEqual(report["reviews"]["cards"], 0)
         self.assertEqual(report["usable_labels"]["train"]["cards"], 0)
+
+    def test_non_gameplay_screen_does_not_require_piece_or_stat_review(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = Path(directory)
+            add_annotation(sessions, "run-01", "train", "gameplay", image=b"gameplay")
+            add_annotation(sessions, "run-01", "train", "cards", screen_kind="card_selection", confirmed=False, image=b"cards")
+
+            report = audit_collection(sessions)
+
+        self.assertEqual(report["screens"], 2)
+        self.assertEqual(report["piece_screens"], 1)
+        self.assertEqual(report["pieces_confirmed"], 1)
+        self.assertEqual(report["page_info_complete"], 2)
+        self.assertNotIn("piece_review_incomplete:1", report["issues"])
 
     def test_missing_reviews_splits_and_duplicate_images_are_reported(self):
         with tempfile.TemporaryDirectory() as directory:

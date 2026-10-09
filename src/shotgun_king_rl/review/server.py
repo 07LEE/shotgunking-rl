@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import secrets
 import threading
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlparse
 import webbrowser
 
 import cv2
@@ -142,7 +142,10 @@ def save_item(collection, payload):
         raise ValueError('Invalid split')
     if type(payload.get('confirmed')) is not bool:
         raise ValueError('Invalid approval flag')
-    if payload['confirmed'] and floor is None:
+    screen_state = validate_screen_state(payload.get('screen_state', current.get('screen_state', {})))
+    piece_applicable = not (screen_state['reviews']['screen_kind'] and screen_state['screen_kind'] != 'gameplay')
+    confirmed = payload['confirmed'] if piece_applicable else False
+    if confirmed and floor is None:
         raise ValueError('Set the floor before approval')
     normalize(image, payload['game_crop'])
     excluded = payload['exclude_cells']
@@ -153,8 +156,7 @@ def save_item(collection, payload):
         other = json.loads(sibling.read_text())
         if sibling != path and other.get('split', group_split(current['session_id'])) != split:
             raise ValueError('Keep the session split unchanged; change the entire session together')
-    screen_state = validate_screen_state(payload.get('screen_state', current.get('screen_state', {})))
-    current.update(screen_state=screen_state, board=board, floor=floor, split=split, confirmed=payload['confirmed'], game_crop=payload['game_crop'], exclude_cells=excluded)
+    current.update(screen_state=screen_state, board=board, floor=floor, split=split, confirmed=confirmed, game_crop=payload['game_crop'], exclude_cells=excluded)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(current, indent=2) + '\n')
     temporary.replace(path)
@@ -179,35 +181,36 @@ def make_server(collection, port=0):
 
         def do_GET(self):
             try:
-                if self.path == '/':
+                request = urlparse(self.path)
+                route = request.path
+                if route == '/':
                     html = Path(__file__).with_name('review_collection.html').read_text().replace('__TOKEN__', token)
                     return self.reply(html.encode(), 'text/html; charset=utf-8')
                 static_files = {
                     '/review_collection.css': 'text/css; charset=utf-8',
                     '/review_collection.js': 'text/javascript; charset=utf-8',
                 }
-                if self.path in static_files:
-                    asset = Path(__file__).with_name(self.path[1:])
-                    return self.reply(asset.read_bytes(), static_files[self.path])
-                if self.path == '/api/items':
+                if route in static_files:
+                    asset = Path(__file__).with_name(route[1:])
+                    return self.reply(asset.read_bytes(), static_files[route])
+                if route == '/api/items':
                     items = []
                     for path in annotation_paths(collection):
                         a = json.loads(path.read_text())
                         state = validate_screen_state(a.get('screen_state', {}))
-                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'reviews': state['reviews']})
+                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'screen_kind': state['screen_kind'], 'reviews': state['reviews']})
                     return self.reply(json.dumps(items).encode())
-                from urllib.parse import urlparse, parse_qs
-                query = parse_qs(urlparse(self.path).query)
+                query = parse_qs(request.query)
                 path, data, image, revision = load_item(collection, query['id'][0])
-                if self.path.startswith('/api/item?'):
+                if route == '/api/item':
                     data['screen_state'] = validate_screen_state(data.get('screen_state', {}))
                     return self.reply(json.dumps({'data': data, 'revision': revision}).encode())
-                if self.path.startswith('/api/screen?'):
+                if route == '/api/screen':
                     ok, encoded = cv2.imencode('.png', normalize(image, data['game_crop']))
                     if not ok:
                         raise ValueError('Image encoding failed')
                     return self.reply(encoded.tobytes(), 'image/png')
-                if self.path.startswith('/api/board?'):
+                if route == '/api/board':
                     crop = json.loads(query['crop'][0]) if 'crop' in query else data['game_crop']
                     board = analyzer.crop_chessboard(normalize(image, crop))
                     ok, encoded = cv2.imencode('.png', board)

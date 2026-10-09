@@ -28,11 +28,16 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
     groups = {}
     image_groups = {}
     skipped = 0
+    skipped_non_gameplay = 0
     paths = list(annotation_dir.glob("*.json")) + list(annotation_dir.glob("*/annotations/*.json"))
     for path in sorted(paths):
         data = json.loads(path.read_text())
         if data.get("schema") != "piece-cells-v1":
             raise ValueError(f"{path}: expected piece-cells-v1 schema")
+        screen_kind = (data.get("screen_state") or {}).get("screen_kind")
+        if screen_kind not in (None, "gameplay"):
+            skipped_non_gameplay += 1
+            continue
         if data.get("confirmed") is not True and not allow_provisional:
             skipped += 1
             continue
@@ -73,7 +78,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
             raise ValueError(f"{path}: exclude_cells must contain [row, col] pairs in 0..7")
         sources.append((path, data, digest, split, crop_chessboard(img)))
     if not sources:
-        raise ValueError(f"No usable annotations ({skipped} unconfirmed skipped)")
+        raise ValueError(f"No usable annotations ({skipped} unconfirmed and {skipped_non_gameplay} non-gameplay skipped)")
     output.mkdir(parents=True)
     records = []
     counts = {split: Counter() for split in ("train", "val", "test")}
@@ -92,7 +97,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
                 counts[split][label] += 1
                 records.append({"path": relative.as_posix(), "label": label, "split": split, "session_id": data["session_id"], "floor": data.get("floor"), "game_crop": data.get("game_crop"), "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col, "locked": [row, col] in data.get("screen_state", {}).get("locked_cells", []), "screen_state": data.get("screen_state")})
     (output / "manifest.jsonl").write_text("".join(json.dumps(record) + "\n" for record in records))
-    summary = {"classes": list(CLASSES), "screens": len(sources), "cells": len(records), "skipped_unconfirmed": skipped, "counts": {split: {label: counts[split][label] for label in CLASSES} for split in counts}, "missing_classes": [label for label in CLASSES if not any(counts[s][label] for s in counts)], "evaluation_ready": all(sum(counts[s].values()) > 0 for s in counts) and all(counts["train"][label] > 0 for label in CLASSES) and all(r["confirmed"] for r in records)}
+    summary = {"classes": list(CLASSES), "screens": len(sources), "cells": len(records), "skipped_unconfirmed": skipped, "skipped_non_gameplay": skipped_non_gameplay, "counts": {split: {label: counts[split][label] for label in CLASSES} for split in counts}, "missing_classes": [label for label in CLASSES if not any(counts[s][label] for s in counts)], "evaluation_ready": all(sum(counts[s].values()) > 0 for s in counts) and all(counts["train"][label] > 0 for label in CLASSES) and all(r["confirmed"] for r in records)}
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     return summary
 

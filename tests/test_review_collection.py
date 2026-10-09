@@ -71,6 +71,23 @@ class ReviewCollectionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'floor'):
                 save_item(collection, dict(data, id=relative, revision=revision, confirmed=True))
 
+    def test_reviewed_non_gameplay_screen_clears_piece_approval(self):
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            (collection / 'inbox').mkdir()
+            image = cv2.imread(str(ROOT / 'data/test_fixtures/board_01.png'))
+            cv2.imwrite(str(collection / 'inbox/screen.png'), image)
+            prepare_session(collection, 'test-session')
+            relative = 'sessions/test-session/annotations/screen.png.json'
+            path, data, _, revision = load_item(collection, relative)
+            data['screen_state']['screen_kind'] = 'card_selection'
+            data['screen_state']['reviews']['screen_kind'] = True
+
+            result = save_item(collection, dict(data, id=relative, revision=revision, floor=None, confirmed=True))
+
+            self.assertFalse(result['confirmed'])
+            self.assertFalse(json.loads(path.read_text())['confirmed'])
+
 
 class ScreenStateTests(unittest.TestCase):
     def test_review_url_selects_requested_session(self):

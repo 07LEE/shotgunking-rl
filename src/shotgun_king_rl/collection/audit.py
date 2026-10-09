@@ -40,6 +40,7 @@ def audit_collection(sessions_dir: Path) -> dict:
     image_digests = {}
     issues = []
     confirmed = 0
+    piece_screens = 0
     page_complete = 0
 
     for path in paths:
@@ -52,6 +53,7 @@ def audit_collection(sessions_dir: Path) -> dict:
                 "session_id": session_id,
                 "splits": set(),
                 "screens": 0,
+                "piece_screens": 0,
                 "pieces_confirmed": 0,
                 "page_info_complete": 0,
                 "reviews": Counter(),
@@ -65,20 +67,27 @@ def audit_collection(sessions_dir: Path) -> dict:
         else:
             issues.append(f"invalid_split:{path.relative_to(sessions_dir)}")
 
-        if data.get("confirmed") is True:
-            confirmed += 1
-            session["pieces_confirmed"] += 1
-            if split in SPLITS:
-                for row in data.get("board") or []:
-                    piece_classes[split].update(row)
-
         state = data.get("screen_state") or {}
         reviews = state.get("reviews") or {}
+        piece_applicable = not (
+            reviews.get("screen_kind") is True
+            and state.get("screen_kind") not in (None, "gameplay")
+        )
+        if piece_applicable:
+            piece_screens += 1
+            session["piece_screens"] += 1
+            if data.get("confirmed") is True:
+                confirmed += 1
+                session["pieces_confirmed"] += 1
+                if split in SPLITS:
+                    for row in data.get("board") or []:
+                        piece_classes[split].update(row)
         for section in REVIEW_SECTIONS:
             if reviews.get(section) is True:
                 review_counts[section] += 1
                 session["reviews"][section] += 1
-        if all(reviews.get(section) is True for section in PAGE_INFO_SECTIONS):
+        required_page_sections = ("screen_kind",) if state.get("screen_kind") not in (None, "gameplay") else PAGE_INFO_SECTIONS
+        if all(reviews.get(section) is True for section in required_page_sections):
             page_complete += 1
             session["page_info_complete"] += 1
         if reviews.get("screen_kind") is True and state.get("screen_kind") is not None:
@@ -126,13 +135,14 @@ def audit_collection(sessions_dir: Path) -> dict:
         for section in PAGE_INFO_SECTIONS:
             if usable_labels[split][section] == 0:
                 issues.append(f"missing_usable_labels:{split}:{section}")
-    if confirmed != len(paths):
-        issues.append(f"piece_review_incomplete:{len(paths) - confirmed}")
+    if confirmed != piece_screens:
+        issues.append(f"piece_review_incomplete:{piece_screens - confirmed}")
     if page_complete != len(paths):
         issues.append(f"page_review_incomplete:{len(paths) - page_complete}")
 
     return {
         "screens": len(paths),
+        "piece_screens": piece_screens,
         "pieces_confirmed": confirmed,
         "page_info_complete": page_complete,
         "splits": {
