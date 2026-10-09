@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 
 import cv2
+import numpy as np
 
 from .images import normalize
 
@@ -16,12 +17,27 @@ REGIONS = {
     'spread_degrees': (270, 390, 354, 430),
     'knockback_percent': (270, 454, 354, 492),
 }
+FLOOR_REGION = (670, 15, 725, 75)
 COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'melee_damage')
 
 
 def patch(image, box):
     left, top, right, bottom = box
     return cv2.cvtColor(image[top:bottom, left:right], cv2.COLOR_BGR2GRAY)
+
+
+def floor_patch(image):
+    """Return a normalized mask of the red floor digits, excluding blue label text."""
+    left, top, right, bottom = FLOOR_REGION
+    region = image[top:bottom, left:right]
+    blue, green, red = cv2.split(region)
+    red_i = red.astype(np.int16)
+    mask = ((red_i > 110) & (red_i > green.astype(np.int16) + 25) & (red_i > blue.astype(np.int16) + 25)).astype(np.uint8) * 255
+    ys, xs = np.where(mask > 0)
+    if not len(xs):
+        return np.zeros((36, 24), dtype=np.uint8)
+    glyph = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    return cv2.resize(glyph, (24, 36), interpolation=cv2.INTER_NEAREST)
 
 
 def match(query, examples, threshold=.97, margin=.04):
@@ -47,6 +63,7 @@ def propose(screen, collection, exclude=None):
     if screen.shape[:2] != (720, 1280):
         raise ValueError('Screen must be normalized to 1280x720')
     examples = {key: [] for key in REGIONS}
+    floor_examples = []
     cards = []
     references = []
     for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
@@ -55,7 +72,9 @@ def propose(screen, collection, exclude=None):
         data = json.loads(path.read_text())
         state = data.get('screen_state') or {}
         reviews = _reviews(state)
-        if data.get('split') != 'train' or not any(reviews.values()):
+        floor = data.get('floor')
+        has_floor_example = data.get('confirmed') is True and type(floor) is int and floor >= 1
+        if data.get('split') != 'train' or not (any(reviews.values()) or has_floor_example):
             continue
         image_path = (path.parent / data['image']).resolve()
         if image_path.parent != (path.parent.parent / 'originals').resolve():
@@ -65,6 +84,9 @@ def propose(screen, collection, exclude=None):
             continue
         image = normalize(image, data['game_crop'])
         used = False
+        if has_floor_example:
+            floor_examples.append((floor, floor_patch(image)))
+            used = True
         for key, box in REGIONS.items():
             section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
             if not reviews[section]:
@@ -95,6 +117,8 @@ def propose(screen, collection, exclude=None):
         },
     }
     confidence = {}
+    floor_result = match(floor_patch(screen), floor_examples, threshold=.85, margin=.1)
+    confidence['floor'] = floor_result[1] if floor_result else None
     for key, box in REGIONS.items():
         result = match(patch(screen, box), examples[key])
         section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
@@ -108,7 +132,7 @@ def propose(screen, collection, exclude=None):
             values.append(result[0] if result else 'unknown')
             confidence[f'{side}_{index}'] = result[1] if result else None
         state['cards'][side] = values if any(v != 'unknown' for v in values) else None
-    return {'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v1', 'confidence': confidence, 'references': references, 'human_review_required': True}}
+    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v1', 'confidence': confidence, 'references': references, 'human_review_required': True}}
 
 
 def _reviews(state):

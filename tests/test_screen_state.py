@@ -24,6 +24,7 @@ class ScreenStateRecognitionTests(unittest.TestCase):
     def test_no_examples_means_unknown_not_defaults(self):
         with tempfile.TemporaryDirectory() as directory:
             result = propose(np.zeros((720, 1280, 3), dtype=np.uint8), Path(directory))
+        self.assertIsNone(result['floor'])
         self.assertTrue(all(value is None for value in result['screen_state']['ammo'].values()))
         self.assertTrue(all(value is None for value in result['screen_state']['combat_stats'].values()))
         self.assertEqual(result['screen_state']['cards'], {'left': None, 'right': None})
@@ -53,3 +54,20 @@ class ScreenStateRecognitionTests(unittest.TestCase):
             data['screen_state']['reviews'] = {'ammo': False, 'combat_stats': False, 'cards': False}
             annotation.write_text(json.dumps(data))
             self.assertIsNone(propose(screen, collection)['screen_state']['combat_stats']['attack'])
+
+    def test_confirmed_train_floor_is_proposed(self):
+        screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+        cv2.putText(screen, '3', (685, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            session = collection / 'sessions/run-floor'
+            (session / 'originals').mkdir(parents=True)
+            (session / 'annotations').mkdir()
+            cv2.imwrite(str(session / 'originals/screen.png'), screen)
+            annotation = session / 'annotations/screen.json'
+            annotation.write_text(json.dumps({'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'confirmed': True, 'floor': 3, 'screen_state': {}}))
+
+            result = propose(screen, collection)
+
+            self.assertEqual(result['floor'], 3)
+            self.assertIsNone(propose(screen, collection, exclude=annotation)['floor'])

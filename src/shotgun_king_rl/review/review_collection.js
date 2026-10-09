@@ -153,6 +153,7 @@ $('predictState').onclick = async () => {
     try {
         const result = await api('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': token }, body: JSON.stringify({ id: currentId, revision, game_crop: cropValue() }) });
         let count = 0;
+        if ($('floor').value === '' && result.floor !== null) { $('floor').value = result.floor; count++; }
         for (const [key, id] of Object.entries(ammoInputs)) if ($(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
         for (const key of combatFields) if ($(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
         if (count) dirty = true;
