@@ -9,7 +9,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SPLITS = ("train", "val", "test")
-REVIEW_SECTIONS = ("screen_kind", "ammo", "combat_stats", "cards")
+PAGE_INFO_SECTIONS = ("screen_kind", "ammo", "combat_stats")
+REVIEW_SECTIONS = (*PAGE_INFO_SECTIONS, "cards")
 COMBAT_FIELDS = (
     "attack",
     "range_min",
@@ -77,7 +78,7 @@ def audit_collection(sessions_dir: Path) -> dict:
             if reviews.get(section) is True:
                 review_counts[section] += 1
                 session["reviews"][section] += 1
-        if all(reviews.get(section) is True for section in REVIEW_SECTIONS):
+        if all(reviews.get(section) is True for section in PAGE_INFO_SECTIONS):
             page_complete += 1
             session["page_info_complete"] += 1
         if reviews.get("screen_kind") is True and state.get("screen_kind") is not None:
@@ -122,7 +123,7 @@ def audit_collection(sessions_dir: Path) -> dict:
     for split in SPLITS:
         if not split_sessions[split]:
             issues.append(f"missing_split:{split}")
-        for section in REVIEW_SECTIONS:
+        for section in PAGE_INFO_SECTIONS:
             if usable_labels[split][section] == 0:
                 issues.append(f"missing_usable_labels:{split}:{section}")
     if confirmed != len(paths):

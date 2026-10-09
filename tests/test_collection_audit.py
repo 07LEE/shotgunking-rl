@@ -16,7 +16,7 @@ from shotgun_king_rl.collection.audit import audit_collection
 BOARD = [["empty"] * 8 for _ in range(8)]
 
 
-def add_annotation(root, session_id, split, name, *, complete=True, image=b"image"):
+def add_annotation(root, session_id, split, name, *, complete=True, cards_reviewed=None, image=b"image"):
     session = root / session_id
     originals = session / "originals"
     annotations = session / "annotations"
@@ -27,7 +27,7 @@ def add_annotation(root, session_id, split, name, *, complete=True, image=b"imag
         "screen_kind": complete,
         "ammo": complete,
         "combat_stats": complete,
-        "cards": complete,
+        "cards": complete if cards_reviewed is None else cards_reviewed,
     }
     data = {
         "schema": "piece-cells-v1",
@@ -77,6 +77,19 @@ class CollectionAuditTests(unittest.TestCase):
         self.assertEqual(report["splits"]["test"], {"sessions": 1, "screens": 1})
         self.assertEqual(report["usable_labels"]["val"]["combat_stats"], 1)
         self.assertEqual(report["combat_values"]["attack"], [4])
+
+    def test_card_review_is_not_required_for_page_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = Path(directory)
+            for index, split in enumerate(("train", "val", "test")):
+                add_annotation(sessions, f"run-{split}", split, "screen", cards_reviewed=False, image=f"image-{index}".encode())
+
+            report = audit_collection(sessions)
+
+        self.assertTrue(report["evaluation_ready"])
+        self.assertEqual(report["page_info_complete"], 3)
+        self.assertEqual(report["reviews"]["cards"], 0)
+        self.assertEqual(report["usable_labels"]["train"]["cards"], 0)
 
     def test_missing_reviews_splits_and_duplicate_images_are_reported(self):
         with tempfile.TemporaryDirectory() as directory:
