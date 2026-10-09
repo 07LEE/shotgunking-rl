@@ -102,6 +102,7 @@ class CombatStatsReading:
     penetration_percent: float
     knockback_percent: float
     grenades_remaining: int
+    grenade_damage: float
     melee_damage: float
 
 

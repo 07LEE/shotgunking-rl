@@ -27,6 +27,7 @@ VALID_COMBAT_STATS = CombatStatsReading(
     penetration_percent=0,
     knockback_percent=0,
     grenades_remaining=0,
+    grenade_damage=0,
     melee_damage=0,
 )
 
@@ -120,6 +121,7 @@ class PerceptionPipelineTests(unittest.TestCase):
                     penetration_percent=0,
                     knockback_percent=0,
                     grenades_remaining=0,
+                    grenade_damage=0,
                     melee_damage=0,
                 ),
                 source="combat:v1",
@@ -140,6 +142,7 @@ class PerceptionPipelineTests(unittest.TestCase):
             replace(VALID_COMBAT_STATS, knockback_percent=101),
             replace(VALID_COMBAT_STATS, grenades_remaining=-1),
             replace(VALID_COMBAT_STATS, grenades_remaining=0.5),
+            replace(VALID_COMBAT_STATS, grenade_damage=-1),
             replace(VALID_COMBAT_STATS, melee_damage=-1),
             replace(VALID_COMBAT_STATS, attack=float("nan")),
             replace(VALID_COMBAT_STATS, attack=True),

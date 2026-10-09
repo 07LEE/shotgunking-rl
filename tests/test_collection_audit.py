@@ -47,6 +47,7 @@ def add_annotation(root, session_id, split, name, *, complete=True, cards_review
                 "penetration_percent": 0,
                 "knockback_percent": 0,
                 "grenades_remaining": 0,
+                "grenade_damage": 0,
                 "melee_damage": 0,
             },
             "cards": {"left": [], "right": []},
@@ -90,6 +91,23 @@ class CollectionAuditTests(unittest.TestCase):
         self.assertEqual(report["page_info_complete"], 3)
         self.assertEqual(report["reviews"]["cards"], 0)
         self.assertEqual(report["usable_labels"]["train"]["cards"], 0)
+
+    def test_grenade_damage_is_required_only_when_grenades_remain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = Path(directory)
+            add_annotation(sessions, "run-zero", "train", "zero", image=b"zero")
+            add_annotation(sessions, "run-live", "val", "live", image=b"live")
+            for session, name, remaining in (("run-zero", "zero", 0), ("run-live", "live", 1)):
+                path = sessions / session / "annotations" / f"{name}.json"
+                data = json.loads(path.read_text())
+                data["screen_state"]["combat_stats"]["grenades_remaining"] = remaining
+                data["screen_state"]["combat_stats"].pop("grenade_damage")
+                path.write_text(json.dumps(data))
+
+            report = audit_collection(sessions)
+
+        self.assertEqual(report["usable_labels"]["train"]["combat_stats"], 1)
+        self.assertEqual(report["usable_labels"]["val"]["combat_stats"], 0)
 
     def test_non_gameplay_screen_does_not_require_piece_or_stat_review(self):
         with tempfile.TemporaryDirectory() as directory:

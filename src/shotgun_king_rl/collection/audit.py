@@ -19,6 +19,7 @@ COMBAT_FIELDS = (
     "penetration_percent",
     "knockback_percent",
     "grenades_remaining",
+    "grenade_damage",
     "melee_damage",
 )
 
@@ -108,7 +109,9 @@ def audit_collection(sessions_dir: Path) -> dict:
                 value = combat.get(field)
                 if value is not None:
                     combat_values[field].add(value)
-            if split in SPLITS and all(combat.get(field) is not None for field in COMBAT_FIELDS):
+            required = tuple(field for field in COMBAT_FIELDS if field != "grenade_damage")
+            grenade_complete = combat.get("grenades_remaining") == 0 or combat.get("grenade_damage") is not None
+            if split in SPLITS and all(combat.get(field) is not None for field in required) and grenade_complete:
                 usable_labels[split]["combat_stats"] += 1
         if reviews.get("cards") is True and split in SPLITS:
             usable_labels[split]["cards"] += 1

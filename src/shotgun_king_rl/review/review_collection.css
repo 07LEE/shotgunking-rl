@@ -107,6 +107,7 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
 .overlay-ammo-reserve { left: 21.5%; top: 12%; width: 8.5%; }
 .overlay-floor { left: 57.5%; top: 2%; width: 10%; }
 .overlay-grenades { left: 57.5%; top: 8%; width: 10%; }
+.overlay-grenade-damage { left: 68.5%; top: 8%; width: 10%; }
 .overlay-attack { left: 31.5%; top: 35%; width: 8.5%; }
 .overlay-range { left: 30.5%; top: 47%; width: 12%; }
 .overlay-spread { left: 30%; top: 59%; width: 13%; }

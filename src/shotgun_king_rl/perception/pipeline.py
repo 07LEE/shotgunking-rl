@@ -134,6 +134,7 @@ def _valid_combat_stats(stats: CombatStatsReading | None) -> bool:
         stats.penetration_percent,
         stats.knockback_percent,
         stats.grenades_remaining,
+        stats.grenade_damage,
         stats.melee_damage,
     )
     if not all(_is_finite_nonnegative(value) for value in required):

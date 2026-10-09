@@ -68,6 +68,7 @@ class RuntimeStateTests(unittest.TestCase):
             penetration_percent=25,
             knockback_percent=10,
             grenades_remaining=1,
+            grenade_damage=5,
             melee_damage=3,
         )
 
