@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from shotgun_king_rl.collection.images import detect_crop
 from shotgun_king_rl.collection.prepare import prepare_session
-from shotgun_king_rl.review.server import load_item, save_item
+from shotgun_king_rl.review.server import load_item, review_url, save_item
 
 
 @unittest.skipUnless((ROOT / 'data/test_fixtures/board_01.png').exists() and (ROOT / 'assets/pieces').is_dir(), 'Private fixtures required')
@@ -73,6 +73,10 @@ class ReviewCollectionTests(unittest.TestCase):
 
 
 class ScreenStateTests(unittest.TestCase):
+    def test_review_url_selects_requested_session(self):
+        self.assertEqual(review_url(8765), 'http://127.0.0.1:8765')
+        self.assertEqual(review_url(8765, 'run 04'), 'http://127.0.0.1:8765/?session=run%2004')
+
     def test_unknown_and_empty_cards_are_distinct(self):
         from shotgun_king_rl.review.server import validate_screen_state
         unknown = validate_screen_state({})

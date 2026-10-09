@@ -17,9 +17,9 @@ The project uses standard Python packaging and does not require a specific packa
 
 ## Data workflow
 
-1. Put private screenshots in `data/collection/inbox/`.
-2. Import and prepare one play session with `.venv/bin/python tools/preprocess/prepare_collection.py --session SESSION_ID`.
-3. Review board labels and page information with `./scripts/run_review.sh`.
+1. Put private screenshots from one play session in `data/collection/inbox/`.
+2. Run `./scripts/process_session.sh SESSION_ID` to prepare the session and open its review page.
+3. Review board labels and page information, then stop the server with Ctrl+C to print the collection audit.
 4. Build an immutable dataset with `.venv/bin/python tools/preprocess/build_piece_dataset.py --output data/collection/datasets/NAME`.
 
 Screenshots from the same play session must use one session ID and one train, validation, or test split.

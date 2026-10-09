@@ -18,7 +18,6 @@ def import_images(collection, session_id):
         if (session / "originals" / image.name).exists():
             raise ValueError(f"Already exists: {image.name}; no images were moved")
     inbox.mkdir(parents=True, exist_ok=True)
-    (collection / "datasets").mkdir(parents=True, exist_ok=True)
     for name in ("originals", "annotations", "review"):
         (session / name).mkdir(parents=True, exist_ok=True)
     for image in images:

@@ -21,6 +21,7 @@ class CollectionImportTests(unittest.TestCase):
             target = collection / "sessions/session-01/originals/a.png"
             self.assertEqual(target.read_bytes(), b"saved image")
             self.assertTrue((inbox / "notes.txt").exists())
+            self.assertFalse((collection / "datasets").exists())
             (inbox / "a.png").write_bytes(b"new image")
             (inbox / "b.png").write_bytes(b"another image")
             with self.assertRaisesRegex(ValueError, "Already exists"):

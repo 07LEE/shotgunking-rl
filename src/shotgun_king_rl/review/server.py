@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import secrets
 import threading
+from urllib.parse import quote
 import webbrowser
 
 import cv2
@@ -20,6 +21,11 @@ from ..vision import analyzer
 ROOT = Path(__file__).resolve().parents[3]
 
 COLLECTION = ROOT / 'data/collection'
+
+
+def review_url(port, session=None):
+    url = f'http://127.0.0.1:{port}'
+    return f'{url}/?session={quote(session, safe="")}' if session else url
 
 
 def annotation_paths(collection):
@@ -250,7 +256,7 @@ def main():
         if args.prepare_only:
             return
         server = make_server(args.collection, args.port)
-        url = f'http://127.0.0.1:{server.server_port}'
+        url = review_url(server.server_port, args.session)
         print(f'Review: {url} (Ctrl+C to stop)', flush=True)
         if args.open:
             webbrowser.open(url)
