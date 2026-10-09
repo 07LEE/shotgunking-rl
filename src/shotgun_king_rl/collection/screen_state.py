@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from .images import normalize
+from ..vision import analyzer, screens
 
 # Coordinates refer to a normalized 1280x720 gameplay screenshot.
 REGIONS = {
@@ -38,6 +39,16 @@ def floor_patch(image):
         return np.zeros((36, 24), dtype=np.uint8)
     glyph = mask[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
     return cv2.resize(glyph, (24, 36), interpolation=cv2.INTER_NEAREST)
+
+
+def propose_screen_kind(image):
+    """Recognize explicit overlays, then accept gameplay only with one player king."""
+    if screens.check_retry_popup(image):
+        return 'retry'
+    if screens.check_card_selection_screen(image):
+        return 'card_selection'
+    board = analyzer.get_state_matrix(image)
+    return 'gameplay' if int(np.count_nonzero(board == 1)) == 1 else None
 
 
 def match(query, examples, threshold=.97, margin=.04):
@@ -103,8 +114,9 @@ def propose(screen, collection, exclude=None):
                         used = True
         if used:
             references.append(str(path.relative_to(collection)))
+    screen_kind = propose_screen_kind(screen)
     state = {
-        'screen_kind': None,
+        'screen_kind': screen_kind,
         'ammo': {},
         'combat_stats': {key: None for key in COMBAT_FIELDS},
         'cards': {},
@@ -117,6 +129,7 @@ def propose(screen, collection, exclude=None):
         },
     }
     confidence = {}
+    confidence['screen_kind'] = 1.0 if screen_kind is not None else None
     floor_result = match(floor_patch(screen), floor_examples, threshold=.85, margin=.1)
     confidence['floor'] = floor_result[1] if floor_result else None
     for key, box in REGIONS.items():

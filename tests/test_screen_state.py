@@ -5,14 +5,29 @@ import tempfile
 import json
 import cv2
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from shotgun_king_rl.collection.screen_state import match, propose
+from shotgun_king_rl.collection.screen_state import match, propose, propose_screen_kind
 
 
 class ScreenStateRecognitionTests(unittest.TestCase):
+    def test_screen_kind_prefers_overlays_and_requires_one_player_king(self):
+        image = np.zeros((720, 1280, 3), dtype=np.uint8)
+        board = np.zeros((8, 8), dtype=np.uint8)
+        board[7, 4] = 1
+        with patch('shotgun_king_rl.collection.screen_state.screens.check_retry_popup', return_value=True), patch('shotgun_king_rl.collection.screen_state.screens.check_card_selection_screen', return_value=True), patch('shotgun_king_rl.collection.screen_state.analyzer.get_state_matrix', return_value=board):
+            self.assertEqual(propose_screen_kind(image), 'retry')
+        with patch('shotgun_king_rl.collection.screen_state.screens.check_retry_popup', return_value=False), patch('shotgun_king_rl.collection.screen_state.screens.check_card_selection_screen', return_value=True), patch('shotgun_king_rl.collection.screen_state.analyzer.get_state_matrix', return_value=board):
+            self.assertEqual(propose_screen_kind(image), 'card_selection')
+        with patch('shotgun_king_rl.collection.screen_state.screens.check_retry_popup', return_value=False), patch('shotgun_king_rl.collection.screen_state.screens.check_card_selection_screen', return_value=False), patch('shotgun_king_rl.collection.screen_state.analyzer.get_state_matrix', return_value=board):
+            self.assertEqual(propose_screen_kind(image), 'gameplay')
+        board[7, 4] = 0
+        with patch('shotgun_king_rl.collection.screen_state.screens.check_retry_popup', return_value=False), patch('shotgun_king_rl.collection.screen_state.screens.check_card_selection_screen', return_value=False), patch('shotgun_king_rl.collection.screen_state.analyzer.get_state_matrix', return_value=board):
+            self.assertIsNone(propose_screen_kind(image))
+
     def test_matches_supported_value_but_rejects_conflict(self):
         pattern = np.random.default_rng(10).integers(0, 255, (30, 40), dtype=np.uint8)
         self.assertEqual(match(pattern, [(4, pattern)])[0], 4)
