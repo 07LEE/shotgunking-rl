@@ -19,6 +19,7 @@ REGIONS = {
     'knockback_percent': (270, 454, 354, 492),
 }
 FLOOR_REGION = (670, 15, 725, 75)
+SOUL_REGION = (928, 311, 1013, 428)
 COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage')
 
 
@@ -76,6 +77,7 @@ def propose(screen, collection, exclude=None):
     examples = {key: [] for key in REGIONS}
     floor_examples = []
     cards = []
+    souls = []
     references = []
     for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
         if exclude is not None and path.resolve() == Path(exclude).resolve():
@@ -112,6 +114,10 @@ def propose(screen, collection, exclude=None):
                     if label != 'unknown' and index < 10:
                         cards.append((label, patch(image, card_box(side, index))))
                         used = True
+        reviewed_souls = state.get('souls')
+        if reviews['soul'] and reviewed_souls is not None and len(reviewed_souls) <= 1:
+            souls.append(((reviewed_souls or ['none'])[0], patch(image, SOUL_REGION)))
+            used = True
         if used:
             references.append(str(path.relative_to(collection)))
     screen_kind = propose_screen_kind(screen)
@@ -147,6 +153,9 @@ def propose(screen, collection, exclude=None):
             values.append(result[0] if result else 'unknown')
             confidence[f'{side}_{index}'] = result[1] if result else None
         state['cards'][side] = values if any(v != 'unknown' for v in values) else None
+    soul_result = match(patch(screen, SOUL_REGION), souls, threshold=.9, margin=.04)
+    state['souls'] = ([] if soul_result[0] == 'none' else [soul_result[0]]) if soul_result else None
+    confidence['soul'] = soul_result[1] if soul_result else None
     return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v1', 'confidence': confidence, 'references': references, 'human_review_required': True}}
 
 
