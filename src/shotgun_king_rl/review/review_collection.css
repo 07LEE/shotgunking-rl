@@ -171,7 +171,10 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
 .page-info-mode .input-scroll { overflow: visible; padding-right: 0; }
 .page-info-mode #screenControls { grid-template-columns: minmax(300px, .7fr) minmax(0, 1.3fr); align-items: start; }
 .page-info-mode #screenControls > .panel:last-child { grid-column: auto; }
-.page-info-mode .save-panel { align-self: end; }
+.page-info-mode .save-panel { position: fixed; right: max(24px, calc((100vw - 1260px) / 2 + 32px)); bottom: 20px; z-index: 20; width: min(380px, calc(100vw - 48px)); margin: 0; padding: 12px 14px; box-shadow: 0 12px 34px #000b; }
+.page-info-mode .save-panel .help { display: none; }
+.page-info-mode .save-panel #status:empty { display: none; }
+.page-info-mode .save-panel #status { margin-top: 8px; }
 #screenControls .controls > .toggle, .review-section .toggle { margin-top: 12px; }
 @media (max-width: 850px) {
     main { grid-template-columns: 1fr; }

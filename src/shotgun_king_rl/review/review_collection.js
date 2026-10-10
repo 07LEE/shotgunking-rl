@@ -13,7 +13,9 @@ function pieceApplicable(item) { return !nonGameplay(item.screen_kind) }
 function pageSections(item) { return nonGameplay(item.screen_kind) ? ['screen_kind'] : Object.keys(reviewInputs) }
 function pageReviewCount(item) { return pageSections(item).filter(section => item.reviews?.[section] === true).length }
 function pageComplete(item) { return pageReviewCount(item) === pageSections(item).length }
-function needsReview(item) { return currentReviewTab === 'pieces' ? pieceApplicable(item) && !item.confirmed : !pageComplete(item) }
+function soulReviewPending(item) { return item.screen_kind === 'gameplay' && item.reviews?.soul !== true }
+function pageWorkflowComplete(item) { return pageComplete(item) && !soulReviewPending(item) }
+function needsReview(item) { return currentReviewTab === 'pieces' ? pieceApplicable(item) && !item.confirmed : !pageWorkflowComplete(item) }
 function firstPending(list) { return list.find(needsReview) || list[0] }
 function otherSessionPending() {
     const sessions = [...new Set(items.map(item => item.session))];
@@ -41,8 +43,8 @@ async function moveTo(item) {
     renderOptions();
     await load();
 }
-function reviewMarker(item) { if (currentReviewTab === 'pieces') return pieceApplicable(item) ? item.confirmed ? '✓' : '○' : '—'; const count = pageReviewCount(item); return count === pageSections(item).length ? '✓' : count > 0 ? '◐' : '○' }
-function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); const approvedAt = item.piece_review?.reviewed_at; const pieceMessage = !pieceApplicable(item) ? 'Piece review does not apply to this screen type.' : !data.confirmed ? 'Piece labels are still a draft.' : approvedAt ? 'Piece labels approved · ' + new Date(approvedAt).toLocaleString() : 'Piece labels approved · approval time unavailable.'; status(currentReviewTab === 'pieces' ? pieceMessage : pageComplete(item) ? 'Page information reviewed.' : 'Page information review is incomplete.') }
+function reviewMarker(item) { if (currentReviewTab === 'pieces') return pieceApplicable(item) ? item.confirmed ? '✓' : '○' : '—'; if (pageWorkflowComplete(item)) return '✓'; return pageReviewCount(item) > 0 || item.reviews?.soul === true ? '◐' : '○' }
+function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); const approvedAt = item.piece_review?.reviewed_at; const pieceMessage = !pieceApplicable(item) ? 'Piece review does not apply to this screen type.' : !data.confirmed ? 'Piece labels are still a draft.' : approvedAt ? 'Piece labels approved · ' + new Date(approvedAt).toLocaleString() : 'Piece labels approved · approval time unavailable.'; const pageMessage = !pageComplete(item) ? 'Page information review is incomplete.' : soulReviewPending(item) ? 'Page information reviewed · harvested souls still need review.' : 'Page information and harvested souls reviewed.'; status(currentReviewTab === 'pieces' ? pieceMessage : pageMessage) }
 for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c; $('label').append(o) }
 async function api(url, options) { const r = await fetch(url, options); const a = await r.json(); if (!r.ok) throw Error(a.error || r.statusText); return a }
 function status(s, error = false) {
@@ -244,7 +246,7 @@ function switchReviewTab(name, focus = false) {
     }
     $('draft').textContent = name === 'pieces' ? 'Save draft' : 'Save page info';
     $('approve').textContent = name === 'pieces' ? 'Approve pieces ✓' : 'Save & next →';
-    $('saveHelp').textContent = name === 'pieces' ? 'Check every piece label before approval.' : 'Each page-information section has its own review state. Saving this tab preserves piece approval.';
+    $('saveHelp').textContent = name === 'pieces' ? 'Check every piece label before approval.' : 'Save page information and harvested souls, then continue to the next unfinished screen.';
     if (items.length) { renderOptions(); showReviewStatus(); }
 }
 function syncScreenKind() {
