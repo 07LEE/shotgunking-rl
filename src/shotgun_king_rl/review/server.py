@@ -1,6 +1,7 @@
 """Prepare private screenshots and serve a local annotation review interface."""
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -52,6 +53,21 @@ AMMO_FIELDS = ('loaded', 'reserve')
 COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage')
 REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards')
 SCREEN_KINDS = ('gameplay', 'card_selection', 'retry', 'transition')
+
+
+def validate_piece_review(data):
+    confirmed = data.get('confirmed') is True
+    value = data.get('piece_review')
+    if value is None:
+        return {'reviewed': confirmed, 'reviewed_at': None}
+    if not isinstance(value, dict) or set(value) - {'reviewed', 'reviewed_at'}:
+        raise ValueError('Invalid piece review')
+    if type(value.get('reviewed')) is not bool or value['reviewed'] != confirmed:
+        raise ValueError('Piece review must match approval state')
+    reviewed_at = value.get('reviewed_at')
+    if reviewed_at is not None and (not isinstance(reviewed_at, str) or not reviewed_at or len(reviewed_at) > 40):
+        raise ValueError('Invalid piece review timestamp')
+    return {'reviewed': confirmed, 'reviewed_at': reviewed_at if confirmed else None}
 
 
 def validate_screen_state(value):
@@ -142,6 +158,9 @@ def save_item(collection, payload):
         raise ValueError('Invalid split')
     if type(payload.get('confirmed')) is not bool:
         raise ValueError('Invalid approval flag')
+    if 'piece_reviewed' in payload and type(payload['piece_reviewed']) is not bool:
+        raise ValueError('Invalid piece review action')
+    previous_piece_review = validate_piece_review(current)
     screen_state = validate_screen_state(payload.get('screen_state', current.get('screen_state', {})))
     piece_applicable = not (screen_state['reviews']['screen_kind'] and screen_state['screen_kind'] != 'gameplay')
     confirmed = payload['confirmed'] if piece_applicable else False
@@ -156,11 +175,16 @@ def save_item(collection, payload):
         other = json.loads(sibling.read_text())
         if sibling != path and other.get('split', group_split(current['session_id'])) != split:
             raise ValueError('Keep the session split unchanged; change the entire session together')
-    current.update(screen_state=screen_state, board=board, floor=floor, split=split, confirmed=confirmed, game_crop=payload['game_crop'], exclude_cells=excluded)
+    reviewed_now = payload.get('piece_reviewed', False) and confirmed
+    reviewed_at = previous_piece_review['reviewed_at']
+    if reviewed_now or (confirmed and not previous_piece_review['reviewed']):
+        reviewed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
+    piece_review = {'reviewed': confirmed, 'reviewed_at': reviewed_at if confirmed else None}
+    current.update(screen_state=screen_state, piece_review=piece_review, board=board, floor=floor, split=split, confirmed=confirmed, game_crop=payload['game_crop'], exclude_cells=excluded)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(current, indent=2) + '\n')
     temporary.replace(path)
-    return {'revision': hashlib.sha256(path.read_bytes()).hexdigest(), 'confirmed': current['confirmed']}
+    return {'revision': hashlib.sha256(path.read_bytes()).hexdigest(), 'confirmed': current['confirmed'], 'piece_review': piece_review}
 
 
 def make_server(collection, port=0):
@@ -198,12 +222,13 @@ def make_server(collection, port=0):
                     for path in annotation_paths(collection):
                         a = json.loads(path.read_text())
                         state = validate_screen_state(a.get('screen_state', {}))
-                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'screen_kind': state['screen_kind'], 'reviews': state['reviews']})
+                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'piece_review': validate_piece_review(a), 'screen_kind': state['screen_kind'], 'reviews': state['reviews']})
                     return self.reply(json.dumps(items).encode())
                 query = parse_qs(request.query)
                 path, data, image, revision = load_item(collection, query['id'][0])
                 if route == '/api/item':
                     data['screen_state'] = validate_screen_state(data.get('screen_state', {}))
+                    data['piece_review'] = validate_piece_review(data)
                     return self.reply(json.dumps({'data': data, 'revision': revision}).encode())
                 if route == '/api/screen':
                     ok, encoded = cv2.imencode('.png', normalize(image, data['game_crop']))

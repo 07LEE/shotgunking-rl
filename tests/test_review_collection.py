@@ -41,6 +41,8 @@ class ReviewCollectionTests(unittest.TestCase):
             }
             saved = save_item(collection, payload)
             self.assertTrue(saved['confirmed'])
+            self.assertTrue(saved['piece_review']['reviewed'])
+            self.assertTrue(saved['piece_review']['reviewed_at'].endswith('Z'))
             stored_state = json.loads(path.read_text())['screen_state']
             self.assertEqual(stored_state['combat_stats']['attack'], 4)
             self.assertEqual(stored_state['ammo'], {'loaded': 2, 'reserve': 6})
@@ -54,8 +56,11 @@ class ReviewCollectionTests(unittest.TestCase):
             payload['revision'] = saved['revision']
             payload['confirmed'] = False
             payload['exclude_cells'] = [[0, 3]]
-            save_item(collection, payload)
-            self.assertFalse(json.loads(path.read_text())['confirmed'])
+            draft = save_item(collection, payload)
+            stored = json.loads(path.read_text())
+            self.assertFalse(stored['confirmed'])
+            self.assertEqual(draft['piece_review'], {'reviewed': False, 'reviewed_at': None})
+            self.assertEqual(stored['piece_review'], draft['piece_review'])
             with self.assertRaisesRegex(ValueError, 'Unknown'):
                 load_item(collection, '../../escape.json')
 
@@ -86,6 +91,7 @@ class ReviewCollectionTests(unittest.TestCase):
             result = save_item(collection, dict(data, id=relative, revision=revision, floor=None, confirmed=True))
 
             self.assertFalse(result['confirmed'])
+            self.assertEqual(result['piece_review'], {'reviewed': False, 'reviewed_at': None})
             self.assertFalse(json.loads(path.read_text())['confirmed'])
 
 

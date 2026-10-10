@@ -2,7 +2,7 @@ const ammoInputs = { loaded: 'ammo_loaded', reserve: 'ammo_reserve' };
 const combatFields = ['attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage'];
 const reviewInputs = { screen_kind: 'screenKindReviewed', ammo: 'ammoReviewed', combat_stats: 'combatReviewed' };
 const token = document.querySelector('meta[name=review-token]').content, classes = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
-const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces';
+const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces', pendingPieceApprovalId = null;
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }
 function sessionItems() { return items.filter(item => item.session === currentSession) }
@@ -29,6 +29,7 @@ function nextPending() {
     return list.slice(index + 1).find(needsReview) || otherSessionPending();
 }
 async function moveTo(item) {
+    if (item.id !== currentId) pendingPieceApprovalId = null;
     if (item.session !== currentSession) {
         currentSession = item.session;
         $('sessions').value = currentSession;
@@ -39,7 +40,7 @@ async function moveTo(item) {
     await load();
 }
 function reviewMarker(item) { if (currentReviewTab === 'pieces') return pieceApplicable(item) ? item.confirmed ? '✓' : '○' : '—'; const count = pageReviewCount(item); return count === pageSections(item).length ? '✓' : count > 0 ? '◐' : '○' }
-function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); status(currentReviewTab === 'pieces' ? pieceApplicable(item) ? data.confirmed ? 'Piece labels approved.' : 'Piece labels are still a draft.' : 'Piece review does not apply to this screen type.' : pageComplete(item) ? 'Page information reviewed.' : 'Page information review is incomplete.') }
+function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); const approvedAt = item.piece_review?.reviewed_at; const pieceMessage = !pieceApplicable(item) ? 'Piece review does not apply to this screen type.' : !data.confirmed ? 'Piece labels are still a draft.' : approvedAt ? 'Piece labels approved · ' + new Date(approvedAt).toLocaleString() : 'Piece labels approved · approval time unavailable.'; status(currentReviewTab === 'pieces' ? pieceMessage : pageComplete(item) ? 'Page information reviewed.' : 'Page information review is incomplete.') }
 for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c; $('label').append(o) }
 async function api(url, options) { const r = await fetch(url, options); const a = await r.json(); if (!r.ok) throw Error(a.error || r.statusText); return a }
 function status(s, error = false) {
@@ -77,58 +78,14 @@ function labelView() {
 }
 $('showLabels').onchange = labelView;
 labelView();
-function refreshFieldSummary(field) {
-    if (!field) return;
-    const name = field.querySelector('.field-name');
-    const inputs = [...field.querySelectorAll('input:not([type=checkbox])')];
-    name.dataset.label ??= name.textContent;
-    const values = inputs.map(input => input.value);
-    const summary = values.some(value => value !== '') ? values.map(value => value === '' ? '?' : value).join('–') : '';
-    name.textContent = name.dataset.label + (summary ? ' · ' + summary : '');
-}
-function activateField(field, focus = true) {
-    for (const candidate of document.querySelectorAll('.screen-field.editing')) {
-        if (candidate !== field) {
-            candidate.classList.remove('editing');
-            candidate.querySelector('.field-name').setAttribute('aria-expanded', 'false');
-        }
-    }
-    field.classList.add('editing');
-    field.querySelector('.field-name').setAttribute('aria-expanded', 'true');
-    if (focus) field.querySelector('input:not([type=checkbox])')?.focus();
-}
-function syncFieldSummaries() {
-    document.querySelectorAll('.screen-field').forEach(refreshFieldSummary);
-}
-for (const field of document.querySelectorAll('.screen-field')) {
-    const name = field.querySelector('.field-name');
-    name.tabIndex = 0;
-    name.setAttribute('role', 'button');
-    name.setAttribute('aria-expanded', 'false');
-    name.onclick = event => { event.preventDefault(); activateField(field); };
-    name.onkeydown = event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault();
-            activateField(field);
-        }
-    };
-    field.addEventListener('focusin', () => activateField(field, false));
-}
-document.addEventListener('pointerdown', event => {
-    if (event.target.closest('.screen-field')) return;
-    for (const field of document.querySelectorAll('.screen-field.editing')) {
-        field.classList.remove('editing');
-        field.querySelector('.field-name').setAttribute('aria-expanded', 'false');
-    }
-});
 function cropValue() { const parts = $('crop').value.split(',').map(x => x.trim()); if (parts.length !== 4 || parts.some(x => !/^\d+$/.test(x))) throw Error('Enter four nonnegative integer crop coordinates'); return parts.map(Number) }
 function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent($('items').value) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
-async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const [section, id] of Object.entries(reviewInputs)) $(id).checked = data.screen_state.reviews[section] === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; syncFieldSummaries(); const item = items.find(candidate => candidate.id === currentId); item.screen_kind = data.screen_state.screen_kind; syncScreenKind(); preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
+async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const [section, id] of Object.entries(reviewInputs)) $(id).checked = data.screen_state.reviews[section] === true; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; const item = items.find(candidate => candidate.id === currentId); item.screen_kind = data.screen_state.screen_kind; syncScreenKind(); preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
-$('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
-$('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } currentSession = $('sessions').value; const list = sessionItems(); currentId = firstPending(list).id; remember(); renderOptions(); load() };
+$('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } pendingPieceApprovalId = null; currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
+$('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } pendingPieceApprovalId = null; currentSession = $('sessions').value; const list = sessionItems(); currentId = firstPending(list).id; remember(); renderOptions(); load() };
 $('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked_cells = data.screen_state.locked_cells.filter(x => x[0] !== r || x[1] !== c); if ($('locked').checked) data.screen_state.locked_cells.push([r, c]); dirty = true; draw() };
-for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', ...Object.values(reviewInputs)]) $(id).oninput = () => { dirty = true; refreshFieldSummary($(id).closest('.screen-field')); };
+for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', ...Object.values(reviewInputs)]) $(id).oninput = () => { dirty = true };
 $('screenKind').addEventListener('change', syncScreenKind);
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; dirty = true; draw() };
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
@@ -140,12 +97,21 @@ async function save(confirmed) {
     try {
         const raw = $('floor').value;
         const floor = raw === '' ? null : Number(raw);
-        if ((currentReviewTab === 'pieces' && confirmed && floor === null) || (floor !== null && (!Number.isInteger(floor) || floor < 1))) {
+        const invalidFloor = floor !== null && (!Number.isInteger(floor) || floor < 1);
+        if (currentReviewTab === 'pieces' && confirmed && (floor === null || invalidFloor)) {
+            pendingPieceApprovalId = currentId;
             switchReviewTab('screen');
             $('floor').setCustomValidity('Enter a positive floor number before approval.');
             $('floor').reportValidity();
             $('floor').focus();
-            throw Error('Enter the floor number, then approve again.');
+            status('Enter the floor, then save page info to approve these pieces and continue.');
+            return;
+        }
+        if (invalidFloor) {
+            $('floor').setCustomValidity('Enter a positive floor number.');
+            $('floor').reportValidity();
+            $('floor').focus();
+            throw Error('Enter a positive floor number.');
         }
         $('floor').setCustomValidity('');
         const ammo = Object.fromEntries(Object.entries(ammoInputs).map(([key, id]) => [key, $(id).value === '' ? null : Number($(id).value)]));
@@ -156,21 +122,38 @@ async function save(confirmed) {
         if (reviews.screen_kind && screen_kind === null) throw Error('Select a screen kind before marking it reviewed.');
         const cards = data.screen_state.cards ?? { left: null, right: null };
         data.screen_state = { screen_kind, ammo, combat_stats, cards, locked_cells: data.screen_state.locked_cells, reviews };
-        const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : data.confirmed;
+        const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
+        const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : completingPieceApproval ? true : data.confirmed;
+        const pieceReviewed = (currentReviewTab === 'pieces' && confirmed) || completingPieceApproval;
         status('Saving review…');
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
-            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed })
+            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, piece_reviewed: pieceReviewed })
         });
         revision = result.revision;
         data.confirmed = result.confirmed;
+        data.piece_review = result.piece_review;
         dirty = false;
         const item = items.find(candidate => candidate.id === currentId);
         item.confirmed = result.confirmed;
+        item.piece_review = result.piece_review;
         item.screen_kind = screen_kind;
         item.reviews = reviews;
         renderOptions();
+        if (completingPieceApproval) {
+            pendingPieceApprovalId = null;
+            if (!result.confirmed) {
+                status('Page information saved; this screen does not require piece review.');
+                return;
+            }
+            switchReviewTab('pieces');
+            const nextPiece = nextPending();
+            if (nextPiece) await moveTo(nextPiece);
+            else status('Piece review complete — all applicable screens approved.');
+            return;
+        }
+        if (currentReviewTab === 'pieces') pendingPieceApprovalId = null;
         if (!confirmed) {
             const message = currentReviewTab === 'pieces'
                 ? 'Piece draft saved; excluded from approved datasets.'
@@ -195,6 +178,11 @@ async function save(confirmed) {
     }
 }
 $('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
+$('toggleFields').onclick = () => {
+    const hidden = $('gameplayFields').classList.toggle('fields-hidden');
+    $('toggleFields').textContent = hidden ? 'Show fields' : 'Hide fields';
+    $('toggleFields').setAttribute('aria-pressed', String(hidden));
+};
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
 function renderOptions() { const list = sessionItems(); $('items').replaceChildren(); for (const item of list) { const o = document.createElement('option'); o.value = item.id; o.textContent = reviewMarker(item) + ' ' + item.id.split('/').pop(); $('items').append(o) } $('items').value = currentId; const index = list.findIndex(x => x.id === currentId); $('previous').disabled = index <= 0; $('next').disabled = index >= list.length - 1 && !otherSessionPending(); const count = section => list.filter(item => item.reviews?.[section]).length; const pieceItems = list.filter(pieceApplicable); $('progress').textContent = currentReviewTab === 'pieces' ? 'pieces ' + pieceItems.filter(x => x.confirmed).length + '/' + pieceItems.length + ' · screenshot ' + (index + 1) + '/' + list.length : 'page info ' + list.filter(pageComplete).length + '/' + list.length + ' · kind ' + count('screen_kind') + ' · ammo ' + count('ammo') + ' · stats ' + count('combat_stats') + ' · screenshot ' + (index + 1) + '/' + list.length }
 async function navigate(delta) { const list = sessionItems(); const index = list.findIndex(x => x.id === currentId); const target = delta < 0 ? list[index - 1] : list[index + 1] || otherSessionPending(); if (!target) return; if (dirty && !confirm('Discard unsaved edits?')) return; await moveTo(target) }
@@ -211,7 +199,6 @@ $('predictState').onclick = async () => {
         if ($('floor').value === '' && result.floor !== null) { $('floor').value = result.floor; count++; }
         for (const [key, id] of Object.entries(ammoInputs)) if ($(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
         for (const key of combatFields) if ($(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
-        syncFieldSummaries();
         if (count) dirty = true;
         status(count ? 'Filled ' + count + ' fields. Review predictions before saving.' : 'No confident matches. Add reviewed examples with known values first.');
     } catch (error) { status('Prediction failed — ' + error.message, true); }
