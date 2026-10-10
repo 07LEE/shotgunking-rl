@@ -103,6 +103,7 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
 .screen-field { position: absolute; z-index: 2; pointer-events: auto; }
 .screen-field .field-name { display: block; width: max-content; max-width: 130px; margin: 0 0 2px 2px; padding: 1px 4px; overflow: hidden; border-radius: 4px; background: #18181bee; color: #d9daf4; font-size: clamp(7px, .6vw, 9px); line-height: 1.1; white-space: nowrap; text-overflow: ellipsis; box-shadow: 0 2px 8px #0007; }
 .screen-field input:not([type=checkbox]) { height: clamp(22px, 2.4vw, 28px); margin: 0; padding: 2px 5px; border-color: #b4b9f590; background: #18181bee; font-size: clamp(8px, .75vw, 11px); text-align: center; box-shadow: 0 3px 12px #0008; }
+.screen-field select { height: clamp(22px, 2.4vw, 28px); margin: 0; padding: 2px 5px; border-color: #b4b9f590; background: #18181bee; font-size: clamp(8px, .75vw, 11px); box-shadow: 0 3px 12px #0008; }
 .overlay-ammo-loaded { left: 4.5%; top: 2%; width: clamp(64px, 6.5%, 90px); }
 .overlay-ammo-reserve { left: 4.5%; top: 12%; width: clamp(64px, 6.5%, 90px); }
 .overlay-floor { left: 57.5%; top: 2%; width: clamp(64px, 6.5%, 90px); }
@@ -114,10 +115,12 @@ footer { color: #85858f; font-size: 11px; margin-top: 24px; }
 .overlay-penetration { left: 13%; top: 59%; width: clamp(72px, 7%, 96px); }
 .overlay-knockback { left: 13%; top: 71%; width: clamp(72px, 7%, 96px); }
 .overlay-melee { left: 4.5%; top: 71%; width: clamp(72px, 7%, 96px); }
+.overlay-soul { left: 88%; top: 35%; width: clamp(92px, 10%, 132px); }
 .overlay-review { position: absolute; z-index: 2; display: flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid #b4b9f570; border-radius: 7px; background: #18181bee; color: var(--text); font-size: clamp(8px, .75vw, 11px); line-height: 1.2; white-space: nowrap; pointer-events: auto; box-shadow: 0 3px 12px #0008; }
 .overlay-review input { flex: 0 0 auto; }
 .overlay-ammo-review { left: 4.5%; top: 21%; }
 .overlay-combat-review { left: 4.5%; top: 82%; }
+.overlay-soul-review { left: 88%; top: 44%; }
 .range-pair { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 3px; color: var(--accent); }
 .range-pair input:not([type=checkbox]) { min-width: 0; padding-inline: 3px; }
 .stat-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }

@@ -36,8 +36,9 @@ class ReviewCollectionTests(unittest.TestCase):
                 'ammo': {'loaded': 2, 'reserve': 6},
                 'combat_stats': {'attack': 4},
                 'cards': {'left': ['unknown']},
+                'soul_piece': 'knight',
                 'locked_cells': [[1, 2]],
-                'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True},
+                'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True, 'soul': True},
             }
             saved = save_item(collection, payload)
             self.assertTrue(saved['confirmed'])
@@ -46,6 +47,7 @@ class ReviewCollectionTests(unittest.TestCase):
             stored_state = json.loads(path.read_text())['screen_state']
             self.assertEqual(stored_state['combat_stats']['attack'], 4)
             self.assertEqual(stored_state['ammo'], {'loaded': 2, 'reserve': 6})
+            self.assertEqual(stored_state['soul_piece'], 'knight')
             self.assertTrue(all(stored_state['reviews'].values()))
             self.assertEqual(json.loads(path.read_text())['board'][0][6], 'special_knight')
             raw = path.read_bytes()
@@ -106,7 +108,7 @@ class ScreenStateTests(unittest.TestCase):
         self.assertIsNone(unknown['combat_stats']['attack'])
         self.assertIsNone(unknown['ammo']['loaded'])
         self.assertIsNone(unknown['cards']['left'])
-        reviewed = validate_screen_state({'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'penetration_percent': 25, 'knockback_percent': 40, 'grenades_remaining': 1, 'grenade_damage': 5, 'melee_damage': 3}, 'cards': {'left': ['unknown'], 'right': []}, 'locked_cells': [[1, 2]], 'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True}})
+        reviewed = validate_screen_state({'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'penetration_percent': 25, 'knockback_percent': 40, 'grenades_remaining': 1, 'grenade_damage': 5, 'melee_damage': 3}, 'cards': {'left': ['unknown'], 'right': []}, 'soul_piece': 'knight', 'locked_cells': [[1, 2]], 'reviews': {'screen_kind': True, 'ammo': True, 'combat_stats': True, 'cards': True, 'soul': True}})
         self.assertEqual(reviewed['locked_cells'], [[1, 2]])
         self.assertEqual(reviewed['cards']['right'], [])
         self.assertEqual(reviewed['screen_kind'], 'gameplay')
@@ -115,6 +117,7 @@ class ScreenStateTests(unittest.TestCase):
         self.assertEqual(reviewed['combat_stats']['grenades_remaining'], 1)
         self.assertEqual(reviewed['combat_stats']['grenade_damage'], 5)
         self.assertEqual(reviewed['combat_stats']['melee_damage'], 3)
+        self.assertEqual(reviewed['soul_piece'], 'knight')
         self.assertTrue(all(reviewed['reviews'].values()))
 
     def test_legacy_review_flag_maps_without_inventing_screen_kind(self):
@@ -126,9 +129,10 @@ class ScreenStateTests(unittest.TestCase):
         self.assertTrue(state['reviews']['ammo'])
         self.assertTrue(state['reviews']['combat_stats'])
         self.assertTrue(state['reviews']['cards'])
+        self.assertFalse(state['reviews']['soul'])
 
     def test_invalid_state_is_rejected(self):
         from shotgun_king_rl.review.server import validate_screen_state
-        for value in ({'combat_stats': {'attack': -1}}, {'combat_stats': {'attack': True}}, {'combat_stats': {'range_min': 5, 'range_max': 3}}, {'combat_stats': {'penetration_percent': 101}}, {'combat_stats': {'knockback_percent': 101}}, {'combat_stats': {'grenade_damage': -1}}, {'ammo': {'loaded': -1}}, {'cards': {'left': 'knight'}}, {'locked_cells': [[8, 2]]}, {'screen_kind': 'menu'}, {'reviews': {'screen_kind': True}}):
+        for value in ({'combat_stats': {'attack': -1}}, {'combat_stats': {'attack': True}}, {'combat_stats': {'range_min': 5, 'range_max': 3}}, {'combat_stats': {'penetration_percent': 101}}, {'combat_stats': {'knockback_percent': 101}}, {'combat_stats': {'grenade_damage': -1}}, {'ammo': {'loaded': -1}}, {'cards': {'left': 'knight'}}, {'soul_piece': 'dragon'}, {'locked_cells': [[8, 2]]}, {'screen_kind': 'menu'}, {'reviews': {'screen_kind': True}}):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 validate_screen_state(value)

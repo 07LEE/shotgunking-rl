@@ -51,8 +51,9 @@ def load_item(collection, relative):
 
 AMMO_FIELDS = ('loaded', 'reserve')
 COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage')
-REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards')
+REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards', 'soul')
 SCREEN_KINDS = ('gameplay', 'card_selection', 'retry', 'transition')
+SOUL_PIECES = ('pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight')
 
 
 def validate_piece_review(data):
@@ -109,6 +110,9 @@ def validate_screen_state(value):
     for entries in cards.values():
         if entries is not None and (not isinstance(entries, list) or len(entries) > 14 or any(not isinstance(entry, str) or not entry.strip() or len(entry) > 300 for entry in entries)):
             raise ValueError('Cards must be slot-ordered names or unknown')
+    soul_piece = value.get('soul_piece')
+    if soul_piece is not None and soul_piece not in SOUL_PIECES:
+        raise ValueError('Invalid harvested soul piece')
     locked = value.get('locked_cells', [])
     if not isinstance(locked, list) or any(not isinstance(cell, list) or len(cell) != 2 or any(type(v) is not int or not 0 <= v < 8 for v in cell) for cell in locked):
         raise ValueError('Invalid locked cells')
@@ -129,6 +133,7 @@ def validate_screen_state(value):
         'ammo': reviews.get('ammo', legacy_reviewed),
         'combat_stats': reviews.get('combat_stats', legacy_reviewed),
         'cards': reviews.get('cards', legacy_reviewed),
+        'soul': reviews.get('soul', False),
     }
     if reviews['screen_kind'] and screen_kind is None:
         raise ValueError('Select a screen kind before marking it reviewed')
@@ -138,6 +143,7 @@ def validate_screen_state(value):
         'ammo': {key: ammo.get(key) for key in AMMO_FIELDS},
         'combat_stats': {key: combat.get(key) for key in COMBAT_FIELDS},
         'cards': {side: cards.get(side) for side in ('left', 'right')},
+        'soul_piece': soul_piece,
         'locked_cells': locked,
         'reviews': reviews,
     }

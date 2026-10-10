@@ -43,6 +43,7 @@ class ScreenStateRecognitionTests(unittest.TestCase):
         self.assertTrue(all(value is None for value in result['screen_state']['ammo'].values()))
         self.assertTrue(all(value is None for value in result['screen_state']['combat_stats'].values()))
         self.assertEqual(result['screen_state']['cards'], {'left': None, 'right': None})
+        self.assertIsNone(result['screen_state']['soul_piece'])
         self.assertFalse(any(result['screen_state']['reviews'].values()))
         self.assertEqual(result['prediction']['references'], [])
 

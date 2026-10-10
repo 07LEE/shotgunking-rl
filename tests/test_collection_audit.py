@@ -28,6 +28,7 @@ def add_annotation(root, session_id, split, name, *, complete=True, cards_review
         "ammo": complete,
         "combat_stats": complete,
         "cards": complete if cards_reviewed is None else cards_reviewed,
+        "soul": False,
     }
     data = {
         "schema": "piece-cells-v1",
@@ -91,6 +92,24 @@ class CollectionAuditTests(unittest.TestCase):
         self.assertEqual(report["page_info_complete"], 3)
         self.assertEqual(report["reviews"]["cards"], 0)
         self.assertEqual(report["usable_labels"]["train"]["cards"], 0)
+
+    def test_soul_review_is_independent_and_counted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            sessions = Path(directory)
+            for index, split in enumerate(("train", "val", "test")):
+                add_annotation(sessions, f"run-{split}", split, "screen", image=f"image-{index}".encode())
+            path = sessions / "run-train/annotations/screen.json"
+            data = json.loads(path.read_text())
+            data["screen_state"]["soul_piece"] = "knight"
+            data["screen_state"]["reviews"]["soul"] = True
+            path.write_text(json.dumps(data))
+
+            report = audit_collection(sessions)
+
+        self.assertTrue(report["evaluation_ready"])
+        self.assertEqual(report["reviews"]["soul"], 1)
+        self.assertEqual(report["usable_labels"]["train"]["soul"], 1)
+        self.assertEqual(report["soul_values"], {"knight": 1})
 
     def test_grenade_damage_is_required_only_when_grenades_remain(self):
         with tempfile.TemporaryDirectory() as directory:

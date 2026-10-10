@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SPLITS = ("train", "val", "test")
 PAGE_INFO_SECTIONS = ("screen_kind", "ammo", "combat_stats")
-REVIEW_SECTIONS = (*PAGE_INFO_SECTIONS, "cards")
+REVIEW_SECTIONS = (*PAGE_INFO_SECTIONS, "cards", "soul")
 COMBAT_FIELDS = (
     "attack",
     "range_min",
@@ -34,6 +34,7 @@ def audit_collection(sessions_dir: Path) -> dict:
     screen_kinds = Counter()
     ammo_values = {"loaded": set(), "reserve": set()}
     combat_values = {field: set() for field in COMBAT_FIELDS}
+    soul_values = Counter()
     usable_labels = {
         split: Counter() for split in SPLITS
     }
@@ -115,6 +116,10 @@ def audit_collection(sessions_dir: Path) -> dict:
                 usable_labels[split]["combat_stats"] += 1
         if reviews.get("cards") is True and split in SPLITS:
             usable_labels[split]["cards"] += 1
+        if reviews.get("soul") is True and state.get("screen_kind") in (None, "gameplay"):
+            soul_values[state.get("soul_piece") or "none"] += 1
+            if split in SPLITS:
+                usable_labels[split]["soul"] += 1
 
         image = (path.parent / data.get("image", "")).resolve()
         originals = (path.parent.parent / "originals").resolve()
@@ -165,6 +170,7 @@ def audit_collection(sessions_dir: Path) -> dict:
         "screen_kinds": dict(sorted(screen_kinds.items())),
         "ammo_values": {field: sorted(values) for field, values in ammo_values.items()},
         "combat_values": {field: sorted(values) for field, values in combat_values.items()},
+        "soul_values": dict(sorted(soul_values.items())),
         "piece_classes": {
             split: dict(sorted(piece_classes[split].items())) for split in SPLITS
         },

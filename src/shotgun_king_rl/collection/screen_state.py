@@ -120,12 +120,14 @@ def propose(screen, collection, exclude=None):
         'ammo': {},
         'combat_stats': {key: None for key in COMBAT_FIELDS},
         'cards': {},
+        'soul_piece': None,
         'locked_cells': [],
         'reviews': {
             'screen_kind': False,
             'ammo': False,
             'combat_stats': False,
             'cards': False,
+            'soul': False,
         },
     }
     confidence = {}
@@ -156,6 +158,7 @@ def _reviews(state):
         'ammo': reviews.get('ammo', legacy) is True,
         'combat_stats': reviews.get('combat_stats', legacy) is True,
         'cards': reviews.get('cards', legacy) is True,
+        'soul': reviews.get('soul', False) is True,
     }
 
 
