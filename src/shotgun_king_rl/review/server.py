@@ -110,9 +110,12 @@ def validate_screen_state(value):
     for entries in cards.values():
         if entries is not None and (not isinstance(entries, list) or len(entries) > 14 or any(not isinstance(entry, str) or not entry.strip() or len(entry) > 300 for entry in entries)):
             raise ValueError('Cards must be slot-ordered names or unknown')
-    soul_piece = value.get('soul_piece')
-    if soul_piece is not None and soul_piece not in SOUL_PIECES:
-        raise ValueError('Invalid harvested soul piece')
+    souls = value.get('souls')
+    legacy_soul = value.get('soul_piece')
+    if souls is None and legacy_soul is not None:
+        souls = [legacy_soul]
+    if souls is not None and (not isinstance(souls, list) or any(piece not in SOUL_PIECES for piece in souls)):
+        raise ValueError('Harvested souls must be slot-ordered piece names or unknown')
     locked = value.get('locked_cells', [])
     if not isinstance(locked, list) or any(not isinstance(cell, list) or len(cell) != 2 or any(type(v) is not int or not 0 <= v < 8 for v in cell) for cell in locked):
         raise ValueError('Invalid locked cells')
@@ -137,13 +140,15 @@ def validate_screen_state(value):
     }
     if reviews['screen_kind'] and screen_kind is None:
         raise ValueError('Select a screen kind before marking it reviewed')
+    if reviews['soul'] and souls is None:
+        souls = []
 
     return {
         'screen_kind': screen_kind,
         'ammo': {key: ammo.get(key) for key in AMMO_FIELDS},
         'combat_stats': {key: combat.get(key) for key in COMBAT_FIELDS},
         'cards': {side: cards.get(side) for side in ('left', 'right')},
-        'soul_piece': soul_piece,
+        'souls': souls,
         'locked_cells': locked,
         'reviews': reviews,
     }

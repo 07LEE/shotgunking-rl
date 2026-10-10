@@ -100,7 +100,7 @@ class CollectionAuditTests(unittest.TestCase):
                 add_annotation(sessions, f"run-{split}", split, "screen", image=f"image-{index}".encode())
             path = sessions / "run-train/annotations/screen.json"
             data = json.loads(path.read_text())
-            data["screen_state"]["soul_piece"] = "knight"
+            data["screen_state"]["souls"] = ["knight", "bishop", "knight"]
             data["screen_state"]["reviews"]["soul"] = True
             path.write_text(json.dumps(data))
 
@@ -109,7 +109,8 @@ class CollectionAuditTests(unittest.TestCase):
         self.assertTrue(report["evaluation_ready"])
         self.assertEqual(report["reviews"]["soul"], 1)
         self.assertEqual(report["usable_labels"]["train"]["soul"], 1)
-        self.assertEqual(report["soul_values"], {"knight": 1})
+        self.assertEqual(report["soul_values"], {"bishop": 1, "knight": 2})
+        self.assertEqual(report["soul_slot_counts"], {"3": 1})
 
     def test_grenade_damage_is_required_only_when_grenades_remain(self):
         with tempfile.TemporaryDirectory() as directory:

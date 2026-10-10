@@ -120,7 +120,7 @@ def propose(screen, collection, exclude=None):
         'ammo': {},
         'combat_stats': {key: None for key in COMBAT_FIELDS},
         'cards': {},
-        'soul_piece': None,
+        'souls': None,
         'locked_cells': [],
         'reviews': {
             'screen_kind': False,

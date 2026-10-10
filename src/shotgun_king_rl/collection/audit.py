@@ -35,6 +35,7 @@ def audit_collection(sessions_dir: Path) -> dict:
     ammo_values = {"loaded": set(), "reserve": set()}
     combat_values = {field: set() for field in COMBAT_FIELDS}
     soul_values = Counter()
+    soul_slot_counts = Counter()
     usable_labels = {
         split: Counter() for split in SPLITS
     }
@@ -117,7 +118,9 @@ def audit_collection(sessions_dir: Path) -> dict:
         if reviews.get("cards") is True and split in SPLITS:
             usable_labels[split]["cards"] += 1
         if reviews.get("soul") is True and state.get("screen_kind") in (None, "gameplay"):
-            soul_values[state.get("soul_piece") or "none"] += 1
+            souls = state.get("souls") or []
+            soul_values.update(souls or ["none"])
+            soul_slot_counts[len(souls)] += 1
             if split in SPLITS:
                 usable_labels[split]["soul"] += 1
 
@@ -171,6 +174,7 @@ def audit_collection(sessions_dir: Path) -> dict:
         "ammo_values": {field: sorted(values) for field, values in ammo_values.items()},
         "combat_values": {field: sorted(values) for field, values in combat_values.items()},
         "soul_values": dict(sorted(soul_values.items())),
+        "soul_slot_counts": {str(count): screens for count, screens in sorted(soul_slot_counts.items())},
         "piece_classes": {
             split: dict(sorted(piece_classes[split].items())) for split in SPLITS
         },

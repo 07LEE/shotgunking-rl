@@ -2,6 +2,7 @@ const ammoInputs = { loaded: 'ammo_loaded', reserve: 'ammo_reserve' };
 const combatFields = ['attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage'];
 const reviewInputs = { screen_kind: 'screenKindReviewed', ammo: 'ammoReviewed', combat_stats: 'combatReviewed' };
 const independentReviewInputs = { soul: 'soulReviewed' };
+const soulPieces = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
 const token = document.querySelector('meta[name=review-token]').content, classes = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
 const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces', pendingPieceApprovalId = null;
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
@@ -81,13 +82,31 @@ $('showLabels').onchange = labelView;
 labelView();
 function cropValue() { const parts = $('crop').value.split(',').map(x => x.trim()); if (parts.length !== 4 || parts.some(x => !/^\d+$/.test(x))) throw Error('Enter four nonnegative integer crop coordinates'); return parts.map(Number) }
 function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent($('items').value) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
-async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const [section, id] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(id).checked = data.screen_state.reviews[section] === true; $('soulPiece').value = data.screen_state.reviews.soul === true ? data.screen_state.soul_piece ?? 'none' : 'unknown'; $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; const item = items.find(candidate => candidate.id === currentId); item.screen_kind = data.screen_state.screen_kind; syncScreenKind(); preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
+function renderSoulSlots(souls) {
+    $('soulSlots').replaceChildren();
+    for (const piece of souls || []) {
+        const row = document.createElement('div');
+        row.className = 'soul-slot';
+        const select = document.createElement('select');
+        select.setAttribute('aria-label', 'Harvested soul piece');
+        const placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = 'Choose piece'; select.append(placeholder);
+        for (const value of soulPieces) { const option = document.createElement('option'); option.value = value; option.textContent = value.replace('_', ' '); select.append(option); }
+        select.value = piece;
+        select.onchange = () => { $('soulReviewed').checked = true; dirty = true; };
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.textContent = '×'; remove.setAttribute('aria-label', 'Remove soul');
+        remove.onclick = () => { row.remove(); $('soulReviewed').checked = true; dirty = true; };
+        row.append(select, remove); $('soulSlots').append(row);
+    }
+}
+function soulValues() { return [...$('soulSlots').querySelectorAll('select')].map(select => select.value) }
+async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const [section, id] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(id).checked = data.screen_state.reviews[section] === true; renderSoulSlots(data.screen_state.souls); $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; const item = items.find(candidate => candidate.id === currentId); item.screen_kind = data.screen_state.screen_kind; syncScreenKind(); preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
 $('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } pendingPieceApprovalId = null; currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
 $('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } pendingPieceApprovalId = null; currentSession = $('sessions').value; const list = sessionItems(); currentId = firstPending(list).id; remember(); renderOptions(); load() };
 $('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked_cells = data.screen_state.locked_cells.filter(x => x[0] !== r || x[1] !== c); if ($('locked').checked) data.screen_state.locked_cells.push([r, c]); dirty = true; draw() };
-for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', 'soulPiece', ...Object.values(reviewInputs), ...Object.values(independentReviewInputs)]) $(id).oninput = () => { dirty = true };
-$('soulPiece').onchange = () => { $('soulReviewed').checked = $('soulPiece').value !== 'unknown'; dirty = true; };
+for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', ...Object.values(reviewInputs), ...Object.values(independentReviewInputs)]) $(id).oninput = () => { dirty = true };
+$('addSoul').onclick = () => { const souls = soulValues(); souls.push(''); renderSoulSlots(souls); $('soulReviewed').checked = true; dirty = true; $('soulSlots').lastElementChild.querySelector('select').focus(); };
 $('screenKind').addEventListener('change', syncScreenKind);
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; dirty = true; draw() };
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
@@ -123,10 +142,10 @@ async function save(confirmed) {
         const screen_kind = $('screenKind').value || null;
         if (reviews.screen_kind && screen_kind === null) throw Error('Select a screen kind before marking it reviewed.');
         const cards = data.screen_state.cards ?? { left: null, right: null };
-        const soulValue = $('soulPiece').value;
-        if (reviews.soul && soulValue === 'unknown') throw Error('Select a harvested soul or None before marking it reviewed.');
-        const soul_piece = soulValue === 'unknown' || soulValue === 'none' ? null : soulValue;
-        data.screen_state = { screen_kind, ammo, combat_stats, cards, soul_piece, locked_cells: data.screen_state.locked_cells, reviews };
+        const selectedSouls = soulValues();
+        if (reviews.soul && selectedSouls.some(piece => !piece)) throw Error('Select a piece for every harvested soul slot.');
+        const souls = reviews.soul ? selectedSouls : null;
+        data.screen_state = { screen_kind, ammo, combat_stats, cards, souls, locked_cells: data.screen_state.locked_cells, reviews };
         const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
         const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : completingPieceApproval ? true : data.confirmed;
         const pieceReviewed = (currentReviewTab === 'pieces' && confirmed) || completingPieceApproval;
