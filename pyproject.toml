@@ -18,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 shotgun-king-build-dataset = "shotgun_king_rl.collection.dataset:main"
+shotgun-king-evaluate-readers = "shotgun_king_rl.collection.evaluation:main"
 shotgun-king-import = "shotgun_king_rl.collection.importer:main"
 shotgun-king-prepare = "shotgun_king_rl.collection.prepare:main"
 shotgun-king-review = "shotgun_king_rl.review.server:main"
