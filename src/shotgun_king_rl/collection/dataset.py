@@ -13,11 +13,51 @@ from ..vision.analyzer import crop_chessboard
 ROOT = Path(__file__).resolve().parents[3]
 
 CLASSES = ("empty", "player_king", "pawn", "knight", "bishop", "rook", "queen", "white_king", "special_knight")
+SPLITS = ("train", "val", "test")
+SPLIT_RATIOS = {"train": 0.8, "val": 0.1, "test": 0.1}
 
 
 def group_split(group):
     bucket = int(hashlib.sha256(group.encode()).hexdigest()[:8], 16) % 100
     return "train" if bucket < 80 else "val" if bucket < 90 else "test"
+
+
+def choose_session_split(collection, session_id, new_screen_count=None):
+    """Choose one persistent split for a newly collected session."""
+    session_splits = {}
+    screen_counts = Counter()
+    annotations = collection / "sessions"
+    for path in sorted(annotations.glob("*/annotations/*.json")):
+        data = json.loads(path.read_text())
+        group = data.get("session_id") or path.parents[1].name
+        split = data.get("split", group_split(group))
+        if split not in SPLITS:
+            raise ValueError(f"{path}: invalid split")
+        if group in session_splits and session_splits[group] != split:
+            raise ValueError(f"{path}: one session cannot span splits")
+        session_splits[group] = split
+        screen_counts[split] += 1
+
+    if session_id in session_splits:
+        return session_splits[session_id]
+
+    for split in SPLITS:
+        if split not in session_splits.values():
+            return split
+
+    if new_screen_count is None:
+        originals = collection / "sessions" / session_id / "originals"
+        new_screen_count = sum(
+            path.suffix.lower() in (".png", ".jpg", ".jpeg")
+            for path in originals.glob("*")
+        )
+    new_screen_count = max(1, new_screen_count)
+    total_after = sum(screen_counts.values()) + new_screen_count
+    deficits = {
+        split: SPLIT_RATIOS[split] * total_after - screen_counts[split]
+        for split in SPLITS
+    }
+    return max(SPLITS, key=lambda split: (deficits[split], -SPLITS.index(split)))
 
 
 def build_dataset(annotation_dir, output, allow_provisional=False):

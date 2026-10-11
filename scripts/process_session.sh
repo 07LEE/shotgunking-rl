@@ -42,22 +42,16 @@ if [[ "$INBOX_COUNT" -eq 0 && "$ORIGINAL_COUNT" -eq 0 ]]; then
     exit 1
 fi
 
-SPLIT="$("$PYTHON" - "$COLLECTION" "$SESSION_ID" <<'PY'
-import json
+SPLIT="$("$PYTHON" - "$COLLECTION" "$SESSION_ID" "$((INBOX_COUNT + ORIGINAL_COUNT))" <<'PY'
 from pathlib import Path
 import sys
 
-from shotgun_king_rl.collection.dataset import group_split
+from shotgun_king_rl.collection.dataset import choose_session_split
 
 collection = Path(sys.argv[1])
 session_id = sys.argv[2]
-splits = {
-    json.loads(path.read_text()).get('split', group_split(session_id))
-    for path in (collection / 'sessions' / session_id / 'annotations').glob('*.json')
-}
-if len(splits) > 1:
-    raise SystemExit(f'Session {session_id} has inconsistent splits: {sorted(splits)}')
-print(next(iter(splits), group_split(session_id)))
+screen_count = int(sys.argv[3])
+print(choose_session_split(collection, session_id, screen_count))
 PY
 )"
 echo "Session: $SESSION_ID"

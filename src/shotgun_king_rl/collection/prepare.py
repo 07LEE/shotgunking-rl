@@ -6,7 +6,7 @@ from pathlib import Path
 
 import cv2
 
-from .dataset import group_split
+from .dataset import choose_session_split
 from .images import detect_crop, normalize
 from .importer import import_images
 from .screen_state import propose
@@ -20,11 +20,14 @@ COLLECTION = ROOT / 'data/collection'
 def prepare_session(collection, session_id, crop=None):
     moved = import_images(collection, session_id)
     session = collection / 'sessions' / session_id
+    image_paths = [
+        path for path in sorted((session / 'originals').iterdir())
+        if path.suffix.lower() in ('.png', '.jpg', '.jpeg')
+    ]
+    split = choose_session_split(collection, session_id, len(image_paths))
     created = 0
     errors = []
-    for image_path in sorted((session / 'originals').iterdir()):
-        if image_path.suffix.lower() not in ('.png', '.jpg', '.jpeg'):
-            continue
+    for image_path in image_paths:
         annotation = session / 'annotations' / (image_path.name + '.json')
         # Preserve earlier annotations, including names used before this tool.
         existing = [json.loads(p.read_text()) for p in (session / 'annotations').glob('*.json')]
@@ -39,7 +42,7 @@ def prepare_session(collection, session_id, crop=None):
             analyzer.reset_analyzer_cache()
             ids = analyzer.get_state_matrix(screen)
             names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king']
-            data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_path.name, 'session_id': session_id, 'floor': None, 'split': group_split(session_id), 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
+            data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_path.name, 'session_id': session_id, 'floor': None, 'split': split, 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
             data.update(propose(screen, collection))
             annotation.write_text(json.dumps(data, indent=2) + '\n')
             created += 1
