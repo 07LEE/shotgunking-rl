@@ -248,9 +248,19 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
 
         # -- 1. Player King detection (dark piece) --
         is_king = False
-        if 1 in _TEMPLATES and _TEMPLATES[1]:
+        king_templates = _TEMPLATES.get(1, [])
+        center = patch[10:55, 10:55].astype(np.int16)
+        red_overlay = (
+            (center[:, :, 2] > 150)
+            & (center[:, :, 1] < 80)
+            & (center[:, :, 0] < 100)
+        )
+        # Locks can look like a dark king silhouette. Do not use them as
+        # evidence of a player piece; other piece matching may still succeed.
+        has_red_overlay = np.count_nonzero(red_overlay) >= red_overlay.size * 0.02
+        if king_templates and not has_red_overlay:
             max_score = -1.0
-            for tmpl in _TEMPLATES[1]:
+            for tmpl in king_templates:
                 res = cv2.matchTemplate(
                     patch_f,
                     tmpl,
@@ -265,8 +275,8 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                 if len(piece_pixels) > 0 and np.mean(piece_pixels) < 145.0:
                     is_king = True
 
-        if not is_king:
-            # geometry fallback: based on dark contour area
+        if not king_templates and not has_red_overlay:
+            # Geometry is only a fallback when no king template is available.
             _, thresh_black = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
             contours_black, _ = cv2.findContours(
                 thresh_black, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE

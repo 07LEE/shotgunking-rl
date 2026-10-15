@@ -59,6 +59,40 @@ class TemplateContrastTests(unittest.TestCase):
             self.assertEqual(vision_analyzer.classify_patch(image, gray), 5)
 
 
+class PlayerKingGuardTests(unittest.TestCase):
+    def setUp(self):
+        self.gray = np.full((65, 65), 220, dtype=np.uint8)
+        self.gray[20:45, 20:40] = 40
+        self.image = cv2.cvtColor(self.gray, cv2.COLOR_GRAY2BGR)
+
+    def test_dark_contour_cannot_override_mismatched_king_template(self):
+        template = np.zeros((45, 45), dtype=np.float32)
+        template[:5, :5] = 255
+        templates = {key: [] for key in range(1, 7)}
+        templates[1] = [template]
+        with patch.object(vision_analyzer, "_TEMPLATES", templates), patch.object(
+            vision_analyzer, "_TEMPLATES_LOADED", True
+        ):
+            self.assertNotEqual(vision_analyzer.classify_patch(self.image, self.gray), 1)
+
+    def test_red_overlay_cannot_be_accepted_as_player_king(self):
+        self.image[25:35, 25:35] = (0, 0, 255)
+        gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
+        templates = {key: [] for key in range(1, 7)}
+        templates[1] = [vision_analyzer._extract_signal(gray).astype(np.float32)]
+        with patch.object(vision_analyzer, "_TEMPLATES", templates), patch.object(
+            vision_analyzer, "_TEMPLATES_LOADED", True
+        ):
+            self.assertNotEqual(vision_analyzer.classify_patch(self.image, gray), 1)
+
+    def test_geometry_fallback_remains_available_without_king_templates(self):
+        templates = {key: [] for key in range(1, 7)}
+        with patch.object(vision_analyzer, "_TEMPLATES", templates), patch.object(
+            vision_analyzer, "_TEMPLATES_LOADED", True
+        ):
+            self.assertEqual(vision_analyzer.classify_patch(self.image, self.gray), 1)
+
+
 @unittest.skipUnless((ROOT / "data/test_fixtures/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists() and (ROOT / "assets/pieces").is_dir(), "Private fixtures and piece templates are required")
 class BoardRegressionTests(unittest.TestCase):
     def setUp(self):
