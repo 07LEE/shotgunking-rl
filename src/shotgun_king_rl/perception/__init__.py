@@ -1,5 +1,6 @@
 """Composable perception contracts for policy-ready game state."""
 
+from .attack import AttackReader
 from .pipeline import PerceptionPipeline
 from .readers import OverlayScreenReader, RedPixelAmmoReader, TemplatePieceReader
 from .types import (
@@ -12,6 +13,7 @@ from .types import (
 )
 
 __all__ = [
+    "AttackReader",
     "AmmoReading",
     "CombatStatsReading",
     "FusedPerception",
