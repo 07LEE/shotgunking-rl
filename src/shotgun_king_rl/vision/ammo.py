@@ -9,6 +9,7 @@ except ImportError:
 
 
 LEGACY_AMMO_FALLBACK = (2, 8)
+MIN_SHELL_COLUMN_PIXELS = 10
 
 
 def read_ammo_count(img):
@@ -36,6 +37,7 @@ def extract_ammo_count(img):
 
 
 def _count_red_slots(region, slot_count):
+    """Count consecutive vertical shell bars without accepting red grenades."""
     red_mask = (
         (region[:, :, 0] > 180)
         & (region[:, :, 1] < 60)
@@ -45,7 +47,8 @@ def _count_red_slots(region, slot_count):
     for index in range(slot_count):
         start_x = index * 16
         end_x = start_x + 8
-        if np.sum(red_mask[:, start_x:end_x]) < 15:
+        slot = red_mask[:, start_x:end_x]
+        if np.max(np.sum(slot, axis=0), initial=0) < MIN_SHELL_COLUMN_PIXELS:
             break
         count += 1
     return count

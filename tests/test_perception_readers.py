@@ -35,6 +35,19 @@ class PerceptionReaderTests(unittest.TestCase):
         self.assertEqual(result.status, PredictionStatus.ACCEPTED)
         self.assertEqual((result.value.loaded, result.value.reserve), (3, 5))
 
+    def test_ammo_reader_does_not_count_grenades_after_reserve_shells(self):
+        for reserve in (0, 1, 6, 7, 8, 9):
+            with self.subTest(reserve=reserve):
+                image = np.zeros((720, 1280, 3), dtype=np.uint8)
+                for index in range(reserve):
+                    start = 384 + index * 16
+                    image[93:107, start:start + 2] = (0, 0, 255)
+                for index in range(reserve, min(reserve + 3, 20)):
+                    start = 384 + index * 16
+                    image[95:102, start:start + 8] = (0, 0, 255)
+
+                self.assertEqual(read_ammo_count(image), (0, reserve))
+
     def test_ammo_reader_reports_failure_while_legacy_api_keeps_fallback(self):
         result = RedPixelAmmoReader().read(None)
 
