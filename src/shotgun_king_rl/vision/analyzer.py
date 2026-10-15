@@ -298,10 +298,6 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         area_white = cv2.contourArea(c_white)
         # print(f"  [DEBUG area] area_white: {area_white}")
 
-        # Empty tile is already filtered by signal.max() == 0, check only for small noise
-        if area_white < 150.0:    # noise
-            return 0
-
         # -- 3. Template matching (loaded pieces only) --
         has_any_template = any(len(_TEMPLATES[piece_id]) > 0 for piece_id in range(2, 7))
         if has_any_template:
@@ -331,6 +327,11 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                     return 0 # reject dark pieces (e.g. gun barrel)
 
         # -- 4. Geometry fallback (missing templates or low confidence) --
+        # Thin outlines on light tiles can have small disconnected contours.
+        # Reject small noise only after a matching template has had a chance.
+        if area_white < 150.0:
+            return 0
+
         x, y, w, h = cv2.boundingRect(c_white)
 
         # [GUARD] scanline noise: Empty tile artifact if h is too small
