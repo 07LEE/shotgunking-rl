@@ -22,6 +22,7 @@ _TEMPLATES = {}   # {piece_id: list of 45x45 uint8 grayscale signals}
 _TEMPLATES_LOADED = False
 _PREV_BOARD_IMG = None
 _PREV_STATE_MATRIX = None
+_PREV_INCLUDE_SPECIAL_KNIGHTS = None
 
 
 def reset_analyzer_cache():
@@ -40,8 +41,8 @@ def _load_templates():
     if cv2 is None or np is None:
         return
 
-    # Initialize lists for each piece ID
-    for piece_id in range(1, 7):
+    # ID 7 is only used by opt-in recognition, never legacy observations.
+    for piece_id in range(1, 8):
         _TEMPLATES[piece_id] = []
 
     if not os.path.exists(PIECES_DIR):
@@ -57,7 +58,7 @@ def _load_templates():
             if len(parts) >= 2:
                 try:
                     piece_id = int(parts[1])
-                    if 1 <= piece_id <= 6:
+                    if 1 <= piece_id <= 7:
                         path = os.path.join(PIECES_DIR, filename)
                         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
                         if img is not None:
@@ -222,7 +223,7 @@ def crop_chessboard(img):
         return None
 
 
-def classify_patch(patch, patch_gray, row=-1, col=-1):
+def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights=False):
     """Classifies a single 65x65 cell patch on the board to identify its piece.
 
     Prioritize template matching, fallback to geometry-based logic if templates are missing.
@@ -235,6 +236,7 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         An integer representing the cell state:
         0: Empty, 1: Black King (Player),
         2: Pawn, 3: Knight, 4: Bishop, 5: Rook, 6: Queen/King.
+        Opt-in recognition also returns 7: Special Knight (not a legacy ID).
     """
     if patch is None or patch_gray is None or cv2 is None or np is None:
         return 0
@@ -309,17 +311,19 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         # print(f"  [DEBUG area] area_white: {area_white}")
 
         # -- 3. Template matching (loaded pieces only) --
-        has_any_template = any(len(_TEMPLATES[piece_id]) > 0 for piece_id in range(2, 7))
+        piece_ids = range(2, 8 if include_special_knights else 7)
+        has_any_template = any(_TEMPLATES.get(piece_id) for piece_id in piece_ids)
         if has_any_template:
             best_score = -1.0
+            special_score = -1.0
             best_piece = 6  # fallback to Queen if matching fails
             # Local contrast preserves outlines when tile brightness changes
             # whether the signal emphasizes a dark border or a bright interior.
             kernel = np.ones((3, 3), dtype=np.uint8)
             patch_edges = cv2.morphologyEx(patch_f, cv2.MORPH_GRADIENT, kernel)
 
-            for piece_id in range(2, 7):
-                templates = _TEMPLATES[piece_id]
+            for piece_id in piece_ids:
+                templates = _TEMPLATES.get(piece_id, [])
                 for tmpl in templates:
                     res = cv2.matchTemplate(
                         patch_f,
@@ -333,9 +337,16 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                             patch_edges, template_edges, cv2.TM_CCOEFF_NORMED
                         )[0, 0])
                         score = max(score, edge_score)
-                    if score > best_score:
+                    if piece_id == 7:
+                        special_score = max(special_score, score)
+                    elif score > best_score:
                         best_score = score
                         best_piece = piece_id
+
+            # Special-knight examples are scarce and resemble regular knights.
+            # Require both a strong match and separation from legacy classes.
+            if special_score >= 0.90 and special_score - best_score >= 0.10:
+                best_score, best_piece = special_score, 7
 
             if best_score >= 0.50:      # confidence threshold
                 # Color Guard for enemy pieces (must be bright)
@@ -389,16 +400,18 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         return 0
 
 
-def get_state_matrix(img):
+def get_state_matrix(img, *, include_special_knights=False):
     """Segments the chessboard image and returns an 8x8 integer state matrix.
 
     Args:
         img: Full 1280x720 BGR game screen screenshot.
+        include_special_knights: Opt into ID 7 for annotation and evaluation.
+            The legacy runtime and its checkpoints do not support this ID.
 
     Returns:
-        An 8x8 numpy array containing state values (0: Empty, 1: Player, 2: Enemy).
+        An 8x8 numpy array of piece IDs (0 through 6, or 7 when opted in).
     """
-    global _PREV_BOARD_IMG, _PREV_STATE_MATRIX
+    global _PREV_BOARD_IMG, _PREV_STATE_MATRIX, _PREV_INCLUDE_SPECIAL_KNIGHTS
     state_matrix = np.zeros((8, 8), dtype=int)
 
     board_img = crop_chessboard(img)
@@ -420,17 +433,23 @@ def get_state_matrix(img):
 
             patch = board_img[y_start:y_end, x_start:x_end]
             patch_gray = board_gray[y_start:y_end, x_start:x_end]
-            if _PREV_BOARD_IMG is not None and _PREV_STATE_MATRIX is not None:
+            if (
+                _PREV_BOARD_IMG is not None and _PREV_STATE_MATRIX is not None
+                and _PREV_INCLUDE_SPECIAL_KNIGHTS == include_special_knights
+            ):
                 prev_patch = _PREV_BOARD_IMG[y_start:y_end, x_start:x_end]
                 # Compute mean absolute difference between patches to skip unchanged cells
                 diff = np.mean(cv2.absdiff(prev_patch, patch))
                 if diff < 4.0:
                     state_matrix[row, col] = _PREV_STATE_MATRIX[row, col]
                     continue
-            state_matrix[row, col] = classify_patch(patch, patch_gray, row, col)
+            state_matrix[row, col] = classify_patch(
+                patch, patch_gray, row, col, include_special_knights=include_special_knights
+            )
 
     _PREV_BOARD_IMG = board_img.copy()
     _PREV_STATE_MATRIX = state_matrix.copy()
+    _PREV_INCLUDE_SPECIAL_KNIGHTS = include_special_knights
     return state_matrix
 
 

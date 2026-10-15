@@ -93,6 +93,41 @@ class PlayerKingGuardTests(unittest.TestCase):
             self.assertEqual(vision_analyzer.classify_patch(self.image, self.gray), 1)
 
 
+class SpecialKnightTests(unittest.TestCase):
+    def tearDown(self):
+        vision_analyzer.reset_analyzer_cache()
+
+    def test_special_template_is_opt_in(self):
+        gray = np.full((65, 65), 220, dtype=np.uint8)
+        gray[20:45, 30:33] = 150
+        image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        templates = {key: [] for key in range(1, 8)}
+        templates[7] = [vision_analyzer._extract_signal(gray).astype(np.float32)]
+        with patch.object(vision_analyzer, "_TEMPLATES", templates), patch.object(
+            vision_analyzer, "_TEMPLATES_LOADED", True
+        ):
+            self.assertEqual(vision_analyzer.classify_patch(image, gray), 0)
+            self.assertEqual(vision_analyzer.classify_patch(
+                image, gray, include_special_knights=True
+            ), 7)
+            templates[3] = templates[7]
+            self.assertEqual(vision_analyzer.classify_patch(
+                image, gray, include_special_knights=True
+            ), 3)
+
+    def test_cached_board_is_not_shared_between_legacy_and_extended_modes(self):
+        image = np.full((720, 1280, 3), 220, dtype=np.uint8)
+        vision_analyzer.reset_analyzer_cache()
+        def classify(*args, include_special_knights=False):
+            return 7 if include_special_knights else 3
+        with patch.object(vision_analyzer, "classify_patch", side_effect=classify):
+            for extended in (False, True, False):
+                board = vision_analyzer.get_state_matrix(
+                    image, include_special_knights=extended
+                )
+                np.testing.assert_array_equal(board, np.full((8, 8), 7 if extended else 3))
+
+
 @unittest.skipUnless((ROOT / "data/test_fixtures/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists() and (ROOT / "assets/pieces").is_dir(), "Private fixtures and piece templates are required")
 class BoardRegressionTests(unittest.TestCase):
     def setUp(self):

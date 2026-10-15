@@ -24,6 +24,7 @@ PIECE_LABELS = {
     4: "bishop",
     5: "rook",
     6: "queen_or_white_king",
+    7: "special_knight",
 }
 
 

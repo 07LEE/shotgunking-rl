@@ -55,6 +55,29 @@ def create_reviewed_screen(collection, split="train"):
 
 
 class ReaderEvaluationTests(unittest.TestCase):
+    def test_rejected_special_knight_remains_visible_in_accuracy_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            create_reviewed_screen(collection)
+            path = collection / "sessions/run-01/annotations/screen.json"
+            annotation = json.loads(path.read_text())
+            annotation["board"][0][0] = "special_knight"
+            path.write_text(json.dumps(annotation))
+            board = np.zeros((8, 8), dtype=int)
+            board[0, 0], board[7, 4] = 7, 1
+            report = evaluate_readers(
+                collection / "sessions",
+                piece_reader=FakeReader(Prediction.rejected(
+                    board, source="pieces:test", reason="unsupported_runtime_piece:special_knight"
+                ), "pieces:test"),
+                ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source="ammo:test"), "ammo:test"),
+                screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:test"), "screen:test"),
+            )
+        overall = report["overall"]
+        self.assertEqual(overall["pieces"]["strict"]["accuracy"], 1.0)
+        self.assertEqual(overall["pieces"]["strict"]["classes"]["special_knight"]["recall"], 1.0)
+        self.assertEqual(overall["combined"]["accepted_rate"], 0.0)
+
     def test_reports_strict_compatible_and_combined_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)

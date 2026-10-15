@@ -21,6 +21,23 @@ from shotgun_king_rl.vision.ammo import extract_ammo_count, read_ammo_count
 
 
 class PerceptionReaderTests(unittest.TestCase):
+    def test_special_knight_is_preserved_but_rejected_for_policy(self):
+        image = np.zeros((720, 1280, 3), dtype=np.uint8)
+        board = np.zeros((8, 8), dtype=int)
+        board[7, 4] = 1
+        board[0, 0] = 7
+        with patch(
+            "shotgun_king_rl.perception.readers.analyzer.get_state_matrix",
+            return_value=board,
+        ) as read_board:
+            result = TemplatePieceReader().read(image)
+        self.assertEqual(read_board.call_count, 1)
+        self.assertEqual(read_board.call_args.kwargs, {"include_special_knights": True})
+        np.testing.assert_array_equal(read_board.call_args.args[0], image)
+        self.assertEqual(result.status, PredictionStatus.REJECTED)
+        self.assertEqual(result.reason, "unsupported_runtime_piece:special_knight")
+        np.testing.assert_array_equal(result.value, board)
+
     def test_ammo_reader_counts_calibrated_red_slots(self):
         image = np.zeros((720, 1280, 3), dtype=np.uint8)
         for index in range(3):

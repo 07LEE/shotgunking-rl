@@ -40,8 +40,8 @@ def prepare_session(collection, session_id, crop=None):
             game_crop = crop or detect_crop(image)
             screen = normalize(image, game_crop)
             analyzer.reset_analyzer_cache()
-            ids = analyzer.get_state_matrix(screen)
-            names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king']
+            ids = analyzer.get_state_matrix(screen, include_special_knights=True)
+            names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king', 'special_knight']
             data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_path.name, 'session_id': session_id, 'floor': None, 'split': split, 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
             data.update(propose(screen, collection))
             annotation.write_text(json.dumps(data, indent=2) + '\n')

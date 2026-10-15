@@ -13,7 +13,7 @@ from .types import AmmoReading, Prediction, ScreenKind
 class TemplatePieceReader:
     """Read the board with the current per-cell template implementation."""
 
-    source = "piece-templates:v1"
+    source = "piece-templates:v2"
 
     def read(self, image) -> Prediction[np.ndarray]:
         if not _valid_image(image):
@@ -22,13 +22,17 @@ class TemplatePieceReader:
         if image is None or analyzer.crop_chessboard(image) is None:
             return Prediction.unknown(source=self.source, reason="board_not_found")
 
-        board = analyzer.get_state_matrix(image)
+        board = analyzer.get_state_matrix(image, include_special_knights=True)
         king_count = int(np.count_nonzero(board == 1))
         if king_count != 1:
             return Prediction.rejected(
                 board,
                 source=self.source,
                 reason=f"player_king_count:{king_count}",
+            )
+        if np.any(board == 7):
+            return Prediction.rejected(
+                board, source=self.source, reason="unsupported_runtime_piece:special_knight"
             )
         return Prediction.accepted(board, source=self.source)
 
