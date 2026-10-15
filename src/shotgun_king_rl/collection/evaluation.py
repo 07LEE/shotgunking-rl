@@ -280,6 +280,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         screen_prediction = None
         expected_kind = state.get("screen_kind")
         if reviews.get("screen_kind") is True and expected_kind is not None:
+            analyzer.reset_analyzer_cache()
             screen_prediction = screen_reader.read(screen)
             predicted_kind = _screen_label(screen_prediction)
             for bucket in selected:

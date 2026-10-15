@@ -96,6 +96,35 @@ class PerceptionReaderTests(unittest.TestCase):
         self.assertEqual(unverified.status, PredictionStatus.UNKNOWN)
         self.assertEqual(unverified.reason, "gameplay_or_transition_unverified")
 
+    def test_overlay_reader_accepts_gameplay_after_aspect_normalization(self):
+        game = np.random.default_rng(7).integers(30, 220, (900, 1600, 3), dtype=np.uint8)
+        image = np.zeros((1000, 1600, 3), dtype=np.uint8)
+        image[50:950] = game
+        board = np.zeros((8, 8), dtype=int)
+        board[7, 4] = 1
+
+        def assert_normalized(screen):
+            self.assertEqual(screen.shape, (720, 1280, 3))
+            return board
+
+        with patch(
+            "shotgun_king_rl.perception.readers.screens.check_retry_popup",
+            return_value=False,
+        ), patch(
+            "shotgun_king_rl.perception.readers.screens.check_card_selection_screen",
+            return_value=False,
+        ), patch(
+            "shotgun_king_rl.perception.readers.screens.check_gameplay_board",
+            return_value=True,
+        ), patch(
+            "shotgun_king_rl.perception.readers.analyzer.get_state_matrix",
+            side_effect=assert_normalized,
+        ):
+            result = OverlayScreenReader().read(image)
+
+        self.assertEqual(result.status, PredictionStatus.ACCEPTED)
+        self.assertEqual(result.value, ScreenKind.GAMEPLAY)
+
 
 if __name__ == "__main__":
     unittest.main()

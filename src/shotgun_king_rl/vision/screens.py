@@ -81,3 +81,36 @@ def check_card_selection_screen(img):
         return all(gray[y, x] >= 215 for y, x in card_borders)
     except (AttributeError, IndexError, TypeError, ValueError, cv2.error):
         return False
+
+
+def check_gameplay_board(img):
+    """Return whether the calibrated board region has a stable checker pattern."""
+    if img is None or cv2 is None or np is None:
+        return False
+
+    try:
+        height, width = img.shape[:2]
+        if height != 720 or width != 1280:
+            img = cv2.resize(img, (1280, 720))
+        board = img[119:631, 383:895]
+        cell_means = np.asarray([
+            [
+                board[row * 64:(row + 1) * 64, col * 64:(col + 1) * 64].mean(axis=(0, 1))
+                for col in range(8)
+            ]
+            for row in range(8)
+        ])
+        parity = np.indices((8, 8)).sum(axis=0) % 2
+        first = cell_means[parity == 0]
+        second = cell_means[parity == 1]
+        separation = float(np.linalg.norm(first.mean(axis=0) - second.mean(axis=0)))
+        variation = float(
+            (
+                np.linalg.norm(first - first.mean(axis=0), axis=1).mean()
+                + np.linalg.norm(second - second.mean(axis=0), axis=1).mean()
+            )
+            / 2
+        )
+        return separation >= 80 and variation <= 35
+    except (AttributeError, IndexError, TypeError, ValueError, cv2.error):
+        return False

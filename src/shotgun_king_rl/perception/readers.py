@@ -1,10 +1,12 @@
 """Reader adapters for the current independent vision implementations."""
 
+import cv2
 import numpy as np
 
 from ..vision import ammo as ammo_vision
 from ..vision import analyzer
 from ..vision import screens
+from ..vision.layout import normalize_game_screen
 from .types import AmmoReading, Prediction, ScreenKind
 
 
@@ -16,7 +18,8 @@ class TemplatePieceReader:
     def read(self, image) -> Prediction[np.ndarray]:
         if not _valid_image(image):
             return Prediction.unknown(source=self.source, reason="invalid_image")
-        if analyzer.crop_chessboard(image) is None:
+        image = _normalize(image)
+        if image is None or analyzer.crop_chessboard(image) is None:
             return Prediction.unknown(source=self.source, reason="board_not_found")
 
         board = analyzer.get_state_matrix(image)
@@ -36,7 +39,8 @@ class RedPixelAmmoReader:
     source = "ammo-red-slots:v1"
 
     def read(self, image) -> Prediction[AmmoReading]:
-        reading = ammo_vision.read_ammo_count(image)
+        image = _normalize(image)
+        reading = ammo_vision.read_ammo_count(image) if image is not None else None
         if reading is None:
             return Prediction.unknown(source=self.source, reason="ammo_not_read")
         loaded, reserve = reading
@@ -47,21 +51,34 @@ class RedPixelAmmoReader:
 
 
 class OverlayScreenReader:
-    """Recognize explicit retry and card overlays without guessing gameplay."""
+    """Recognize explicit overlays and verify the gameplay board structure."""
 
-    source = "screen-overlays:v1"
+    source = "screen-rules:v2"
 
     def read(self, image) -> Prediction[ScreenKind]:
         if not _valid_image(image):
             return Prediction.unknown(source=self.source, reason="invalid_image")
+        image = _normalize(image)
+        if image is None:
+            return Prediction.unknown(source=self.source, reason="game_area_not_found")
         if screens.check_retry_popup(image):
             return Prediction.accepted(ScreenKind.RETRY, source=self.source)
         if screens.check_card_selection_screen(image):
             return Prediction.accepted(ScreenKind.CARD_SELECTION, source=self.source)
+        board = analyzer.get_state_matrix(image)
+        if screens.check_gameplay_board(image) and int(np.count_nonzero(board == 1)) >= 1:
+            return Prediction.accepted(ScreenKind.GAMEPLAY, source=self.source)
         return Prediction.unknown(
             source=self.source,
             reason="gameplay_or_transition_unverified",
         )
+
+
+def _normalize(image):
+    try:
+        return normalize_game_screen(image)
+    except (AttributeError, IndexError, TypeError, ValueError, cv2.error):
+        return None
 
 
 def _valid_image(image) -> bool:
