@@ -303,6 +303,10 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
         if has_any_template:
             best_score = -1.0
             best_piece = 6  # fallback to Queen if matching fails
+            # Local contrast preserves outlines when tile brightness changes
+            # whether the signal emphasizes a dark border or a bright interior.
+            kernel = np.ones((3, 3), dtype=np.uint8)
+            patch_edges = cv2.morphologyEx(patch_f, cv2.MORPH_GRADIENT, kernel)
 
             for piece_id in range(2, 7):
                 templates = _TEMPLATES[piece_id]
@@ -313,6 +317,12 @@ def classify_patch(patch, patch_gray, row=-1, col=-1):
                         cv2.TM_CCOEFF_NORMED,
                     )
                     score = float(res[0][0])
+                    template_edges = cv2.morphologyEx(tmpl, cv2.MORPH_GRADIENT, kernel)
+                    if np.std(patch_edges) > 0 and np.std(template_edges) > 0:
+                        edge_score = float(cv2.matchTemplate(
+                            patch_edges, template_edges, cv2.TM_CCOEFF_NORMED
+                        )[0, 0])
+                        score = max(score, edge_score)
                     if score > best_score:
                         best_score = score
                         best_piece = piece_id

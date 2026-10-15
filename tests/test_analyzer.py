@@ -42,6 +42,23 @@ class ThinOutlineTests(unittest.TestCase):
             self.assertEqual(vision_analyzer.classify_patch(self.image, self.gray), 0)
 
 
+class TemplateContrastTests(unittest.TestCase):
+    def test_rook_outline_matches_with_reversed_signal_contrast(self):
+        template = np.zeros((45, 45), dtype=np.float32)
+        template[8:35, 15:30] = 255
+        template[5:10, 10:35] = 255
+        templates = {key: [] for key in range(1, 7)}
+        templates[5] = [template]
+        gray = np.full((65, 65), 220, dtype=np.uint8)
+        image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        with patch.object(vision_analyzer, "_TEMPLATES", templates), patch.object(
+            vision_analyzer, "_TEMPLATES_LOADED", True
+        ), patch.object(
+            vision_analyzer, "_extract_signal", return_value=(255 - template).astype(np.uint8)
+        ):
+            self.assertEqual(vision_analyzer.classify_patch(image, gray), 5)
+
+
 @unittest.skipUnless((ROOT / "data/test_fixtures/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists() and (ROOT / "assets/pieces").is_dir(), "Private fixtures and piece templates are required")
 class BoardRegressionTests(unittest.TestCase):
     def setUp(self):
