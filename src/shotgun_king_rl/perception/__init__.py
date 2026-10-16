@@ -3,6 +3,7 @@
 from .attack import AttackReader
 from .pipeline import PerceptionPipeline
 from .range import RangeReader
+from .spread import SpreadReader
 from .readers import OverlayScreenReader, RedPixelAmmoReader, TemplatePieceReader
 from .types import (
     AmmoReading,
@@ -27,5 +28,6 @@ __all__ = [
     "RangeReading",
     "RedPixelAmmoReader",
     "ScreenKind",
+    "SpreadReader",
     "TemplatePieceReader",
 ]
