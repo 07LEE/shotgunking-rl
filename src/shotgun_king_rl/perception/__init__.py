@@ -1,6 +1,7 @@
 """Composable perception contracts for policy-ready game state."""
 
 from .attack import AttackReader
+from .knockback import KnockbackReader
 from .pipeline import PerceptionPipeline
 from .range import RangeReader
 from .spread import SpreadReader
@@ -20,6 +21,7 @@ __all__ = [
     "AmmoReading",
     "CombatStatsReading",
     "FusedPerception",
+    "KnockbackReader",
     "OverlayScreenReader",
     "PerceptionPipeline",
     "Prediction",
