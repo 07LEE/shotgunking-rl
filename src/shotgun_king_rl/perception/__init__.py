@@ -2,6 +2,7 @@
 
 from .attack import AttackReader
 from .knockback import KnockbackReader
+from .penetration import PenetrationReader
 from .pipeline import PerceptionPipeline
 from .range import RangeReader
 from .spread import SpreadReader
@@ -22,6 +23,7 @@ __all__ = [
     "CombatStatsReading",
     "FusedPerception",
     "KnockbackReader",
+    "PenetrationReader",
     "OverlayScreenReader",
     "PerceptionPipeline",
     "Prediction",
