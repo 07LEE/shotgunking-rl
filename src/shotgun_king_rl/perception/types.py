@@ -92,6 +92,14 @@ class AmmoReading:
 
 
 @dataclass(frozen=True)
+class RangeReading:
+    """Observed start of damage falloff and maximum firing range."""
+
+    range_min: int
+    range_max: int
+
+
+@dataclass(frozen=True)
 class CombatStatsReading:
     """Current combat values read from the gameplay HUD."""
 

@@ -2,6 +2,7 @@
 
 from .attack import AttackReader
 from .pipeline import PerceptionPipeline
+from .range import RangeReader
 from .readers import OverlayScreenReader, RedPixelAmmoReader, TemplatePieceReader
 from .types import (
     AmmoReading,
@@ -9,6 +10,7 @@ from .types import (
     FusedPerception,
     Prediction,
     PredictionStatus,
+    RangeReading,
     ScreenKind,
 )
 
@@ -21,6 +23,8 @@ __all__ = [
     "PerceptionPipeline",
     "Prediction",
     "PredictionStatus",
+    "RangeReader",
+    "RangeReading",
     "RedPixelAmmoReader",
     "ScreenKind",
     "TemplatePieceReader",
