@@ -21,7 +21,7 @@ CHOICE_BOXES = (
 )
 
 
-def extract_card_choices(sessions, output, include_unreviewed=False):
+def extract_card_choices(sessions, output, include_unreviewed=False, allow_unverified_layout=False):
     sessions, output = Path(sessions), Path(output)
     if output.exists():
         raise ValueError(f'Output exists: {output}; choose a new directory')
@@ -51,14 +51,15 @@ def extract_card_choices(sessions, output, include_unreviewed=False):
         if image is None:
             raise ValueError(f'{path}: unreadable image')
         screen = normalize(image, data.get('game_crop'))
-        if not check_card_selection_screen(screen):
+        layout_verified = check_card_selection_screen(screen)
+        if not layout_verified and not allow_unverified_layout:
             raise ValueError(f'{path}: card-choice layout not verified')
-        sources.append((path, data, screen, reviewed, hashlib.sha256(raw).hexdigest(), hashlib.sha256(image_raw).hexdigest()))
+        sources.append((path, data, screen, reviewed, hashlib.sha256(raw).hexdigest(), hashlib.sha256(image_raw).hexdigest(), layout_verified))
     if not sources:
         raise ValueError('No eligible card-selection screens')
     output.mkdir(parents=True)
     records = []
-    for index, (path, data, screen, reviewed, annotation_hash, image_hash) in enumerate(sources):
+    for index, (path, data, screen, reviewed, annotation_hash, image_hash, layout_verified) in enumerate(sources):
         folder = output / data['session_id']
         folder.mkdir(exist_ok=True)
         for choice, side, box in CHOICE_BOXES:
@@ -73,12 +74,14 @@ def extract_card_choices(sessions, output, include_unreviewed=False):
                 'source_annotation_sha256': annotation_hash, 'game_crop': data.get('game_crop'),
                 'normalized_box': list(box), 'choice': choice, 'side': side,
                 'screen_kind_reviewed': reviewed, 'card_key': None, 'human_review_required': True,
+                'automatic_layout_verified': layout_verified,
             })
     (output / 'manifest.jsonl').write_text(''.join(json.dumps(row) + '\n' for row in records))
     summary = {
         'screens': len(sources), 'card_images': len(records),
         'screens_by_split': dict(Counter(data['split'] for _, data, *_ in sources)),
         'unreviewed_screens': sum(not reviewed for _, _, _, reviewed, *_ in sources),
+        'unverified_layout_screens': sum(not source[-1] for source in sources),
         'card_labels': 'Unlabeled crops; no card identity, effects, or selected choice inferred',
     }
     (output / 'summary.json').write_text(json.dumps(summary, indent=2) + '\n')
@@ -90,8 +93,9 @@ def main():
     parser.add_argument('--sessions', type=Path, default=ROOT / 'data/collection/sessions')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--include-unreviewed', action='store_true')
+    parser.add_argument('--allow-unverified-layout', action='store_true', help='Export visually checked layouts rejected by the automatic border check; retain an unverified flag')
     args = parser.parse_args()
     try:
-        print(json.dumps(extract_card_choices(args.sessions, args.output, args.include_unreviewed), indent=2))
+        print(json.dumps(extract_card_choices(args.sessions, args.output, args.include_unreviewed, args.allow_unverified_layout), indent=2))
     except (ValueError, OSError) as exc:
         parser.exit(1, f'Card extraction failed: {exc}\n')

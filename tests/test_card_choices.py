@@ -84,6 +84,17 @@ class CardChoiceExtractionTests(unittest.TestCase):
                 extract_card_choices(root / 'sessions', output)
             self.assertEqual(marker.read_text(), 'keep')
 
+    def test_explicit_layout_override_retains_unverified_provenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source(root, layout=False)
+            output = root / 'cards'
+            result = extract_card_choices(root / 'sessions', output, allow_unverified_layout=True)
+            self.assertEqual(result['unverified_layout_screens'], 1)
+            rows = [json.loads(line) for line in (output / 'manifest.jsonl').read_text().splitlines()]
+            self.assertTrue(all(not row['automatic_layout_verified'] for row in rows))
+            self.assertTrue(all(row['human_review_required'] and row['card_key'] is None for row in rows))
+
     def test_one_session_cannot_span_splits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
