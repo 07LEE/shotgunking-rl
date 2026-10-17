@@ -9,6 +9,7 @@ from pathlib import Path
 import cv2
 
 from ..vision.analyzer import crop_chessboard
+from .board_metadata import board_metadata
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -86,6 +87,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
             raise ValueError(f"{path}: board must be 8x8")
         if any(label not in CLASSES for row in board for label in row):
             raise ValueError(f"{path}: unknown class label")
+        data['piece_sides'], data['terrain'] = board_metadata(data)
         group = data.get("session_id")
         if not isinstance(group, str) or not group.strip():
             raise ValueError(f"{path}: session_id is required")
@@ -135,7 +137,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
                 if not cv2.imwrite(str(target), cell):
                     raise OSError(f"Could not write {target}")
                 counts[split][label] += 1
-                records.append({"path": relative.as_posix(), "label": label, "split": split, "session_id": data["session_id"], "floor": data.get("floor"), "game_crop": data.get("game_crop"), "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col, "locked": [row, col] in data.get("screen_state", {}).get("locked_cells", []), "screen_state": data.get("screen_state")})
+                records.append({"path": relative.as_posix(), "label": label, "piece_side": data["piece_sides"][row][col], "terrain": data["terrain"][row][col], "controlled": label == "player_king", "split": split, "session_id": data["session_id"], "floor": data.get("floor"), "game_crop": data.get("game_crop"), "source_annotation": str(path.resolve()), "source_sha256": digest, "confirmed": data.get("confirmed") is True, "row": row, "col": col, "locked": [row, col] in data.get("screen_state", {}).get("locked_cells", []), "screen_state": data.get("screen_state")})
     (output / "manifest.jsonl").write_text("".join(json.dumps(record) + "\n" for record in records))
     summary = {"classes": list(CLASSES), "screens": len(sources), "cells": len(records), "skipped_unconfirmed": skipped, "skipped_non_gameplay": skipped_non_gameplay, "counts": {split: {label: counts[split][label] for label in CLASSES} for split in counts}, "missing_classes": [label for label in CLASSES if not any(counts[s][label] for s in counts)], "evaluation_ready": all(sum(counts[s].values()) > 0 for s in counts) and all(counts["train"][label] > 0 for label in CLASSES) and all(r["confirmed"] for r in records)}
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

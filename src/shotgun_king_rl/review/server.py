@@ -14,6 +14,7 @@ import webbrowser
 import cv2
 
 from ..collection.dataset import CLASSES, group_split
+from ..collection.board_metadata import board_metadata
 from ..collection.images import normalize
 from ..collection.prepare import prepare_session
 from ..collection.screen_state import propose
@@ -161,6 +162,11 @@ def save_item(collection, payload):
     board = payload['board']
     if not isinstance(board, list) or len(board) != 8 or any(not isinstance(row, list) or len(row) != 8 or any(v not in CLASSES for v in row) for row in board):
         raise ValueError('Board must contain 8x8 valid labels')
+    piece_sides, terrain = board_metadata({
+        'board': board,
+        'piece_sides': payload.get('piece_sides', current.get('piece_sides')),
+        'terrain': payload.get('terrain', current.get('terrain')),
+    })
     floor = payload.get('floor')
     if floor is not None and (type(floor) is not int or floor < 1):
         raise ValueError('Floor must be a positive integer')
@@ -175,6 +181,9 @@ def save_item(collection, payload):
     screen_state = validate_screen_state(payload.get('screen_state', current.get('screen_state', {})))
     piece_applicable = not (screen_state['reviews']['screen_kind'] and screen_state['screen_kind'] != 'gameplay')
     confirmed = payload['confirmed'] if piece_applicable else False
+    old_sides, old_terrain = board_metadata(current)
+    if current.get('confirmed') and (piece_sides != old_sides or terrain != old_terrain) and not payload.get('piece_reviewed', False):
+        confirmed = False
     if confirmed and floor is None:
         raise ValueError('Set the floor before approval')
     normalize(image, payload['game_crop'])
@@ -192,6 +201,7 @@ def save_item(collection, payload):
         reviewed_at = datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')
     piece_review = {'reviewed': confirmed, 'reviewed_at': reviewed_at if confirmed else None}
     current.update(screen_state=screen_state, piece_review=piece_review, board=board, floor=floor, split=split, confirmed=confirmed, game_crop=payload['game_crop'], exclude_cells=excluded)
+    current.update(piece_sides=piece_sides, terrain=terrain)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(current, indent=2) + '\n')
     temporary.replace(path)
@@ -238,6 +248,7 @@ def make_server(collection, port=0):
                 query = parse_qs(request.query)
                 path, data, image, revision = load_item(collection, query['id'][0])
                 if route == '/api/item':
+                    data['piece_sides'], data['terrain'] = board_metadata(data)
                     data['screen_state'] = validate_screen_state(data.get('screen_state', {}))
                     data['piece_review'] = validate_piece_review(data)
                     return self.reply(json.dumps({'data': data, 'revision': revision}).encode())

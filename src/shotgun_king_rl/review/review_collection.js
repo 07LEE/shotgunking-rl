@@ -61,11 +61,12 @@ function draw() {
             const button = document.createElement('button');
             button.className = 'cell' + (exclude(r, c) ? ' excluded' : '') + (selected[0] === r && selected[1] === c ? ' selected' : '');
             const square = String.fromCharCode(97 + c) + (8 - r);
-            button.title = square + ': ' + data.board[r][c];
+            button.classList.add(data.terrain[r][c] === 'moat' ? 'moat' : 'plain');
+            button.title = square + ': ' + data.board[r][c] + ' · ' + (data.piece_sides[r][c] ?? 'no piece') + ' · ' + data.terrain[r][c];
             button.setAttribute('aria-label', button.title);
             const text = document.createElement('span');
             text.className = data.board[r][c] === 'empty' ? 'empty-label' : 'piece-label';
-            text.textContent = data.board[r][c].replace('player_king', 'Player king').replace('white_king', 'White king').replace('special_knight', 'Special N');
+            text.textContent = (data.piece_sides[r][c] === 'ally' && data.board[r][c] !== 'player_king' ? 'Ally ' : '') + data.board[r][c].replace('player_king', 'Player king').replace('white_king', 'White king').replace('special_knight', 'Special N');
             button.append(text);
             button.onclick = () => { selected = [r, c]; draw(); };
             grid.append(button);
@@ -73,9 +74,12 @@ function draw() {
     }
     const [r, c] = selected;
     $('label').value = data.board[r][c];
+    $('pieceSide').value = data.piece_sides[r][c] ?? '';
+    $('pieceSide').disabled = ['empty', 'player_king'].includes(data.board[r][c]);
+    $('terrain').value = data.terrain[r][c];
     $('excluded').checked = exclude(r, c);
     $('locked').checked = data.screen_state.locked_cells.some(x => x[0] === r && x[1] === c);
-    $('cellInfo').textContent = String.fromCharCode(97 + c) + (8 - r) + ': ' + data.board[r][c];
+    $('cellInfo').textContent = String.fromCharCode(97 + c) + (8 - r) + ': ' + data.board[r][c] + ' · ' + (data.piece_sides[r][c] ?? 'no piece') + ' · ' + data.terrain[r][c];
 }
 function labelView() {
     $('grid').classList.toggle('show-labels', $('showLabels').checked);
@@ -110,7 +114,10 @@ $('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked
 for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', ...Object.values(reviewInputs), ...Object.values(independentReviewInputs)]) $(id).oninput = () => { dirty = true };
 $('addSoul').onclick = () => { const souls = soulValues(); souls.push(''); renderSoulSlots(souls); $('soulReviewed').checked = true; dirty = true; $('soulSlots').lastElementChild.querySelector('select').focus(); };
 $('screenKind').addEventListener('change', syncScreenKind);
-$('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; dirty = true; draw() };
+$('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; data.piece_sides[r][c] = data.board[r][c] === 'empty' ? null : data.board[r][c] === 'player_king' ? 'ally' : data.piece_sides[r][c] ?? 'enemy'; dirty = true; draw() };
+$('pieceSide').onchange = () => { const [r, c] = selected; data.piece_sides[r][c] = $('pieceSide').value || 'unknown'; dirty = true; draw() };
+$('terrain').onchange = () => { const [r, c] = selected; data.terrain[r][c] = $('terrain').value; dirty = true; draw() };
+$('terrainRow').onclick = () => { data.terrain[selected[0]] = Array(8).fill($('terrain').value); dirty = true; draw() };
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
 for (const id of ['floor', 'crop']) $(id).oninput = () => { dirty = true };
 $('preview').onclick = () => { try { preview() } catch (e) { status(e.message) } };
@@ -155,7 +162,7 @@ async function save(confirmed) {
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
-            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, piece_reviewed: pieceReviewed })
+            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, piece_sides: data.piece_sides, terrain: data.terrain, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, piece_reviewed: pieceReviewed })
         });
         revision = result.revision;
         data.confirmed = result.confirmed;

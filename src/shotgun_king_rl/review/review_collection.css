@@ -195,3 +195,5 @@ main { position: relative; display: grid; grid-template-columns: minmax(0, 1.4fr
     .screen-field .field-name { width: auto; max-width: none; margin: 0 0 5px; padding: 0; overflow: visible; background: transparent; color: var(--muted); font-size: 11px; box-shadow: none; }
     .screen-field input:not([type=checkbox]) { height: auto; padding: 9px 10px; font-size: 12px; }
 }
+
+.cell.moat { box-shadow: inset 0 -10px 0 rgba(30, 155, 215, .65); }
