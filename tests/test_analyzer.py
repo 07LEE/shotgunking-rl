@@ -15,6 +15,43 @@ import analyzer
 from shotgun_king_rl.vision import analyzer as vision_analyzer
 
 
+class ShiftedTemplateTests(unittest.TestCase):
+    def signals(self, displacement):
+        template = np.zeros((45, 45), dtype=np.float32)
+        template[10:33, 18:20] = 255
+        template[10:12, 14:26] = 255
+        query = np.zeros_like(template)
+        query[:, displacement:] = template[:, :-displacement]
+        return query, template
+
+    def test_thin_displaced_piece_matches_before_geometry_rejection(self):
+        query, template = self.signals(2)
+        self.assertLess(float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED)[0, 0]), .50)
+        templates = {key: [] for key in range(1, 8)}
+        templates[4] = [template]
+        gray = np.full((65, 65), 220, dtype=np.uint8)
+        image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        with patch.object(vision_analyzer, '_TEMPLATES', templates), patch.object(
+            vision_analyzer, '_TEMPLATES_LOADED', True
+        ), patch.object(vision_analyzer, '_extract_signal', return_value=query.astype(np.uint8)):
+            self.assertEqual(vision_analyzer.classify_patch(image, gray), 4)
+            templates[2] = [query]
+            # A confident existing match must not be replaced by the retry.
+            self.assertEqual(vision_analyzer.classify_patch(image, gray), 2)
+
+    def test_translation_search_is_bounded(self):
+        query, template = self.signals(2)
+        self.assertAlmostEqual(vision_analyzer._shifted_template_score(query, template), 1.0, places=5)
+        query, template = self.signals(8)
+        self.assertLess(vision_analyzer._shifted_template_score(query, template), .50)
+
+    def test_featureless_queries_and_templates_cannot_match(self):
+        query, template = self.signals(2)
+        blank = np.zeros_like(query)
+        self.assertEqual(vision_analyzer._shifted_template_score(blank, template), -1)
+        self.assertEqual(vision_analyzer._shifted_template_score(query, blank), -1)
+
+
 class ThinOutlineTests(unittest.TestCase):
     def setUp(self):
         self.gray = np.full((65, 65), 220, dtype=np.uint8)

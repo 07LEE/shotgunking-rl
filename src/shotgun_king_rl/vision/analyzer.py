@@ -223,6 +223,14 @@ def crop_chessboard(img):
         return None
 
 
+def _shifted_template_score(query, template):
+    """Compare an uncertain cell allowing at most two pixels of translation."""
+    if query.std() == 0 or template.std() == 0:
+        return -1.0
+    padded = cv2.copyMakeBorder(query, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
+    return float(cv2.matchTemplate(padded, template, cv2.TM_CCOEFF_NORMED).max())
+
+
 def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights=False):
     """Classifies a single 65x65 cell patch on the board to identify its piece.
 
@@ -347,6 +355,20 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
             # Require both a strong match and separation from legacy classes.
             if special_score >= 0.90 and special_score - best_score >= 0.10:
                 best_score, best_piece = special_score, 7
+
+            # Animation and resampling can slightly displace the silhouette.
+            # Retry uncertain legacy classes before guessing from geometry;
+            # preserve existing confident matches and special-knight rules.
+            if best_score < 0.50:
+                for piece_id in range(2, 7):
+                    for tmpl in _TEMPLATES.get(piece_id, []):
+                        template_edges = cv2.morphologyEx(tmpl, cv2.MORPH_GRADIENT, kernel)
+                        score = max(
+                            _shifted_template_score(patch_f, tmpl),
+                            _shifted_template_score(patch_edges, template_edges),
+                        )
+                        if score > best_score:
+                            best_score, best_piece = score, piece_id
 
             if best_score >= 0.50:      # confidence threshold
                 # Color Guard for enemy pieces (must be bright)
