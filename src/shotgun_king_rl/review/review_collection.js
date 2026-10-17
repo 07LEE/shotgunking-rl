@@ -76,7 +76,6 @@ function draw() {
     $('label').value = data.board[r][c];
     $('pieceSide').value = data.piece_sides[r][c] ?? '';
     $('pieceSide').disabled = ['empty', 'player_king'].includes(data.board[r][c]);
-    $('terrain').value = data.terrain[r][c];
     $('excluded').checked = exclude(r, c);
     $('locked').checked = data.screen_state.locked_cells.some(x => x[0] === r && x[1] === c);
     $('cellInfo').textContent = String.fromCharCode(97 + c) + (8 - r) + ': ' + data.board[r][c] + ' · ' + (data.piece_sides[r][c] ?? 'no piece') + ' · ' + data.terrain[r][c];
@@ -106,7 +105,7 @@ function renderSoulSlots(souls) {
     }
 }
 function soulValues() { return [...$('soulSlots').querySelectorAll('select')].map(select => select.value) }
-async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; revision = a.revision; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const [section, id] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(id).checked = data.screen_state.reviews[section] === true; renderSoulSlots(data.screen_state.souls); $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; const item = items.find(candidate => candidate.id === currentId); item.screen_kind = data.screen_state.screen_kind; syncScreenKind(); preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
+async function load() { try { const a = await api('/api/item?id=' + encodeURIComponent($('items').value)); data = a.data; if (!Number.isInteger(data.moat_row)) throw Error('Restart the review server to use moat card controls.'); revision = a.revision; $('moatActive').value = data.moat_active === true ? 'true' : data.moat_active === false ? 'false' : ''; data.exclude_cells ??= []; data.screen_state ??= {}; data.screen_state.locked_cells ??= []; data.screen_state.reviews ??= {}; $('screenKind').value = data.screen_state.screen_kind ?? ''; for (const [key, id] of Object.entries(ammoInputs)) $(id).value = data.screen_state.ammo?.[key] ?? ''; for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? ''; for (const [section, id] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(id).checked = data.screen_state.reviews[section] === true; renderSoulSlots(data.screen_state.souls); $('fullImage').src = '/api/screen?id=' + encodeURIComponent($('items').value); $('fullLink').href = $('fullImage').src; selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', '); $('split').textContent = 'Session split: ' + data.split; const item = items.find(candidate => candidate.id === currentId); item.screen_kind = data.screen_state.screen_kind; syncScreenKind(); preview(); draw(); dirty = false; showReviewStatus() } catch (e) { status(e.message, true) } }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
 $('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } pendingPieceApprovalId = null; currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
 $('sessions').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return } pendingPieceApprovalId = null; currentSession = $('sessions').value; const list = sessionItems(); currentId = firstPending(list).id; remember(); renderOptions(); load() };
@@ -116,8 +115,7 @@ $('addSoul').onclick = () => { const souls = soulValues(); souls.push(''); rende
 $('screenKind').addEventListener('change', syncScreenKind);
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; data.piece_sides[r][c] = data.board[r][c] === 'empty' ? null : data.board[r][c] === 'player_king' ? 'ally' : data.piece_sides[r][c] ?? 'enemy'; dirty = true; draw() };
 $('pieceSide').onchange = () => { const [r, c] = selected; data.piece_sides[r][c] = $('pieceSide').value || 'unknown'; dirty = true; draw() };
-$('terrain').onchange = () => { const [r, c] = selected; data.terrain[r][c] = $('terrain').value; dirty = true; draw() };
-$('terrainRow').onclick = () => { data.terrain[selected[0]] = Array(8).fill($('terrain').value); dirty = true; draw() };
+$('moatActive').onchange = () => { const value = $('moatActive').value; data.moat_active = value === '' ? null : value === 'true'; data.terrain = Array.from({ length: 8 }, (_, row) => Array(8).fill(data.moat_active === null ? 'unknown' : data.moat_active && row === data.moat_row ? 'moat' : 'normal')); dirty = true; draw() };
 $('excluded').onchange = () => { const [r, c] = selected; data.exclude_cells = data.exclude_cells.filter(x => x[0] !== r || x[1] !== c); if ($('excluded').checked) data.exclude_cells.push([r, c]); dirty = true; draw() };
 for (const id of ['floor', 'crop']) $(id).oninput = () => { dirty = true };
 $('preview').onclick = () => { try { preview() } catch (e) { status(e.message) } };
@@ -162,7 +160,7 @@ async function save(confirmed) {
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
-            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, piece_sides: data.piece_sides, terrain: data.terrain, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, piece_reviewed: pieceReviewed })
+            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, piece_sides: data.piece_sides, terrain: data.terrain, moat_active: data.moat_active, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, piece_reviewed: pieceReviewed })
         });
         revision = result.revision;
         data.confirmed = result.confirmed;

@@ -14,7 +14,7 @@ import webbrowser
 import cv2
 
 from ..collection.dataset import CLASSES, group_split
-from ..collection.board_metadata import board_metadata
+from ..collection.board_metadata import board_metadata, terrain_source, MOAT_ROW
 from ..collection.images import normalize
 from ..collection.prepare import prepare_session
 from ..collection.screen_state import propose
@@ -162,11 +162,14 @@ def save_item(collection, payload):
     board = payload['board']
     if not isinstance(board, list) or len(board) != 8 or any(not isinstance(row, list) or len(row) != 8 or any(v not in CLASSES for v in row) for row in board):
         raise ValueError('Board must contain 8x8 valid labels')
-    piece_sides, terrain = board_metadata({
+    context = {
         'board': board,
         'piece_sides': payload.get('piece_sides', current.get('piece_sides')),
         'terrain': payload.get('terrain', current.get('terrain')),
-    })
+    }
+    if 'moat_active' in payload or 'moat_active' in current:
+        context['moat_active'] = payload.get('moat_active', current.get('moat_active'))
+    piece_sides, terrain = board_metadata(context)
     floor = payload.get('floor')
     if floor is not None and (type(floor) is not int or floor < 1):
         raise ValueError('Floor must be a positive integer')
@@ -202,6 +205,9 @@ def save_item(collection, payload):
     piece_review = {'reviewed': confirmed, 'reviewed_at': reviewed_at if confirmed else None}
     current.update(screen_state=screen_state, piece_review=piece_review, board=board, floor=floor, split=split, confirmed=confirmed, game_crop=payload['game_crop'], exclude_cells=excluded)
     current.update(piece_sides=piece_sides, terrain=terrain)
+    if 'moat_active' in context:
+        current['moat_active'] = context['moat_active']
+    current['terrain_source'] = terrain_source(context)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(current, indent=2) + '\n')
     temporary.replace(path)
@@ -248,6 +254,8 @@ def make_server(collection, port=0):
                 query = parse_qs(request.query)
                 path, data, image, revision = load_item(collection, query['id'][0])
                 if route == '/api/item':
+                    data['moat_row'] = MOAT_ROW
+                    data['terrain_source'] = terrain_source(data)
                     data['piece_sides'], data['terrain'] = board_metadata(data)
                     data['screen_state'] = validate_screen_state(data.get('screen_state', {}))
                     data['piece_review'] = validate_piece_review(data)

@@ -10,12 +10,26 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from shotgun_king_rl.collection.board_metadata import board_metadata, MOAT_MOVEMENT
+from shotgun_king_rl.collection.board_metadata import board_metadata, MOAT_MOVEMENT, terrain_from_moat, terrain_source
 from shotgun_king_rl.collection.dataset import build_dataset
 from shotgun_king_rl.review.server import load_item, save_item
 
 
 class BoardMetadataTests(unittest.TestCase):
+    def test_card_state_derives_fixed_row_and_keeps_unknown_distinct(self):
+        for active in (True, False, None):
+            with self.subTest(active=active):
+                data = {'board': self.board(), 'moat_active': active,
+                        'terrain': [['moat'] * 8 for _ in range(8)]}
+                _, terrain = board_metadata(data)
+                self.assertEqual(terrain, terrain_from_moat(active))
+                self.assertEqual(sum(cell == 'moat' for row in terrain for cell in row), 8 if active is True else 0)
+                self.assertEqual(terrain[0][0], 'unknown' if active is None else 'normal')
+                self.assertEqual(terrain_source(data), 'unknown' if active is None else 'moat_card')
+        for invalid in (0, 1, 'false', [], {}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                terrain_from_moat(invalid)
+
     def board(self):
         board = [['empty'] * 8 for _ in range(8)]
         board[7][3] = 'player_king'
@@ -76,6 +90,20 @@ class BoardMetadataTests(unittest.TestCase):
             data.update(revision=result['revision'], piece_reviewed=False)
             data['terrain'][4][0] = 'normal'
             self.assertFalse(save_item(collection, data)['confirmed'])
+            # The server, not a stale client grid, determines card-derived terrain.
+            _, saved_data, _, revision = load_item(collection, relative)
+            saved_data.update(id=relative, revision=revision, moat_active=True, confirmed=True, piece_reviewed=True)
+            saved_data['terrain'] = [['normal'] * 8 for _ in range(8)]
+            saved = save_item(collection, saved_data)
+            derived = json.loads(annotation.read_text())
+            self.assertEqual(derived['terrain'], terrain_from_moat(True))
+            self.assertEqual(derived['terrain_source'], 'moat_card')
+            build_dataset(collection / 'sessions', collection / 'derived_dataset')
+            records = [json.loads(line) for line in (collection / 'derived_dataset/manifest.jsonl').read_text().splitlines()]
+            self.assertTrue(all(row['moat_active'] and row['terrain_source'] == 'moat_card' for row in records))
+            saved_data.update(revision=saved['revision'], moat_active=False, piece_reviewed=False)
+            self.assertFalse(save_item(collection, saved_data)['confirmed'])
+            self.assertEqual(json.loads(annotation.read_text())['terrain'], terrain_from_moat(False))
 
 
 if __name__ == '__main__':
