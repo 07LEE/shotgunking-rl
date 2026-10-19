@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[3]
 PIECES_DIR = str(ROOT / "assets" / "pieces")
 _TEMPLATES = {}   # {piece_id: list of 45x45 uint8 grayscale signals}
 _TEMPLATES_LOADED = False
+_TEMPLATE_FEATURES = {}
 _PREV_BOARD_IMG = None
 _PREV_STATE_MATRIX = None
 _PREV_INCLUDE_SPECIAL_KNIGHTS = None
@@ -40,6 +41,7 @@ def _load_templates():
     _TEMPLATES_LOADED = True
     if cv2 is None or np is None:
         return
+    _TEMPLATE_FEATURES.clear()
 
     # ID 7 is only used by opt-in recognition, never legacy observations.
     for piece_id in range(1, 8):
@@ -64,7 +66,9 @@ def _load_templates():
                         if img is not None:
                             # Raw cell patches and extracted signals are different formats.
                             resized = _extract_signal(img) if img.shape == (65, 65) else cv2.resize(img, (45, 45))
-                            _TEMPLATES[piece_id].append(resized.astype(np.float32))
+                            template = resized.astype(np.float32)
+                            _TEMPLATES[piece_id].append(template)
+                            _template_features(template)
                 except ValueError:
                     pass
         # for pid in range(1, 7):
@@ -223,9 +227,26 @@ def crop_chessboard(img):
         return None
 
 
-def _shifted_template_score(query, template):
+def _template_features(template):
+    """Cache immutable loaded templates; replacement arrays get new features."""
+    key = id(template)
+    cached = _TEMPLATE_FEATURES.get(key)
+    if cached is None:
+        edges = cv2.morphologyEx(
+            template, cv2.MORPH_GRADIENT, np.ones((3, 3), dtype=np.uint8)
+        )
+        cached = (template, edges, template.std(), edges.std())
+        _TEMPLATE_FEATURES[key] = cached
+    return cached[1:]
+
+
+def _shifted_template_score(query, template, *, query_std=None, template_std=None):
     """Compare an uncertain cell allowing at most two pixels of translation."""
-    if query.std() == 0 or template.std() == 0:
+    if query_std is None:
+        query_std = query.std()
+    if template_std is None:
+        template_std = template.std()
+    if query_std == 0 or template_std == 0:
         return -1.0
     padded = cv2.copyMakeBorder(query, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
     return float(cv2.matchTemplate(padded, template, cv2.TM_CCOEFF_NORMED).max())
@@ -329,6 +350,8 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
             # whether the signal emphasizes a dark border or a bright interior.
             kernel = np.ones((3, 3), dtype=np.uint8)
             patch_edges = cv2.morphologyEx(patch_f, cv2.MORPH_GRADIENT, kernel)
+            patch_std = patch_f.std()
+            patch_edges_std = patch_edges.std()
 
             for piece_id in piece_ids:
                 templates = _TEMPLATES.get(piece_id, [])
@@ -339,8 +362,8 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
                         cv2.TM_CCOEFF_NORMED,
                     )
                     score = float(res[0][0])
-                    template_edges = cv2.morphologyEx(tmpl, cv2.MORPH_GRADIENT, kernel)
-                    if np.std(patch_edges) > 0 and np.std(template_edges) > 0:
+                    template_edges, _, template_edges_std = _template_features(tmpl)
+                    if patch_edges_std > 0 and template_edges_std > 0:
                         edge_score = float(cv2.matchTemplate(
                             patch_edges, template_edges, cv2.TM_CCOEFF_NORMED
                         )[0, 0])
@@ -362,10 +385,10 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
             if best_score < 0.50:
                 for piece_id in range(2, 7):
                     for tmpl in _TEMPLATES.get(piece_id, []):
-                        template_edges = cv2.morphologyEx(tmpl, cv2.MORPH_GRADIENT, kernel)
+                        template_edges, template_std, template_edges_std = _template_features(tmpl)
                         score = max(
-                            _shifted_template_score(patch_f, tmpl),
-                            _shifted_template_score(patch_edges, template_edges),
+                            _shifted_template_score(patch_f, tmpl, query_std=patch_std, template_std=template_std),
+                            _shifted_template_score(patch_edges, template_edges, query_std=patch_edges_std, template_std=template_edges_std),
                         )
                         if score > best_score:
                             best_score, best_piece = score, piece_id

@@ -15,6 +15,47 @@ import analyzer
 from shotgun_king_rl.vision import analyzer as vision_analyzer
 
 
+class TemplateFeatureCacheTests(unittest.TestCase):
+    def tearDown(self):
+        vision_analyzer._TEMPLATE_FEATURES.clear()
+
+    def test_features_are_reused_and_replacement_is_recomputed(self):
+        template = np.zeros((45, 45), dtype=np.float32)
+        template[10:30, 15:25] = 255
+        expected = cv2.morphologyEx(template, cv2.MORPH_GRADIENT, np.ones((3, 3), dtype=np.uint8))
+        with patch.object(vision_analyzer.cv2, 'morphologyEx', wraps=cv2.morphologyEx) as morphology:
+            edges, std, edges_std = vision_analyzer._template_features(template)
+            again = vision_analyzer._template_features(template)
+            self.assertIs(edges, again[0])
+            self.assertEqual(morphology.call_count, 1)
+            replacement = template.copy()
+            replacement[5:10, 5:10] = 120
+            vision_analyzer._template_features(replacement)
+            self.assertEqual(morphology.call_count, 2)
+        np.testing.assert_array_equal(edges, expected)
+        self.assertEqual(std, template.std())
+        self.assertEqual(edges_std, expected.std())
+
+    def test_template_reload_discards_previous_features(self):
+        template = np.zeros((45, 45), dtype=np.float32)
+        vision_analyzer._template_features(template)
+        with patch.object(vision_analyzer, '_TEMPLATES_LOADED', False), patch.object(
+            vision_analyzer, '_TEMPLATES', {}
+        ), patch.object(vision_analyzer.os.path, 'exists', return_value=False):
+            vision_analyzer._load_templates()
+        self.assertEqual(vision_analyzer._TEMPLATE_FEATURES, {})
+
+    def test_cached_deviations_preserve_shift_scores_and_blank_rejection(self):
+        rng = np.random.default_rng(10)
+        template = rng.uniform(0, 255, (45, 45)).astype(np.float32)
+        for query in (template.copy(), np.zeros_like(template)):
+            score = vision_analyzer._shifted_template_score(query, template)
+            cached = vision_analyzer._shifted_template_score(
+                query, template, query_std=query.std(), template_std=template.std()
+            )
+            self.assertEqual(score, cached)
+
+
 class ShiftedTemplateTests(unittest.TestCase):
     def signals(self, displacement):
         template = np.zeros((45, 45), dtype=np.float32)
