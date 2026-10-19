@@ -8,7 +8,7 @@ except ImportError:
     np = None
 
 
-def check_retry_popup(img):
+def check_retry_popup(img, *, board_gray=None, gray=None):
     """Return whether the retry popup geometry is present."""
     if img is None or cv2 is None or np is None:
         return False
@@ -20,14 +20,16 @@ def check_retry_popup(img):
 
         from .analyzer import crop_chessboard
 
-        board = crop_chessboard(img)
-        if board is None:
-            return False
-        board_gray = cv2.cvtColor(board, cv2.COLOR_BGR2GRAY)
+        if board_gray is None:
+            board = crop_chessboard(img)
+            if board is None:
+                return False
+            board_gray = cv2.cvtColor(board, cv2.COLOR_BGR2GRAY)
         if board_gray.mean() > 60.0:
             return False
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if gray is None:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, threshold = cv2.threshold(
             gray,
             0,
@@ -62,7 +64,7 @@ def check_retry_popup(img):
         return False
 
 
-def check_card_selection_screen(img):
+def check_card_selection_screen(img, *, gray=None):
     """Return whether all known card-border sample points are bright."""
     if img is None or cv2 is None or np is None:
         return False
@@ -71,7 +73,8 @@ def check_card_selection_screen(img):
         height, width = img.shape[:2]
         if height != 720 or width != 1280:
             img = cv2.resize(img, (1280, 720))
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if gray is None:
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         card_borders = (
             (220, 545), (220, 619), (328, 545), (328, 619),
             (220, 656), (220, 730), (328, 656), (328, 730),

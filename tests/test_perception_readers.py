@@ -32,7 +32,9 @@ class PerceptionReaderTests(unittest.TestCase):
         ) as read_board:
             result = TemplatePieceReader().read(image)
         self.assertEqual(read_board.call_count, 1)
-        self.assertEqual(read_board.call_args.kwargs, {"include_special_knights": True})
+        self.assertTrue(read_board.call_args.kwargs["include_special_knights"])
+        self.assertEqual(read_board.call_args.kwargs["board_img"].shape, (520, 520, 3))
+        self.assertEqual(read_board.call_args.kwargs["board_gray"].shape, (520, 520))
         np.testing.assert_array_equal(read_board.call_args.args[0], image)
         self.assertEqual(result.status, PredictionStatus.REJECTED)
         self.assertEqual(result.reason, "unsupported_runtime_piece:special_knight")
@@ -120,7 +122,7 @@ class PerceptionReaderTests(unittest.TestCase):
         board = np.zeros((8, 8), dtype=int)
         board[7, 4] = 1
 
-        def assert_normalized(screen):
+        def assert_normalized(screen, **prepared):
             self.assertEqual(screen.shape, (720, 1280, 3))
             return board
 

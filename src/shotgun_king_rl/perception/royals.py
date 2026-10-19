@@ -65,9 +65,9 @@ class RoyalTemplates:
             return 6
         return ranked[0][0]
 
-    def refine(self, image, board):
+    def refine(self, image, board, *, board_gray=None):
         result = board.copy()
-        gray = cv2.cvtColor(analyzer.crop_chessboard(image), cv2.COLOR_BGR2GRAY)
+        gray = board_gray if board_gray is not None else cv2.cvtColor(analyzer.crop_chessboard(image), cv2.COLOR_BGR2GRAY)
         for row, col in np.argwhere(board == 6):
             signal = analyzer._extract_signal(gray[row*65:(row+1)*65, col*65:(col+1)*65])
             result[row, col] = self.classify(signal)

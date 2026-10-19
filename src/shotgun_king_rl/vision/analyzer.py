@@ -445,13 +445,15 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
         return 0
 
 
-def get_state_matrix(img, *, include_special_knights=False):
+def get_state_matrix(img, *, include_special_knights=False, board_img=None, board_gray=None):
     """Segments the chessboard image and returns an 8x8 integer state matrix.
 
     Args:
         img: Full 1280x720 BGR game screen screenshot.
         include_special_knights: Opt into ID 7 for annotation and evaluation.
             The legacy runtime and its checkpoints do not support this ID.
+        board_img: Optional preprocessed 520x520 board for this image.
+        board_gray: Optional grayscale conversion of that board.
 
     Returns:
         An 8x8 numpy array of piece IDs (0 through 6, or 7 when opted in).
@@ -459,12 +461,14 @@ def get_state_matrix(img, *, include_special_knights=False):
     global _PREV_BOARD_IMG, _PREV_STATE_MATRIX, _PREV_INCLUDE_SPECIAL_KNIGHTS
     state_matrix = np.zeros((8, 8), dtype=int)
 
-    board_img = crop_chessboard(img)
+    if board_img is None:
+        board_img = crop_chessboard(img)
     if board_img is None:
         print("Error: Could not crop chessboard for state extraction.")
         return state_matrix
 
-    board_gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
+    if board_gray is None:
+        board_gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
 
     # Slicing width and height (520 / 8 = 65)
     cell_size = 65

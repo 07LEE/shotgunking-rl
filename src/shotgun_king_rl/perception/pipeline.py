@@ -6,6 +6,8 @@ from typing import Any, Protocol, TypeVar
 
 import numpy as np
 
+from .frame import PreparedFrame, read_frame
+
 from .types import (
     AmmoReading,
     CombatStatsReading,
@@ -34,7 +36,8 @@ class PerceptionPipeline:
     combat_stats_reader: Reader[CombatStatsReading]
 
     def observe(self, image: Any) -> FusedPerception:
-        screen = self.screen_reader.read(image)
+        frame = PreparedFrame(image)
+        screen = read_frame(self.screen_reader, frame)
         if not screen.is_accepted:
             return FusedPerception(
                 screen_kind=None,
@@ -57,9 +60,9 @@ class PerceptionPipeline:
                 sources=(screen.source,),
             )
 
-        board = self.board_reader.read(image)
-        ammo = self.ammo_reader.read(image)
-        combat_stats = self.combat_stats_reader.read(image)
+        board = read_frame(self.board_reader, frame)
+        ammo = read_frame(self.ammo_reader, frame)
+        combat_stats = read_frame(self.combat_stats_reader, frame)
         issues = []
         accepted_board = None
         accepted_ammo = None

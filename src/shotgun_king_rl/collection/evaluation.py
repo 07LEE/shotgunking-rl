@@ -12,6 +12,7 @@ import numpy as np
 from .audit import SPLITS
 from .images import normalize
 from ..perception import OverlayScreenReader, RedPixelAmmoReader, ScreenKind, TemplatePieceReader
+from ..perception.frame import PreparedFrame, read_frame
 from ..vision import analyzer
 
 
@@ -276,6 +277,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         if image is None:
             raise ValueError(f"{path}: unreadable image")
         screen = normalize(image, data.get("game_crop"))
+        frame = PreparedFrame(screen, normalized=True)
         selected = (buckets["overall"], buckets[split])
         for bucket in selected:
             bucket.annotations += 1
@@ -284,7 +286,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         expected_kind = state.get("screen_kind")
         if reviews.get("screen_kind") is True and expected_kind is not None:
             analyzer.reset_analyzer_cache()
-            screen_prediction = screen_reader.read(screen)
+            screen_prediction = read_frame(screen_reader, frame)
             predicted_kind = _screen_label(screen_prediction)
             for bucket in selected:
                 bucket.screen_statuses[screen_prediction.status.value] += 1
@@ -294,7 +296,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         piece_correct = False
         if data.get("confirmed") is True and expected_kind == "gameplay":
             analyzer.reset_analyzer_cache()
-            piece_prediction = piece_reader.read(screen)
+            piece_prediction = read_frame(piece_reader, frame)
             board = data.get("board")
             if not _valid_expected_board(board):
                 raise ValueError(f"{path}: board must contain 8x8 string labels")
@@ -307,7 +309,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         ammo_correct = False
         ammo = state.get("ammo") or {}
         if reviews.get("ammo") is True and _valid_expected_ammo(ammo):
-            ammo_prediction = ammo_reader.read(screen)
+            ammo_prediction = read_frame(ammo_reader, frame)
             reading = ammo_prediction.value
             ammo_correct = (
                 getattr(reading, "loaded", None) == ammo["loaded"]
