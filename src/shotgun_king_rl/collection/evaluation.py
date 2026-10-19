@@ -25,6 +25,8 @@ PIECE_LABELS = {
     5: "rook",
     6: "queen_or_white_king",
     7: "special_knight",
+    8: "queen",
+    9: "white_king",
 }
 
 
@@ -238,7 +240,7 @@ class EvaluationBucket:
 def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_reader=None):
     """Return deterministic metrics for reviewed labels without changing data."""
     sessions_dir = Path(sessions_dir)
-    piece_reader = piece_reader or TemplatePieceReader()
+    piece_reader = piece_reader or TemplatePieceReader.from_collection(Path(sessions_dir).parent)
     ammo_reader = ammo_reader or RedPixelAmmoReader()
     screen_reader = screen_reader or OverlayScreenReader()
     buckets = {name: EvaluationBucket() for name in ("overall", *SPLITS)}
@@ -327,7 +329,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
             "screen_kind": getattr(screen_reader, "source", screen_reader.__class__.__name__),
             "combat_stats": "not_implemented",
         },
-        "piece_label_note": "Strict metrics preserve queen, white_king, and special_knight. Legacy-compatible metrics merge queen and white_king into royal because analyzer ID 6 cannot distinguish them.",
+        "piece_label_note": "Strict metrics preserve queen (8), white_king (9), and special_knight (7). Unresolved royals remain ID 6. Legacy-compatible metrics merge royal kinds; extended IDs are rejected for legacy policy use.",
         "overall": buckets["overall"].report(),
         "splits": {split: buckets[split].report() for split in SPLITS},
     }

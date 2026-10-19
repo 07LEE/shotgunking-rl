@@ -55,6 +55,21 @@ def create_reviewed_screen(collection, split="train"):
 
 
 class ReaderEvaluationTests(unittest.TestCase):
+    def test_distinct_queen_is_scored_even_when_policy_rejects_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            create_reviewed_screen(collection)
+            board = np.zeros((8, 8), dtype=int)
+            board[0, 0], board[7, 4] = 8, 1
+            report = evaluate_readers(
+                collection / "sessions",
+                piece_reader=FakeReader(Prediction.rejected(
+                    board, source="pieces:test", reason="unsupported_runtime_piece:distinct_royal"
+                ), "pieces:test"),
+            )
+        self.assertEqual(report["overall"]["pieces"]["strict"]["classes"]["queen"]["recall"], 1.0)
+        self.assertEqual(report["overall"]["combined"]["accepted_rate"], 0.0)
+
     def test_rejected_special_knight_remains_visible_in_accuracy_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)

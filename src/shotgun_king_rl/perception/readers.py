@@ -15,6 +15,17 @@ class TemplatePieceReader:
 
     source = "piece-templates:v2"
 
+    def __init__(self, royal_templates=None):
+        self.royal_templates = royal_templates
+        if royal_templates is not None:
+            self.source = "piece-templates:royals-v1"
+
+    @classmethod
+    def from_collection(cls, collection):
+        from .royals import RoyalTemplates
+
+        return cls(RoyalTemplates.from_collection(collection))
+
     def read(self, image) -> Prediction[np.ndarray]:
         if not _valid_image(image):
             return Prediction.unknown(source=self.source, reason="invalid_image")
@@ -23,6 +34,8 @@ class TemplatePieceReader:
             return Prediction.unknown(source=self.source, reason="board_not_found")
 
         board = analyzer.get_state_matrix(image, include_special_knights=True)
+        if self.royal_templates is not None:
+            board = self.royal_templates.refine(image, board)
         king_count = int(np.count_nonzero(board == 1))
         if king_count != 1:
             return Prediction.rejected(
@@ -33,6 +46,14 @@ class TemplatePieceReader:
         if np.any(board == 7):
             return Prediction.rejected(
                 board, source=self.source, reason="unsupported_runtime_piece:special_knight"
+            )
+        if np.any(np.isin(board, (8, 9))):
+            return Prediction.rejected(
+                board, source=self.source, reason="unsupported_runtime_piece:distinct_royal"
+            )
+        if self.royal_templates is not None and np.any(board == 6):
+            return Prediction.rejected(
+                board, source=self.source, reason="ambiguous_royal_kind"
             )
         return Prediction.accepted(board, source=self.source)
 
