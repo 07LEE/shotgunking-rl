@@ -47,7 +47,7 @@ class RoyalReaderTests(unittest.TestCase):
         board[7, 4] = 1
         for kind in (6, 8, 9):
             board[0, 0] = kind
-            with patch("shotgun_king_rl.perception.readers.analyzer.get_state_matrix", return_value=board):
+            with patch("shotgun_king_rl.perception.frame.analyzer.get_state_matrices", return_value=(board, board)):
                 reader = TemplatePieceReader(self.reader)
                 with patch.object(self.reader, "refine", return_value=board):
                     prediction = reader.read(image)

@@ -205,6 +205,48 @@ class SpecialKnightTests(unittest.TestCase):
                 )
                 np.testing.assert_array_equal(board, np.full((8, 8), 7 if extended else 3))
 
+    def test_dual_results_preserve_special_selection_before_legacy_alignment(self):
+        gray = np.full((65, 65), 220, dtype=np.uint8)
+        image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        signal = np.zeros((45, 45), dtype=np.uint8)
+        signal[10:33, 18:20] = 255
+        signal[10:12, 14:26] = 255
+        shifted = np.zeros_like(signal)
+        shifted[:, 2:] = signal[:, :-2]
+        templates = {key: [] for key in range(1, 8)}
+        templates[4] = [signal.astype(np.float32)]
+        templates[7] = [shifted.astype(np.float32)]
+        with patch.object(vision_analyzer, '_TEMPLATES', templates), patch.object(
+            vision_analyzer, '_TEMPLATES_LOADED', True
+        ), patch.object(vision_analyzer, '_extract_signal', return_value=shifted) as extract:
+            self.assertEqual(vision_analyzer.classify_patch_modes(image, gray), (4, 7))
+            self.assertEqual(extract.call_count, 1)
+
+    def test_dual_results_keep_legacy_fallback_without_legacy_templates(self):
+        gray = np.full((65, 65), 220, dtype=np.uint8)
+        gray[20:45, 30:33] = 150
+        image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        templates = {key: [] for key in range(1, 8)}
+        templates[7] = [vision_analyzer._extract_signal(gray).astype(np.float32)]
+        with patch.object(vision_analyzer, '_TEMPLATES', templates), patch.object(
+            vision_analyzer, '_TEMPLATES_LOADED', True
+        ):
+            self.assertEqual(vision_analyzer.classify_patch_modes(image, gray), (0, 7))
+            templates[3] = templates[7]
+            self.assertEqual(vision_analyzer.classify_patch_modes(image, gray), (3, 3))
+
+    def test_dual_board_classifies_each_cell_once_without_temporal_cache(self):
+        image = np.full((720, 1280, 3), 220, dtype=np.uint8)
+        with patch.object(vision_analyzer, 'classify_patch_modes', return_value=(3, 7)) as classify:
+            legacy, extended = vision_analyzer.get_state_matrices(image)
+            self.assertEqual(classify.call_count, 64)
+            np.testing.assert_array_equal(legacy, np.full((8, 8), 3))
+            np.testing.assert_array_equal(extended, np.full((8, 8), 7))
+            legacy[:] = 0
+            np.testing.assert_array_equal(extended, np.full((8, 8), 7))
+            vision_analyzer.get_state_matrices(image)
+            self.assertEqual(classify.call_count, 128)
+
 
 @unittest.skipUnless((ROOT / "data/test_fixtures/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists() and (ROOT / "assets/pieces").is_dir(), "Private fixtures and piece templates are required")
 class BoardRegressionTests(unittest.TestCase):

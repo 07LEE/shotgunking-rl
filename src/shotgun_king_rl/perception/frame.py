@@ -32,6 +32,12 @@ class PreparedFrame:
     def gray(self):
         return cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY) if self.image is not None else None
 
+    @cached_property
+    def boards(self):
+        return analyzer.get_state_matrices(
+            self.image, board_img=self.board_image, board_gray=self.board_gray
+        )
+
 
 def read_frame(reader, frame):
     """Allow third-party readers to retain their ordinary image interface."""

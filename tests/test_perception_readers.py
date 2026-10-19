@@ -27,12 +27,11 @@ class PerceptionReaderTests(unittest.TestCase):
         board[7, 4] = 1
         board[0, 0] = 7
         with patch(
-            "shotgun_king_rl.perception.readers.analyzer.get_state_matrix",
-            return_value=board,
+            "shotgun_king_rl.perception.frame.analyzer.get_state_matrices",
+            return_value=(board, board),
         ) as read_board:
             result = TemplatePieceReader().read(image)
         self.assertEqual(read_board.call_count, 1)
-        self.assertTrue(read_board.call_args.kwargs["include_special_knights"])
         self.assertEqual(read_board.call_args.kwargs["board_img"].shape, (520, 520, 3))
         self.assertEqual(read_board.call_args.kwargs["board_gray"].shape, (520, 520))
         np.testing.assert_array_equal(read_board.call_args.args[0], image)
@@ -78,11 +77,11 @@ class PerceptionReaderTests(unittest.TestCase):
         image = np.zeros((720, 1280, 3), dtype=np.uint8)
         board = np.zeros((8, 8), dtype=int)
         with patch(
-            "shotgun_king_rl.perception.readers.analyzer.crop_chessboard",
+            "shotgun_king_rl.perception.frame.analyzer.crop_chessboard",
             return_value=np.zeros((520, 520, 3), dtype=np.uint8),
         ), patch(
-            "shotgun_king_rl.perception.readers.analyzer.get_state_matrix",
-            return_value=board,
+            "shotgun_king_rl.perception.frame.analyzer.get_state_matrices",
+            return_value=(board, board),
         ):
             result = TemplatePieceReader().read(image)
 
@@ -124,7 +123,7 @@ class PerceptionReaderTests(unittest.TestCase):
 
         def assert_normalized(screen, **prepared):
             self.assertEqual(screen.shape, (720, 1280, 3))
-            return board
+            return board, board
 
         with patch(
             "shotgun_king_rl.perception.readers.screens.check_retry_popup",
@@ -136,7 +135,7 @@ class PerceptionReaderTests(unittest.TestCase):
             "shotgun_king_rl.perception.readers.screens.check_gameplay_board",
             return_value=True,
         ), patch(
-            "shotgun_king_rl.perception.readers.analyzer.get_state_matrix",
+            "shotgun_king_rl.perception.frame.analyzer.get_state_matrices",
             side_effect=assert_normalized,
         ):
             result = OverlayScreenReader().read(image)

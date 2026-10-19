@@ -253,6 +253,14 @@ def _shifted_template_score(query, template, *, query_std=None, template_std=Non
 
 
 def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights=False):
+    """Return one mode's cell ID while preserving the legacy public interface."""
+    legacy, extended = classify_patch_modes(
+        patch, patch_gray, row, col, include_special_knights=include_special_knights
+    )
+    return extended if include_special_knights else legacy
+
+
+def classify_patch_modes(patch, patch_gray, row=-1, col=-1, *, include_special_knights=True):
     """Classifies a single 65x65 cell patch on the board to identify its piece.
 
     Prioritize template matching, fallback to geometry-based logic if templates are missing.
@@ -262,13 +270,19 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
         patch_gray: A 65x65 Grayscale image representing a single cell.
 
     Returns:
-        An integer representing the cell state:
+        A pair of (legacy ID, extended ID) sharing all common comparisons:
         0: Empty, 1: Black King (Player),
         2: Pawn, 3: Knight, 4: Bishop, 5: Rook, 6: Queen/King.
-        Opt-in recognition also returns 7: Special Knight (not a legacy ID).
+        The extended result can be 7: Special Knight (not a legacy ID).
+        include_special_knights=False skips special templates entirely.
     """
+    special_piece = None
+
+    def results(legacy_piece):
+        return legacy_piece, legacy_piece if special_piece is None else special_piece
+
     if patch is None or patch_gray is None or cv2 is None or np is None:
-        return 0
+        return results(0)
 
     try:
         _load_templates()
@@ -320,12 +334,12 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
                     is_king = True
 
         if is_king:
-            return 1
+            return results(1)
 
         # Check signal strength to bypass empty tiles regardless of background tile color
         # print(f"  [DEBUG check] signal max: {signal.max()}")
         if signal.max() == 0:
-            return 0
+            return results(0)
 
         # Use background-subtracted signal image for contour extraction to eliminate tile color interference
         _, thresh_white = cv2.threshold(signal, 100, 255, cv2.THRESH_BINARY)
@@ -333,7 +347,7 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
             thresh_white, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
         if not contours_white:
-            return 0
+            return results(0)
 
         c_white = max(contours_white, key=cv2.contourArea)
         area_white = cv2.contourArea(c_white)
@@ -377,7 +391,7 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
             # Special-knight examples are scarce and resemble regular knights.
             # Require both a strong match and separation from legacy classes.
             if special_score >= 0.90 and special_score - best_score >= 0.10:
-                best_score, best_piece = special_score, 7
+                special_piece = 7 if np.count_nonzero(gray > 180) >= 30 else 0
 
             # Animation and resampling can slightly displace the silhouette.
             # Retry uncertain legacy classes before guessing from geometry;
@@ -398,29 +412,29 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
                 # The signal includes dark outlines on light tiles. Inspect the
                 # bright piece interior rather than averaging those outlines.
                 if np.count_nonzero(gray > 180) >= 30:
-                    return best_piece
+                    return results(best_piece)
                 else:
-                    return 0 # reject dark pieces (e.g. gun barrel)
+                    return results(0) # reject dark pieces (e.g. gun barrel)
 
         # -- 4. Geometry fallback (missing templates or low confidence) --
         # Thin outlines on light tiles can have small disconnected contours.
         # Reject small noise only after a matching template has had a chance.
         if area_white < 150.0:
-            return 0
+            return results(0)
 
         x, y, w, h = cv2.boundingRect(c_white)
 
         # [GUARD] scanline noise: Empty tile artifact if h is too small
         if h <= 5:
-            return 0
+            return results(0)
 
         # [GUARD] Empty light/dark tile artifact if width is almost cell size
         if w >= 40 and area_white < 300:
-            return 0
+            return results(0)
 
         # Color Guard for fallback pieces (must be bright)
         if np.count_nonzero(gray > 180) < 30:
-            return 0
+            return results(0)
 
         M = cv2.moments(c_white)
         cx = M["m10"] / M["m00"] if M["m00"] != 0 else x + w / 2.0
@@ -428,21 +442,21 @@ def classify_patch(patch, patch_gray, row=-1, col=-1, *, include_special_knights
 
         # [FIX] check bias (Knight asymmetry) before height threshold
         if h <= 28:
-            return 2    # Pawn
+            return results(2)    # Pawn
         elif bias >= 2.0:
-            return 3    # Knight (asymmetric horse head)
+            return results(3)    # Knight (asymmetric horse head)
         elif h >= 40:
-            return 6    # Queen / King (very large piece)
+            return results(6)    # Queen / King (very large piece)
         elif w / float(h) >= 1.1:
-            return 5    # Rook (wide and flat castle shape)
+            return results(5)    # Rook (wide and flat castle shape)
         elif 29 <= h <= 39:
-            return 4    # Bishop (symmetric medium height)
+            return results(4)    # Bishop (symmetric medium height)
         else:
-            return 6    # safe fallback
+            return results(6)    # safe fallback
 
     except Exception as e:
         print(f"Failed to classify patch: {e}")
-        return 0
+        return 0, 0
 
 
 def get_state_matrix(img, *, include_special_knights=False, board_img=None, board_gray=None):
@@ -500,6 +514,28 @@ def get_state_matrix(img, *, include_special_knights=False, board_img=None, boar
     _PREV_STATE_MATRIX = state_matrix.copy()
     _PREV_INCLUDE_SPECIAL_KNIGHTS = include_special_knights
     return state_matrix
+
+
+def get_state_matrices(img, *, board_img=None, board_gray=None):
+    """Compute legacy and extended boards together for one exact frame.
+
+    This frame-local path does not read or update the legacy temporal cache.
+    """
+    legacy = np.zeros((8, 8), dtype=int)
+    extended = np.zeros((8, 8), dtype=int)
+    if board_img is None:
+        board_img = crop_chessboard(img)
+    if board_img is None:
+        return legacy, extended
+    if board_gray is None:
+        board_gray = cv2.cvtColor(board_img, cv2.COLOR_BGR2GRAY)
+    for row in range(8):
+        for col in range(8):
+            cell = (slice(row * 65, (row + 1) * 65), slice(col * 65, (col + 1) * 65))
+            legacy[row, col], extended[row, col] = classify_patch_modes(
+                board_img[cell], board_gray[cell], row, col
+            )
+    return legacy, extended
 
 
 def extract_ammo_count(img):

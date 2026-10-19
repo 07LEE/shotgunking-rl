@@ -3,7 +3,6 @@
 import numpy as np
 
 from ..vision import ammo as ammo_vision
-from ..vision import analyzer
 from ..vision import screens
 from .frame import PreparedFrame
 from .types import AmmoReading, Prediction, ScreenKind
@@ -35,10 +34,7 @@ class TemplatePieceReader:
         if image is None or frame.board_image is None:
             return Prediction.unknown(source=self.source, reason="board_not_found")
 
-        board = analyzer.get_state_matrix(
-            image, include_special_knights=True,
-            board_img=frame.board_image, board_gray=frame.board_gray,
-        )
+        board = frame.boards[1].copy()
         if self.royal_templates is not None:
             board = self.royal_templates.refine(image, board, board_gray=frame.board_gray)
         king_count = int(np.count_nonzero(board == 1))
@@ -101,7 +97,7 @@ class OverlayScreenReader:
             return Prediction.accepted(ScreenKind.RETRY, source=self.source)
         if screens.check_card_selection_screen(image, gray=frame.gray):
             return Prediction.accepted(ScreenKind.CARD_SELECTION, source=self.source)
-        board = analyzer.get_state_matrix(image, board_img=frame.board_image, board_gray=frame.board_gray)
+        board = frame.boards[0]
         if screens.check_gameplay_board(image) and int(np.count_nonzero(board == 1)) >= 1:
             return Prediction.accepted(ScreenKind.GAMEPLAY, source=self.source)
         return Prediction.unknown(
