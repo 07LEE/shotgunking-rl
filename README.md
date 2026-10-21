@@ -24,6 +24,13 @@ The project uses standard Python packaging and does not require a specific packa
 
 Screenshots from the same play session must use one session ID and one train, validation, or test split.
 
+Benchmark reviewed train/validation screens offline before and after a change with the same inputs. Test images are excluded; `--include-hud` also measures the individual combat readers. Reports include predictions, evaluation metrics, source/input hashes, and timings, excluding image loading and reference construction.
+
+```bash
+.venv/bin/python tools/preprocess/benchmark_readers.py --include-hud --output data/collection/reports/benchmark_before.json
+.venv/bin/python tools/preprocess/benchmark_readers.py --include-hud --baseline data/collection/reports/benchmark_before.json --output data/collection/reports/benchmark_after.json
+```
+
 Piece templates, screenshots, annotations, datasets, and model checkpoints remain local and are excluded from Git. Only documentation assets under `docs/assets/` are published.
 
 ## Experimental runtime

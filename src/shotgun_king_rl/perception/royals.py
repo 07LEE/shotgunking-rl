@@ -18,6 +18,7 @@ class RoyalTemplates:
 
     def __init__(self, examples=()):
         self.examples = tuple((kind, signal.copy()) for kind, signal in examples)
+        self._template_stds = tuple(template.std() for _, template in self.examples)
 
     @classmethod
     def from_collection(cls, collection):
@@ -52,8 +53,8 @@ class RoyalTemplates:
         if query.shape != (45, 45) or query.std() < 5:
             return 6
         scores = {}
-        for kind, template in self.examples:
-            if template.shape != query.shape or template.std() < 5:
+        for (kind, template), template_std in zip(self.examples, self._template_stds):
+            if template.shape != query.shape or template_std < 5:
                 continue
             score = float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED)[0, 0])
             scores[kind] = max(scores.get(kind, -1), score)
