@@ -27,6 +27,7 @@ class PenetrationReader:
 
     def __init__(self, examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
+        self._template_stds = tuple(template.std() for _, template in self.examples)
 
     @classmethod
     def from_collection(cls, collection):
@@ -65,8 +66,8 @@ class PenetrationReader:
         if query is None or query.std() < 5:
             return Prediction.unknown(source=self.source, reason="penetration_not_found")
         scores = {}
-        for value, template in self.examples:
-            if template.shape != query.shape or template.std() < 5:
+        for (value, template), template_std in zip(self.examples, self._template_stds):
+            if template.shape != query.shape or template_std < 5:
                 continue
             score = float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED)[0, 0])
             scores[value] = max(scores.get(value, -1), score)
