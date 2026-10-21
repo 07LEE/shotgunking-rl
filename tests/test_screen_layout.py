@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from shotgun_king_rl.vision.layout import detect_game_crop, normalize_game_screen
-from shotgun_king_rl.vision.screens import check_gameplay_board
+from shotgun_king_rl.vision.screens import _board_cell_means, check_gameplay_board
 
 
 class ScreenLayoutTests(unittest.TestCase):
@@ -54,6 +54,35 @@ class ScreenLayoutTests(unittest.TestCase):
 
         self.assertTrue(check_gameplay_board(screen))
         self.assertFalse(check_gameplay_board(np.zeros_like(screen)))
+
+    def test_cell_means_preserve_coordinates_channels_and_strided_inputs(self):
+        for image in (self.game, self.game.astype(np.float32) / 255):
+            board = image[119:631, 383:895]
+            self.assertFalse(board.flags.c_contiguous)
+            expected = np.asarray([
+                [board[r*64:(r+1)*64, c*64:(c+1)*64].mean(axis=(0, 1)) for c in range(8)]
+                for r in range(8)
+            ])
+            np.testing.assert_array_equal(_board_cell_means(board), expected)
+
+    def test_checker_separation_threshold_remains_inclusive(self):
+        for separation, accepted in ((79, False), (80, True), (81, True)):
+            screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+            for row in range(8):
+                for col in range(8):
+                    screen[119+row*64:119+(row+1)*64, 383+col*64:383+(col+1)*64] = (
+                        (50 + separation * ((row+col) % 2), 50, 50)
+                    )
+            self.assertEqual(check_gameplay_board(screen), accepted)
+
+    def test_checker_variation_threshold_remains_inclusive(self):
+        for variation, accepted in ((34, True), (35, True), (36, False)):
+            screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+            for row in range(8):
+                for col in range(8):
+                    value = 50 + 100 * ((row+col) % 2) + (variation if row < 4 else -variation)
+                    screen[119+row*64:119+(row+1)*64, 383+col*64:383+(col+1)*64] = (value, 50, 50)
+            self.assertEqual(check_gameplay_board(screen), accepted)
 
 
 if __name__ == "__main__":

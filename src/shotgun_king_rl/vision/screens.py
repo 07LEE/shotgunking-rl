@@ -86,6 +86,19 @@ def check_card_selection_screen(img, *, gray=None):
         return False
 
 
+def _board_cell_means(board):
+    """Reduce uint8 rows before columns to avoid 64 separate cell scans."""
+    if board.dtype == np.uint8:
+        cells = board.reshape(8, 64, 8, 64, board.shape[2])
+        return cells.mean(axis=1).mean(axis=2)
+    # Preserve the original accumulation order for floating-point inputs.
+    return np.asarray([
+        [board[row * 64:(row + 1) * 64, col * 64:(col + 1) * 64].mean(axis=(0, 1))
+         for col in range(8)]
+        for row in range(8)
+    ])
+
+
 def check_gameplay_board(img):
     """Return whether the calibrated board region has a stable checker pattern."""
     if img is None or cv2 is None or np is None:
@@ -96,13 +109,7 @@ def check_gameplay_board(img):
         if height != 720 or width != 1280:
             img = cv2.resize(img, (1280, 720))
         board = img[119:631, 383:895]
-        cell_means = np.asarray([
-            [
-                board[row * 64:(row + 1) * 64, col * 64:(col + 1) * 64].mean(axis=(0, 1))
-                for col in range(8)
-            ]
-            for row in range(8)
-        ])
+        cell_means = _board_cell_means(board)
         parity = np.indices((8, 8)).sum(axis=0) % 2
         first = cell_means[parity == 0]
         second = cell_means[parity == 1]
