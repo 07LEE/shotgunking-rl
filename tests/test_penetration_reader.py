@@ -12,6 +12,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from shotgun_king_rl.perception.penetration import PenetrationReader, penetration_patch
 from shotgun_king_rl.perception.types import PredictionStatus
+from shotgun_king_rl.perception.hud import stat_context_patch
 
 
 def screen(y=250, seed=7, digits="40%"):
@@ -52,6 +53,24 @@ class PenetrationReaderTests(unittest.TestCase):
         self.assertFalse(result.is_accepted)
         self.assertIsNone(result.value)
 
+    def test_reviewed_zero_requires_both_known_row_and_panel(self):
+        absent = screen()
+        absent[400:600, 270:354] = 0
+        reader = PenetrationReader(zero_examples=[(stat_context_patch(absent), penetration_patch(absent))])
+        self.assertTrue(reader.read(absent).is_accepted)
+        self.assertEqual(reader.read(absent).value, 0)
+        self.assertFalse(reader.read(screen(digits="75%")).is_accepted)
+        different = absent.copy()
+        different[210:235, 270:354] = np.random.default_rng(77).integers(0, 100, (25, 84, 3), dtype=np.uint8)
+        self.assertFalse(reader.read(different).is_accepted)
+        self.assertFalse(reader.read(np.zeros_like(absent)).is_accepted)
+
+    def test_reviewed_zero_conflicting_with_positive_is_ambiguous(self):
+        image = screen()
+        reader = PenetrationReader([(40, penetration_patch(image))],
+                                [(stat_context_patch(image), penetration_patch(image))])
+        self.assertEqual(reader.read(image).reason, 'penetration_ambiguous')
+
     def test_missing_reference_is_unknown(self):
         self.assertEqual(PenetrationReader().read(screen()).reason, 'penetration_no_match')
 
@@ -71,14 +90,20 @@ class PenetrationReaderTests(unittest.TestCase):
                 ('unreviewed', 'train', False, 'gameplay', 3),
                 ('card', 'train', True, 'card_selection', 2),
                 ('negative', 'train', True, 'gameplay', -1),
-                ('absent', 'train', True, 'gameplay', 0),
+                ('zero', 'train', True, 'gameplay', 0),
+                ('val_zero', 'val', True, 'gameplay', 0),
+                ('unreviewed_zero', 'train', False, 'gameplay', 0),
+                ('missing', 'train', True, 'gameplay', None),
                 ('overflow', 'train', True, 'gameplay', 101),
                 ('boolean', 'train', True, 'gameplay', True),
             ):
                 session = collection / 'sessions' / name
                 (session / 'originals').mkdir(parents=True)
                 (session / 'annotations').mkdir()
-                cv2.imwrite(str(session / 'originals/screen.png'), screen())
+                sample = screen()
+                if type(value) is int and value == 0:
+                    sample[400:600, 270:354] = 0
+                cv2.imwrite(str(session / 'originals/screen.png'), sample)
                 data = {
                     'split': split, 'image': '../originals/screen.png',
                     'game_crop': [0, 0, 1280, 720],
@@ -90,6 +115,10 @@ class PenetrationReaderTests(unittest.TestCase):
                 (session / 'annotations/screen.json').write_text(json.dumps(data))
             reader = PenetrationReader.from_collection(collection)
             self.assertEqual(len(reader.examples), 1)
+            self.assertEqual(len(reader.zero_examples), 1)
+            absent = screen()
+            absent[400:600, 270:354] = 0
+            self.assertEqual(reader.read(absent).value, 0)
             self.assertEqual(reader.read(screen()).value, 40)
 
 

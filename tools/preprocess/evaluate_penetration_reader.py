@@ -62,8 +62,9 @@ def evaluate(collection):
         }
     return {
         'source': reader.source, 'dataset_sha256': digest.hexdigest(),
-        'training_references': len(reader.examples), 'splits': metrics, 'samples': samples,
-        'limitations': 'Train scores reuse reference screens. Visible penetration only; absent rows remain unknown; no complete combat stats or policy readiness. Unseen HUD values are unsupported.',
+        'training_references': len(reader.examples) + len(reader.zero_examples),
+        'positive_training_references': len(reader.examples), 'zero_training_references': len(reader.zero_examples), 'splits': metrics, 'samples': samples,
+        'limitations': 'Train scores reuse reference screens. Reviewed zero requires exact row and matching panel; unfamiliar absent rows remain unknown; no complete combat stats or policy readiness. Unseen HUD values are unsupported.',
     }
 
 
