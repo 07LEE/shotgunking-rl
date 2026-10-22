@@ -2,6 +2,7 @@
 
 import argparse
 from collections import Counter, defaultdict
+from dataclasses import asdict
 import hashlib
 import json
 from pathlib import Path
@@ -9,10 +10,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .audit import SPLITS
+from .audit import SPLITS, COMBAT_FIELDS
 from .images import normalize
 from ..perception import OverlayScreenReader, RedPixelAmmoReader, ScreenKind, TemplatePieceReader
 from ..perception.frame import PreparedFrame, read_frame
+from ..perception.types import CombatStatsReading
+from ..perception.validation import valid_combat_stats
 from ..vision import analyzer
 
 
@@ -190,12 +193,14 @@ class AmmoMetrics:
 
 
 class CombinedMetrics:
-    def __init__(self):
+    def __init__(self, combat_enabled=False):
+        self.combat_enabled = combat_enabled
+        self.fully_labeled = 0
         self.eligible = 0
         self.accepted = 0
         self.correct = 0
 
-    def add(self, screen_prediction, piece_prediction, ammo_prediction, piece_correct, ammo_correct):
+    def add(self, screen_prediction, piece_prediction, ammo_prediction, piece_correct, ammo_correct, combat_prediction=None, combat_expected=None):
         self.eligible += 1
         accepted = (
             screen_prediction.is_accepted
@@ -203,30 +208,81 @@ class CombinedMetrics:
             and piece_prediction.is_accepted
             and ammo_prediction.is_accepted
         )
+        combat_correct = True
+        if self.combat_enabled:
+            accepted = bool(accepted and combat_prediction is not None
+                            and combat_prediction.is_accepted and valid_combat_stats(combat_prediction.value))
+            self.fully_labeled += combat_expected is not None
+            combat_correct = combat_expected is not None and combat_prediction.value == combat_expected
         self.accepted += accepted
-        self.correct += accepted and piece_correct and ammo_correct
+        self.correct += accepted and piece_correct and ammo_correct and combat_correct
 
     def report(self):
-        return {
+        report = {
             "eligible_gameplay_screens": self.eligible,
             "accepted_rate": _rate(self.accepted, self.eligible),
             "correct_and_accepted_rate": _rate(self.correct, self.eligible),
             "required_readers": ["screen_kind", "pieces", "ammo"],
-            "combat_stats_excluded": "reader_not_implemented",
+            "combat_stats_excluded": "not_requested",
+        }
+        if self.combat_enabled:
+            report.pop("combat_stats_excluded")
+            report["required_readers"].append("combat_stats")
+            report["fully_labeled_gameplay_screens"] = self.fully_labeled
+            report["correct_and_accepted_rate"] = _rate(self.correct, self.fully_labeled)
+        return report
+
+
+class CombatMetrics:
+    def __init__(self):
+        self.samples = []
+        self.statuses = Counter()
+        self.reasons = Counter()
+
+    def add(self, annotation, expected, prediction, labels):
+        valid = prediction.is_accepted and valid_combat_stats(prediction.value)
+        self.statuses[prediction.status.value] += 1
+        if prediction.reason:
+            self.reasons.update(prediction.reason.split(";"))
+        if prediction.is_accepted and not valid:
+            self.reasons["invalid_values"] += 1
+        self.samples.append({
+            "annotation": annotation, "expected": labels,
+            "missing_labels": [field for field in COMBAT_FIELDS if labels.get(field) is None],
+            "complete_valid_label": expected is not None,
+            "accepted": valid,
+            "correct": prediction.value == expected if valid and expected is not None else None,
+            "predicted": asdict(prediction.value) if valid else None,
+            "status": prediction.status.value, "reason": prediction.reason,
+        })
+
+    def report(self):
+        complete = sum(row["complete_valid_label"] for row in self.samples)
+        accepted = sum(row["accepted"] for row in self.samples)
+        correct = sum(row["correct"] is True for row in self.samples)
+        return {
+            "screens": len(self.samples), "complete_valid_labels": complete,
+            "accepted": accepted,
+            "accepted_without_complete_label": sum(row["accepted"] and not row["complete_valid_label"] for row in self.samples),
+            "correct_and_accepted_rate": _rate(correct, complete),
+            "reader_status": dict(sorted(self.statuses.items())),
+            "blocking_reasons": dict(sorted(self.reasons.items())),
+            "samples": self.samples,
         }
 
 
 class EvaluationBucket:
-    def __init__(self):
+    def __init__(self, combat_enabled=False):
+        self.combat = CombatMetrics() if combat_enabled else None
         self.annotations = 0
         self.pieces = PieceMetrics()
         self.ammo = AmmoMetrics()
         self.screen_kind = ClassificationMetrics()
         self.screen_statuses = Counter()
-        self.combined = CombinedMetrics()
+        self.combined = CombinedMetrics(combat_enabled)
 
     def report(self):
-        return {
+        report = {
             "annotations": self.annotations,
             "pieces": self.pieces.report(),
             "ammo": self.ammo.report(),
@@ -236,15 +292,21 @@ class EvaluationBucket:
             },
             "combined": self.combined.report(),
         }
+        if self.combat is not None:
+            report["combat_stats"] = self.combat.report()
+        return report
 
 
-def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_reader=None):
+def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_reader=None, *, combat_reader=None, splits=None):
     """Return deterministic metrics for reviewed labels without changing data."""
+    selected_splits = tuple(SPLITS if splits is None else splits)
+    if not selected_splits or len(set(selected_splits)) != len(selected_splits) or any(split not in SPLITS for split in selected_splits):
+        raise ValueError("Select unique valid splits")
     sessions_dir = Path(sessions_dir)
     piece_reader = piece_reader or TemplatePieceReader.from_collection(Path(sessions_dir).parent)
     ammo_reader = ammo_reader or RedPixelAmmoReader()
     screen_reader = screen_reader or OverlayScreenReader()
-    buckets = {name: EvaluationBucket() for name in ("overall", *SPLITS)}
+    buckets = {name: EvaluationBucket(combat_reader is not None) for name in ("overall", *SPLITS)}
     digest = hashlib.sha256()
     paths = sorted(sessions_dir.glob("*/annotations/*.json"))
 
@@ -254,6 +316,8 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         split = data.get("split")
         if split not in SPLITS:
             raise ValueError(f"{path}: invalid split")
+        if split not in selected_splits:
+            continue
         relative = path.relative_to(sessions_dir).as_posix()
         digest.update(relative.encode())
         digest.update(b"\0")
@@ -264,6 +328,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
             reviews.get("screen_kind") is True
             or reviews.get("ammo") is True
             or data.get("confirmed") is True
+            or (combat_reader is not None and reviews.get("combat_stats") is True)
         )
         if not eligible:
             continue
@@ -318,23 +383,40 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
             for bucket in selected:
                 bucket.ammo.add(ammo, ammo_prediction)
 
-        if screen_prediction is not None and piece_prediction is not None and ammo_prediction is not None:
+        combat_prediction = None
+        combat_expected = None
+        if (combat_reader is not None and expected_kind == "gameplay"
+                and reviews.get("screen_kind") is True and reviews.get("combat_stats") is True):
+            combat_prediction = read_frame(combat_reader, frame)
+            labels = state.get("combat_stats") or {}
+            combat_expected = _expected_combat(labels)
             for bucket in selected:
-                bucket.combined.add(screen_prediction, piece_prediction, ammo_prediction, piece_correct, ammo_correct)
+                bucket.combat.add(relative, combat_expected, combat_prediction, labels)
+
+        if (screen_prediction is not None and piece_prediction is not None and ammo_prediction is not None
+                and (combat_reader is None or combat_prediction is not None)):
+            for bucket in selected:
+                bucket.combined.add(screen_prediction, piece_prediction, ammo_prediction, piece_correct, ammo_correct, combat_prediction, combat_expected)
 
     return {
-        "schema": "reader-evaluation-v1",
+        "schema": "reader-evaluation-v2" if combat_reader is not None else "reader-evaluation-v1",
+        "evaluated_splits": list(selected_splits),
         "dataset_sha256": digest.hexdigest(),
         "readers": {
             "pieces": getattr(piece_reader, "source", piece_reader.__class__.__name__),
             "ammo": getattr(ammo_reader, "source", ammo_reader.__class__.__name__),
             "screen_kind": getattr(screen_reader, "source", screen_reader.__class__.__name__),
-            "combat_stats": "not_implemented",
+            "combat_stats": getattr(combat_reader, "source", combat_reader.__class__.__name__) if combat_reader is not None else "not_requested",
         },
         "piece_label_note": "Strict metrics preserve queen (8), white_king (9), and special_knight (7). Unresolved royals remain ID 6. Legacy-compatible metrics merge royal kinds; extended IDs are rejected for legacy policy use.",
         "overall": buckets["overall"].report(),
         "splits": {split: buckets[split].report() for split in SPLITS},
     }
+
+
+def _expected_combat(labels):
+    stats = CombatStatsReading(**{field: labels.get(field) for field in COMBAT_FIELDS})
+    return stats if valid_combat_stats(stats) else None
 
 
 def _compatible_piece(label):
@@ -379,9 +461,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sessions", type=Path, default=ROOT / "data/collection/sessions")
     parser.add_argument("--output", type=Path, help="Write the JSON report to a new file")
+    parser.add_argument("--combat-stats", action="store_true", help="Include composed combat readings (defaults to train/val only)")
+    parser.add_argument("--melee-title-annotation", type=Path, help="Verified visible melee title in reviewed train data; requires --combat-stats")
+    parser.add_argument("--splits", nargs="+", choices=SPLITS)
     args = parser.parse_args()
+    if args.melee_title_annotation and not args.combat_stats:
+        parser.error("--melee-title-annotation requires --combat-stats")
     try:
-        report = evaluate_readers(args.sessions)
+        combat_reader = None
+        metadata = None
+        if args.combat_stats:
+            from .combat_evaluation import build_combat_reader
+            combat_reader, metadata = build_combat_reader(args.sessions.parent, args.melee_title_annotation)
+        report = evaluate_readers(args.sessions, combat_reader=combat_reader,
+                                  splits=args.splits or (("train", "val") if args.combat_stats else None))
+        if metadata is not None:
+            report["combat_reference_metadata"] = metadata
+            report["combat_note"] = "Train reuses references. Missing labels do not establish correctness. Combined approval is offline reader agreement, not live runtime validation."
         rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.output:
             if args.output.exists():
