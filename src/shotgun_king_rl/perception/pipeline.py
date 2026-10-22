@@ -1,12 +1,12 @@
 """Gate independent screen, board, and HUD readers before policy use."""
 
 from dataclasses import dataclass
-from numbers import Real
 from typing import Any, Protocol, TypeVar
 
 import numpy as np
 
 from .frame import PreparedFrame, read_frame
+from .validation import valid_combat_stats
 
 from .types import (
     AmmoReading,
@@ -82,7 +82,7 @@ class PerceptionPipeline:
         else:
             issues.append(_issue("ammo", ammo))
 
-        if combat_stats.is_accepted and _valid_combat_stats(combat_stats.value):
+        if combat_stats.is_accepted and valid_combat_stats(combat_stats.value):
             accepted_combat_stats = combat_stats.value
         elif combat_stats.is_accepted:
             issues.append("combat_stats:invalid_values")
@@ -124,47 +124,4 @@ def _valid_ammo(ammo: AmmoReading | None) -> bool:
         and not isinstance(ammo.reserve, bool)
         and ammo.loaded >= 0
         and ammo.reserve >= 0
-    )
-
-
-def _valid_combat_stats(stats: CombatStatsReading | None) -> bool:
-    if stats is None:
-        return False
-    required = (
-        stats.attack,
-        stats.range_min,
-        stats.range_max,
-        stats.spread_degrees,
-        stats.penetration_percent,
-        stats.knockback_percent,
-        stats.grenades_remaining,
-        stats.grenade_damage,
-        stats.melee_damage,
-    )
-    if not all(_is_finite_nonnegative(value) for value in required):
-        return False
-    if not _is_nonnegative_integer(stats.grenades_remaining):
-        return False
-    return (
-        stats.range_min <= stats.range_max
-        and stats.spread_degrees <= 360
-        and stats.penetration_percent <= 100
-        and stats.knockback_percent <= 100
-    )
-
-
-def _is_finite_nonnegative(value: object) -> bool:
-    return (
-        isinstance(value, Real)
-        and not isinstance(value, (bool, np.bool_))
-        and bool(np.isfinite(value))
-        and value >= 0
-    )
-
-
-def _is_nonnegative_integer(value: object) -> bool:
-    return (
-        isinstance(value, (int, np.integer))
-        and not isinstance(value, (bool, np.bool_))
-        and value >= 0
     )

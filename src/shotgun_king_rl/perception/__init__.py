@@ -1,5 +1,6 @@
 """Composable perception contracts for policy-ready game state."""
 
+from .combat import CombatStatsReader
 from .attack import AttackReader
 from .grenade_count import GrenadeCountReader
 from .grenade_damage import GrenadeDamageReader
@@ -23,6 +24,7 @@ __all__ = [
     "AttackReader",
     "AmmoReading",
     "CombatStatsReading",
+    "CombatStatsReader",
     "FusedPerception",
     "GrenadeCountReader",
     "GrenadeDamageReader",
