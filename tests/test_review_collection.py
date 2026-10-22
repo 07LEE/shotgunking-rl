@@ -7,22 +7,32 @@ import tempfile
 import unittest
 
 import cv2
+import numpy as np
+from unittest.mock import patch
+
+from collection_fixtures import game_screen, piece_annotation
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from shotgun_king_rl.collection.images import detect_crop
 from shotgun_king_rl.collection.prepare import prepare_session
 from shotgun_king_rl.review.server import load_item, review_url, save_item
 
 
-@unittest.skipUnless((ROOT / 'data/test_fixtures/board_01.png').exists() and (ROOT / 'assets/pieces').is_dir(), 'Private fixtures required')
 class ReviewCollectionTests(unittest.TestCase):
+    def setUp(self):
+        # These tests verify preparation/persistence, not image recognition.
+        names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king']
+        ids = np.asarray([[names.index(label) for label in row] for row in piece_annotation()['board']])
+        reader = patch('shotgun_king_rl.collection.prepare.analyzer.get_state_matrix', return_value=ids)
+        reader.start()
+        self.addCleanup(reader.stop)
+
     def test_prepare_preserves_review_and_checks_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             inbox = collection / 'inbox'
             inbox.mkdir()
-            image = cv2.imread(str(ROOT / 'data/test_fixtures/board_01.png'))
+            image = game_screen()
             cv2.imwrite(str(inbox / 'screen.png'), image)
             result = prepare_session(collection, 'test-session')
             self.assertEqual(result['created'], 1)
@@ -70,7 +80,7 @@ class ReviewCollectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             (collection / 'inbox').mkdir()
-            image = cv2.imread(str(ROOT / 'data/test_fixtures/board_01.png'))
+            image = game_screen()
             cv2.imwrite(str(collection / 'inbox/screen.png'), image)
             prepare_session(collection, 'test-session')
             relative = 'sessions/test-session/annotations/screen.png.json'
@@ -82,7 +92,7 @@ class ReviewCollectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             (collection / 'inbox').mkdir()
-            image = cv2.imread(str(ROOT / 'data/test_fixtures/board_01.png'))
+            image = game_screen()
             cv2.imwrite(str(collection / 'inbox/screen.png'), image)
             prepare_session(collection, 'test-session')
             relative = 'sessions/test-session/annotations/screen.png.json'

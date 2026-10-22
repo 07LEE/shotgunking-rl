@@ -1,4 +1,4 @@
-"""Small dataset integrity checks using one saved screen."""
+"""Dataset integrity checks using synthetic images and labels."""
 
 import json
 from pathlib import Path
@@ -10,17 +10,30 @@ import cv2
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from shotgun_king_rl.collection.dataset import build_dataset
+from collection_fixtures import game_screen, piece_annotation
 
 
-@unittest.skipUnless((ROOT / "data/test_fixtures/piece_annotations/board_01.json").exists() and (ROOT / "data/test_fixtures/board_01.png").exists(), "Private fixtures are required")
 class PieceDatasetTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.fixtures = Path(temporary.name)
+        self.annotations = self.fixtures / 'annotations'
+        self.annotations.mkdir()
+        self.image = self.fixtures / 'screen.png'
+        cv2.imwrite(str(self.image), game_screen())
+        annotation = piece_annotation()
+        annotation['image'] = str(self.image)
+        self.annotation = self.annotations / 'screen.json'
+        self.annotation.write_text(json.dumps(annotation))
+
     def test_provisional_labels_require_explicit_opt_in(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "cells"
             with self.assertRaisesRegex(ValueError, "No usable annotations"):
-                build_dataset(ROOT / "data/test_fixtures/piece_annotations", output)
+                build_dataset(self.annotations, output)
             self.assertFalse(output.exists())
-            summary = build_dataset(ROOT / "data/test_fixtures/piece_annotations", output, True)
+            summary = build_dataset(self.annotations, output, True)
             self.assertEqual(summary["cells"], 64)
             self.assertEqual(summary["counts"]["train"]["white_king"], 1)
             self.assertEqual(summary["missing_classes"], ["rook", "queen", "special_knight"])
@@ -34,8 +47,8 @@ class PieceDatasetTests(unittest.TestCase):
             base = Path(directory)
             annotations = base / "annotations"
             annotations.mkdir()
-            data = json.loads((ROOT / "data/test_fixtures/piece_annotations/board_01.json").read_text())
-            data["image"] = str(ROOT / "data/test_fixtures/board_01.png")
+            data = json.loads(self.annotation.read_text())
+            data["image"] = str(self.image)
             for split in ("train", "test"):
                 data["split"] = split
                 (annotations / f"{split}.json").write_text(json.dumps(data))
@@ -48,8 +61,8 @@ class PieceDatasetTests(unittest.TestCase):
             base = Path(directory)
             annotations = base / "annotations"
             annotations.mkdir()
-            data = json.loads((ROOT / "data/test_fixtures/piece_annotations/board_01.json").read_text())
-            image = cv2.imread(str(ROOT / "data/test_fixtures/board_01.png"))
+            data = json.loads(self.annotation.read_text())
+            image = cv2.imread(str(self.image))
             padded = cv2.copyMakeBorder(image, 20, 10, 5, 5, cv2.BORDER_CONSTANT)
             cv2.imwrite(str(annotations / "window.png"), padded)
             data.update(image="window.png", game_crop=[5, 20, 1285, 740], exclude_cells=[[7, 3]], floor=2)
@@ -66,8 +79,8 @@ class PieceDatasetTests(unittest.TestCase):
             base = Path(directory)
             annotations = base / "annotations"
             annotations.mkdir()
-            data = json.loads((ROOT / "data/test_fixtures/piece_annotations/board_01.json").read_text())
-            data.update(image=str(ROOT / "data/test_fixtures/board_01.png"), confirmed=True)
+            data = json.loads(self.annotation.read_text())
+            data.update(image=str(self.image), confirmed=True)
             gameplay = {**data, "screen_state": {"screen_kind": "gameplay", "reviews": {"screen_kind": True}}}
             cards = {**data, "screen_state": {"screen_kind": "card_selection", "reviews": {"screen_kind": True}}}
             (annotations / "gameplay.json").write_text(json.dumps(gameplay))

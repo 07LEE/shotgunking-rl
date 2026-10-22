@@ -23,41 +23,45 @@ from shotgun_king_rl.runtime.tracing import (
 )
 
 
+def runtime_doubles():
+    """One verified transition; all environment and learning methods are mocked."""
+    state = np.zeros(281, dtype=np.float32)
+    state[7 * 8 + 4] = 1
+    action_mask = np.zeros(10, dtype=np.float32)
+    action_mask[4] = 1
+    environment = MagicMock()
+    environment.action_space = SimpleNamespace(n=10)
+    environment.loaded_ammo = environment.max_ammo = 2
+    environment.reserve_ammo = 6
+    environment.range_limit = 5
+    environment.royal_guard_active = False
+    environment.melee_damage = 0.0
+    environment.reset.return_value = (state.copy(), {"reset_ready": True})
+    environment.get_action_mask.return_value = action_mask.copy()
+    environment.step.return_value = (
+        state.copy(), 0.5, True, False,
+        {"action": 4, "input_succeeded": True, "transition_ready": True},
+    )
+    agent = MagicMock()
+    agent.policy_net = None
+    agent.act.return_value = 4
+    agent.load.return_value = True
+    agent.replay.return_value = 0.0
+    return environment, agent
+
+
 class RuntimeTracingTests(unittest.TestCase):
     def test_suggest_loop_does_not_learn_or_save(self):
         import torch
 
-        state = np.zeros(281, dtype=np.float32)
-        state[7 * 8 + 4] = 1
-        action_mask = np.zeros(10, dtype=np.float32)
-        action_mask[4] = 1
-        environment = MagicMock()
-        environment.action_space = SimpleNamespace(n=10)
-        environment.loaded_ammo = 2
-        environment.max_ammo = 2
-        environment.reserve_ammo = 6
-        environment.range_limit = 5
-        environment.royal_guard_active = False
-        environment.melee_damage = 0.0
-        environment.reset.return_value = (state.copy(), {"reset_ready": True})
-        environment.get_action_mask.return_value = action_mask.copy()
-        environment.step.return_value = (
-            state.copy(),
-            0.5,
-            True,
-            False,
-            {"action": 4, "input_succeeded": True, "transition_ready": True},
-        )
+        environment, agent = runtime_doubles()
 
         class Policy:
             def __call__(self, tensor):
                 return torch.arange(10, dtype=torch.float32).unsqueeze(0)
 
-        agent = MagicMock()
         agent.policy_net = Policy()
         agent.device = torch.device("cpu")
-        agent.act.return_value = 4
-        agent.load.return_value = True
 
         with TemporaryDirectory() as directory, patch.object(
             train, "ShotgunKingEnv", return_value=environment
@@ -77,32 +81,7 @@ class RuntimeTracingTests(unittest.TestCase):
         agent.save.assert_not_called()
 
     def test_train_loop_learns_and_saves(self):
-        state = np.zeros(281, dtype=np.float32)
-        state[7 * 8 + 4] = 1
-        action_mask = np.zeros(10, dtype=np.float32)
-        action_mask[4] = 1
-        environment = MagicMock()
-        environment.action_space = SimpleNamespace(n=10)
-        environment.loaded_ammo = 2
-        environment.max_ammo = 2
-        environment.reserve_ammo = 6
-        environment.range_limit = 5
-        environment.royal_guard_active = False
-        environment.melee_damage = 0.0
-        environment.reset.return_value = (state.copy(), {"reset_ready": True})
-        environment.get_action_mask.return_value = action_mask.copy()
-        environment.step.return_value = (
-            state.copy(),
-            0.5,
-            True,
-            False,
-            {"action": 4, "input_succeeded": True, "transition_ready": True},
-        )
-        agent = MagicMock()
-        agent.policy_net = None
-        agent.act.return_value = 4
-        agent.load.return_value = True
-        agent.replay.return_value = 0.0
+        environment, agent = runtime_doubles()
 
         with TemporaryDirectory() as directory, patch.object(
             train, "ShotgunKingEnv", return_value=environment
@@ -122,31 +101,7 @@ class RuntimeTracingTests(unittest.TestCase):
         agent.save.assert_called_once()
 
     def test_evaluate_loop_is_greedy_and_does_not_learn(self):
-        state = np.zeros(281, dtype=np.float32)
-        state[7 * 8 + 4] = 1
-        action_mask = np.zeros(10, dtype=np.float32)
-        action_mask[4] = 1
-        environment = MagicMock()
-        environment.action_space = SimpleNamespace(n=10)
-        environment.loaded_ammo = 2
-        environment.max_ammo = 2
-        environment.reserve_ammo = 6
-        environment.range_limit = 5
-        environment.royal_guard_active = False
-        environment.melee_damage = 0.0
-        environment.reset.return_value = (state.copy(), {"reset_ready": True})
-        environment.get_action_mask.return_value = action_mask.copy()
-        environment.step.return_value = (
-            state.copy(),
-            0.5,
-            True,
-            False,
-            {"action": 4, "input_succeeded": True, "transition_ready": True},
-        )
-        agent = MagicMock()
-        agent.policy_net = None
-        agent.act.return_value = 4
-        agent.load.return_value = True
+        environment, agent = runtime_doubles()
 
         with TemporaryDirectory() as directory, patch.object(
             train, "ShotgunKingEnv", return_value=environment
@@ -172,9 +127,7 @@ class RuntimeTracingTests(unittest.TestCase):
         self.assertEqual(payload["decision"]["selection_source"], "greedy_policy")
 
     def test_evaluate_stops_before_reset_without_checkpoint(self):
-        environment = MagicMock()
-        environment.action_space = SimpleNamespace(n=10)
-        agent = MagicMock()
+        environment, agent = runtime_doubles()
         agent.load.return_value = False
 
         with TemporaryDirectory() as directory, patch.object(
@@ -213,61 +166,12 @@ class RuntimeTracingTests(unittest.TestCase):
         self.assertEqual(len(payload["model"]["sha256"]), 64)
 
     def test_collect_loop_records_verified_transition_without_learning(self):
-        state = np.zeros(281, dtype=np.float32)
-        state[7 * 8 + 4] = 1
-        action_mask = np.zeros(10, dtype=np.float32)
-        action_mask[4] = 1
-        calls = {"remember": 0, "replay": 0, "target": 0, "save": 0}
-
-        class FakeEnvironment:
-            def __init__(self, **kwargs):
-                self.action_space = SimpleNamespace(n=10)
-                self.loaded_ammo = 2
-                self.max_ammo = 2
-                self.reserve_ammo = 6
-                self.range_limit = 5
-                self.royal_guard_active = False
-                self.melee_damage = 0.0
-
-            def reset(self):
-                return state.copy(), {"reset_ready": True}
-
-            def get_action_mask(self):
-                return action_mask.copy()
-
-            def step(self, action):
-                return state.copy(), 0.5, True, False, {
-                    "action": action,
-                    "input_succeeded": True,
-                    "transition_ready": True,
-                }
-
-        class FakeAgent:
-            def __init__(self, **kwargs):
-                self.policy_net = None
-
-            def load(self, path):
-                return None
-
-            def act(self, state, action_mask=None, epsilon=0.1):
-                return 4
-
-            def remember(self, *args):
-                calls["remember"] += 1
-
-            def replay(self, batch_size=32):
-                calls["replay"] += 1
-                return 0.0
-
-            def update_target_network(self):
-                calls["target"] += 1
-
-            def save(self, path):
-                calls["save"] += 1
+        environment, agent = runtime_doubles()
+        agent.load.return_value = None
 
         with TemporaryDirectory() as directory, patch.object(
-            train, "ShotgunKingEnv", FakeEnvironment
-        ), patch.object(train, "DQNAgent", FakeAgent), patch.object(
+            train, "ShotgunKingEnv", return_value=environment
+        ), patch.object(train, "DQNAgent", return_value=agent), patch.object(
             train, "SummaryWriter", None
         ):
             train.train_dqn(
@@ -291,7 +195,10 @@ class RuntimeTracingTests(unittest.TestCase):
         self.assertTrue(payload["result"]["transition_verified"])
         self.assertFalse(payload["result"]["accepted_for_replay"])
         self.assertFalse(manifest["learning_enabled"])
-        self.assertEqual(calls, {"remember": 0, "replay": 0, "target": 0, "save": 0})
+        agent.remember.assert_not_called()
+        agent.replay.assert_not_called()
+        agent.update_target_network.assert_not_called()
+        agent.save.assert_not_called()
 
     def test_writer_appends_json_safe_action_record(self):
         observation = np.zeros(281, dtype=np.float32)

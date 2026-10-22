@@ -262,12 +262,19 @@ class BoardRegressionTests(unittest.TestCase):
         np.testing.assert_array_equal(analyzer.get_state_matrix(image), expected)
         np.testing.assert_array_equal(analyzer.get_state_matrix(image), expected)
 
+
+class EmptyTileTests(unittest.TestCase):
     def test_uniform_tiles_do_not_become_pieces(self):
-        for brightness in (100, 160, 220):
-            with self.subTest(brightness=brightness):
-                gray = np.full((65, 65), brightness, dtype=np.uint8)
-                patch = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
-                self.assertEqual(analyzer.classify_patch(patch, gray), 0)
+        king = np.zeros((45, 45), dtype=np.float32)
+        king[12:35, 18:26] = 255
+        with patch.object(vision_analyzer, '_TEMPLATES', {1: [king]}), patch.object(
+            vision_analyzer, '_TEMPLATES_LOADED', True
+        ):
+            for brightness in (100, 160, 220):
+                with self.subTest(brightness=brightness):
+                    gray = np.full((65, 65), brightness, dtype=np.uint8)
+                    image = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+                    self.assertEqual(analyzer.classify_patch(image, gray), 0)
 
 
 if __name__ == "__main__":

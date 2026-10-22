@@ -108,9 +108,10 @@ def _issue(name: str, prediction: Prediction[Any]) -> str:
 def _valid_board(board: np.ndarray | None) -> bool:
     if not isinstance(board, np.ndarray) or board.shape != (8, 8):
         return False
-    if not np.issubdtype(board.dtype, np.number):
+    if not (np.issubdtype(board.dtype, np.integer) or np.issubdtype(board.dtype, np.floating)):
         return False
-    return bool(np.all(np.isfinite(board)) and np.all(board >= 0))
+    return bool(np.all(np.isfinite(board)) and np.all(board >= 0)
+                and np.all(board <= 6) and np.all(board == np.floor(board)))
 
 
 def _valid_ammo(ammo: AmmoReading | None) -> bool:

@@ -10,6 +10,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from shotgun_king_rl.collection.benchmark import benchmark_readers, compare_reports, main
@@ -66,6 +68,24 @@ class ReaderBenchmarkTests(unittest.TestCase):
             for repeats in (0, -1, True):
                 with self.assertRaisesRegex(ValueError, "positive integer"):
                     benchmark_readers(collection, repeats=repeats)
+
+    def test_gameplay_benchmarks_board_ammo_and_requested_hud(self):
+        board = np.zeros((8, 8), dtype=int)
+        board[7, 4] = 1
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            create_reviewed_screen(collection)
+            with patch('shotgun_king_rl.perception.frame.analyzer.get_state_matrices', return_value=(board, board)), patch(
+                'shotgun_king_rl.perception.readers.screens.check_gameplay_board', return_value=True
+            ):
+                result = benchmark_readers(collection, repeats=1, include_hud=True)
+        predictions = next(iter(result['predictions'].values()))
+        self.assertEqual(set(predictions), set(result['readers']))
+        self.assertIn('pieces', predictions)
+        self.assertIn('ammo', predictions)
+        self.assertIn('Attack', predictions)
+        self.assertEqual(len(predictions), 10)
+        self.assertTrue(all(result['timings'][key]['calls'] == 1 for key in predictions))
 
     def test_existing_output_is_preserved_before_work_starts(self):
         with tempfile.TemporaryDirectory() as directory:

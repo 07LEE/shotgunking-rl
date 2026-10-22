@@ -66,6 +66,8 @@ class ReaderEvaluationTests(unittest.TestCase):
                 piece_reader=FakeReader(Prediction.rejected(
                     board, source="pieces:test", reason="unsupported_runtime_piece:distinct_royal"
                 ), "pieces:test"),
+                ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source="ammo:test"), "ammo:test"),
+                screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:test"), "screen:test"),
             )
         self.assertEqual(report["overall"]["pieces"]["strict"]["classes"]["queen"]["recall"], 1.0)
         self.assertEqual(report["overall"]["combined"]["accepted_rate"], 0.0)

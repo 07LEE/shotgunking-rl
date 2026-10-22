@@ -107,6 +107,27 @@ class PerceptionPipelineTests(unittest.TestCase):
         self.assertIsNone(result.combat_stats)
         self.assertEqual(result.issues, ("combat_stats:unreadable",))
 
+    def test_accepted_board_still_requires_legacy_integer_ids(self):
+        cases = [(0, True), (6, True), (6.0, True)] + [
+            (value, False) for value in (-1, 0.5, 7, 8, 9, float('nan'), float('inf'), 1 + 2j, True)
+        ]
+        for value, allowed in cases:
+            with self.subTest(value=value):
+                values = np.full((8, 8), value)
+                result = PerceptionPipeline(
+                    FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source='screen:test')),
+                    FakeReader(Prediction.accepted(values, source='pieces:test')),
+                    FakeReader(Prediction.accepted(AmmoReading(1, 5), source='ammo:test')),
+                    FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source='combat:test')),
+                ).observe(object())
+                self.assertEqual(result.ready_for_policy, allowed)
+                if allowed:
+                    np.testing.assert_array_equal(result.board, values)
+                    self.assertEqual(result.issues, ())
+                else:
+                    self.assertIsNone(result.board)
+                    self.assertEqual(result.issues, ('board:invalid_shape_or_values',))
+
     def test_invalid_combat_stats_block_policy(self):
         screen = FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:v1"))
         board = FakeReader(Prediction.accepted(np.zeros((8, 8)), source="pieces:v1"))
