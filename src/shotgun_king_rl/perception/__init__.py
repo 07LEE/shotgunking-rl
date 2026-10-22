@@ -5,6 +5,7 @@ from .attack import AttackReader
 from .grenade_count import GrenadeCountReader
 from .grenade_damage import GrenadeDamageReader
 from .knockback import KnockbackReader
+from .melee import MeleeDamageReader
 from .penetration import PenetrationReader
 from .pipeline import PerceptionPipeline
 from .range import RangeReader
@@ -29,6 +30,7 @@ __all__ = [
     "GrenadeCountReader",
     "GrenadeDamageReader",
     "KnockbackReader",
+    "MeleeDamageReader",
     "PenetrationReader",
     "OverlayScreenReader",
     "PerceptionPipeline",

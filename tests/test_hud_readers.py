@@ -11,11 +11,12 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from shotgun_king_rl.perception import AttackReader, RangeReader, RangeReading, SpreadReader, GrenadeDamageReader, PredictionStatus
+from shotgun_king_rl.perception import AttackReader, RangeReader, RangeReading, SpreadReader, GrenadeDamageReader, MeleeDamageReader, PredictionStatus
 from shotgun_king_rl.perception.attack import attack_patch
 from shotgun_king_rl.perception.range import range_patch
 from shotgun_king_rl.perception.spread import spread_patch
 from shotgun_king_rl.perception.grenade_damage import grenade_damage_patch
+from shotgun_king_rl.perception.melee import melee_damage_patch
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,9 @@ class HudCase:
 
 
 CASES = (
+    HudCase('melee_damage', MeleeDamageReader, melee_damage_patch, 192, 2, 3, '2', '8',
+            {'melee_damage': 2},
+            tuple({'melee_damage': value} for value in (-1, 0, None, True))),
     HudCase('attack', AttackReader, attack_patch, 0, 4, 8, '4', None, {'attack': 4}),
     HudCase('range', RangeReader, range_patch, 64, RangeReading(3, 5), RangeReading(3, 6), '3-5', '2-8',
             {'range_min': 3, 'range_max': 5},
@@ -104,6 +108,34 @@ class HudReaderTests(unittest.TestCase):
         self.assertFalse(result.is_accepted)
         self.assertIsNone(result.value)
 
+    def test_melee_requires_visible_title_reference_and_filters_other_titles(self):
+        case = next(case for case in CASES if case.name == 'melee_damage')
+        self.assertEqual(MeleeDamageReader.source, 'melee-damage-reviewed-templates:v1')
+        for value in (0, -1, True, None):
+            self.assertFalse(MeleeDamageReader([(value, case.patch(screen(case)))]).read(screen(case)).is_accepted)
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            for name, seed in (('melee', 7), ('other-title', 11)):
+                session = collection / 'sessions' / name
+                (session / 'originals').mkdir(parents=True)
+                (session / 'annotations').mkdir()
+                cv2.imwrite(str(session / 'originals/screen.png'), screen(case, seed=seed))
+                (session / 'annotations/screen.json').write_text(json.dumps({
+                    'split': 'train', 'image': '../originals/screen.png',
+                    'game_crop': [0, 0, 1280, 720], 'screen_state': {
+                        'screen_kind': 'gameplay', 'combat_stats': {'melee_damage': 2 if seed == 7 else 40},
+                        'reviews': {'screen_kind': True, 'combat_stats': True}}}))
+            for title in (None, np.zeros((30, 84), dtype=np.uint8), np.ones((5, 5), dtype=np.uint8)):
+                with self.subTest(title_shape=getattr(title, 'shape', None)), self.assertRaises(ValueError):
+                    MeleeDamageReader.from_collection(collection, title_reference=title)
+            reader = MeleeDamageReader.from_collection(collection, title_reference=case.patch(screen(case))[:30])
+            self.assertEqual(len(reader.examples), 1)
+            self.assertEqual(reader.read(screen(case)).value, 2)
+            self.assertFalse(reader.read(screen(case, seed=11)).is_accepted)
+            image = screen(case)
+            image[420:520, 270:354] = 0
+            self.assertFalse(reader.read(image).is_accepted)
+
     def test_reference_filters_preserve_field_specific_bounds(self):
         for case in CASES:
             with self.subTest(reader=case.name), tempfile.TemporaryDirectory() as directory:
@@ -126,7 +158,9 @@ class HudReaderTests(unittest.TestCase):
                                       'screen_kind': kind, 'combat_stats': case.labels | overrides,
                                       'reviews': {'screen_kind': True, 'combat_stats': reviewed}}}
                     (session / 'annotations/screen.json').write_text(json.dumps(annotation))
-                reader = case.reader.from_collection(collection)
+                kwargs = ({'title_reference': case.patch(screen(case))[:30]}
+                          if case.name == 'melee_damage' else {})
+                reader = case.reader.from_collection(collection, **kwargs)
                 self.assertEqual(len(reader.examples), 1)
                 self.assertEqual(reader.read(screen(case)).value, case.value)
 
