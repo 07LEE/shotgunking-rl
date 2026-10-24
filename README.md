@@ -24,6 +24,16 @@ The project uses standard Python packaging and does not require a specific packa
 
 Screenshots from the same play session must use one session ID and one train, validation, or test split.
 
+To collect drafts while you play, start the passive screen monitor in a separate terminal:
+
+```bash
+.venv/bin/python tools/monitor_collection.py --session SESSION_ID
+```
+
+It checks the game window every 0.5 seconds and saves a screenshot plus unapproved board and page-information proposals when a changed screen settles for two samples. It leaves game input and window focus alone. Ctrl+C stops collection; the defaults also stop after one hour or 500 new images. Open the session with `./scripts/process_session.sh SESSION_ID` to review the drafts. Unknown values remain unfilled, and no automatic proposal is approved or used for training by default.
+
+Use one session ID for the entire play session, including all floors. Change detection uses thumbnail differences, so brief screens and small changes can be missed; `--change-threshold`, `--stability-threshold`, `--stable-samples`, and `--interval` control that tradeoff. If automatic viewport detection fails, supply `--crop LEFT TOP RIGHT BOTTOM` in captured-window pixels. This monitor creates collection drafts; it does not start the autonomous runtime or reinforcement-learning training.
+
 Benchmark reviewed train/validation screens offline before and after a change with the same inputs. Test images are excluded; `--include-hud` also measures the individual combat readers. Reports include predictions, evaluation metrics, source/input hashes, and timings, excluding image loading and reference construction.
 
 ```bash

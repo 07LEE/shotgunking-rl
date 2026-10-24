@@ -17,6 +17,18 @@ ROOT = Path(__file__).resolve().parents[3]
 COLLECTION = ROOT / 'data/collection'
 
 
+def draft_annotation(image, image_name, collection, session_id, split, crop=None):
+    """Propose one unapproved annotation without modifying existing data."""
+    game_crop = crop or detect_crop(image)
+    screen = normalize(image, game_crop)
+    analyzer.reset_analyzer_cache()
+    ids = analyzer.get_state_matrix(screen, include_special_knights=True)
+    names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king', 'special_knight']
+    data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_name, 'session_id': session_id, 'floor': None, 'split': split, 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
+    data.update(propose(screen, collection))
+    return data
+
+
 def prepare_session(collection, session_id, crop=None):
     moved = import_images(collection, session_id)
     session = collection / 'sessions' / session_id
@@ -37,13 +49,7 @@ def prepare_session(collection, session_id, crop=None):
             image = cv2.imread(str(image_path))
             if image is None:
                 raise ValueError('Image cannot be read')
-            game_crop = crop or detect_crop(image)
-            screen = normalize(image, game_crop)
-            analyzer.reset_analyzer_cache()
-            ids = analyzer.get_state_matrix(screen, include_special_knights=True)
-            names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king', 'special_knight']
-            data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_path.name, 'session_id': session_id, 'floor': None, 'split': split, 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
-            data.update(propose(screen, collection))
+            data = draft_annotation(image, image_path.name, collection, session_id, split, crop)
             annotation.write_text(json.dumps(data, indent=2) + '\n')
             created += 1
         except ValueError as exc:

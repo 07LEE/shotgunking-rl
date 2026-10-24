@@ -30,7 +30,7 @@ except Exception:
     pwc = None
 
 
-def find_window_geometry(title="Shotgun King"):
+def find_window_geometry(title="Shotgun King", activate=True):
     """Finds the bounding box coordinates of a window matching the given title.
 
     First try using pywinctl, and fallback to wmctrl if it fails.
@@ -50,7 +50,8 @@ def find_window_geometry(title="Shotgun King"):
             for win in windows:
                 if win.title and title.lower() in win.title.lower():
                     try:
-                        win.activate()
+                        if activate:
+                            win.activate()
                     except Exception:
                         pass
                     rect = win.box
@@ -81,7 +82,7 @@ def find_window_geometry(title="Shotgun King"):
     return None
 
 
-def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King"):
+def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King", activate_window=True):
     """Captures the screen and saves it as an image file.
 
     It attempts to find the target window geometry first. If found, it captures
@@ -107,7 +108,10 @@ def capture_screen(output_path="data/screenshot.png", window_title="Shotgun King
         with mss.mss() as sct:
             # Acquire entire screen geometry to validate boundary containment
             screen = sct.monitors[0]
-            monitor = find_window_geometry(window_title) if window_title else None
+            monitor = None
+            if window_title:
+                monitor = (find_window_geometry(window_title) if activate_window
+                           else find_window_geometry(window_title, activate=False))
 
             if monitor is not None:
                 # Check if the game window geometry exits the boundary of the virtual screen dynamically
