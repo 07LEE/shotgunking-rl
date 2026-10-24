@@ -1,10 +1,12 @@
 """Save changed, settled game screens as unapproved collection drafts."""
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 import tempfile
@@ -165,11 +167,46 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
     return counts
 
 
+def select_backend(backend, environ=None):
+    environ = os.environ if environ is None else environ
+    session = environ.get('XDG_SESSION_TYPE', '').lower()
+    wayland = session == 'wayland' or (not session and bool(environ.get('WAYLAND_DISPLAY')))
+    if backend == 'auto':
+        return 'portal' if wayland else 'x11'
+    if backend == 'x11' and wayland:
+        raise ValueError('X11 capture is unavailable in a Wayland session; use --capture-backend portal')
+    if backend not in ('x11', 'portal'):
+        raise ValueError('Unknown capture backend')
+    return backend
+
+
+@contextmanager
+def capture_source(backend, window_title, portal_python):
+    if backend == 'portal':
+        from .portal import PortalCapture
+        print('Select the Shotgun King application window in the screen sharing dialog. '
+              'The selected window is the capture source; --window-title applies only to X11.', flush=True)
+        with PortalCapture(portal_python) as capture:
+            yield capture
+    else:
+        from capture import capture_screen
+        with tempfile.TemporaryDirectory(prefix='shotgun-monitor-') as temporary:
+            path = str(Path(temporary) / 'latest.png')
+
+            def capture():
+                result = capture_screen(output_path=path, window_title=window_title, activate_window=False)
+                return cv2.imread(path) if result else None
+
+            yield capture
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--session', required=True, help='One ID for the entire play session')
     parser.add_argument('--collection', type=Path, default=COLLECTION)
     parser.add_argument('--window-title', default='Shotgun King')
+    parser.add_argument('--capture-backend', choices=('auto', 'x11', 'portal'), default='auto')
+    parser.add_argument('--portal-python', default='/usr/bin/python3', help='System Python with Gio/GStreamer bindings')
     parser.add_argument('--interval', type=float, default=0.5)
     parser.add_argument('--duration', type=float, default=3600, help='Maximum seconds to monitor')
     parser.add_argument('--max-images', type=int, default=500)
@@ -181,18 +218,15 @@ def main():
     if not args.window_title.strip():
         parser.error('A nonempty game window title is required')
     try:
-        # Import desktop capture only for an explicitly started monitor.
-        from capture import capture_screen
-
+        backend = select_backend(args.capture_backend)
+        # Validate limits before opening the permission dialog.
+        ChangeDetector(args.change_threshold, args.stability_threshold, args.stable_samples)
+        if not (math.isfinite(args.interval) and args.interval > 0
+                and math.isfinite(args.duration) and args.duration > 0 and args.max_images > 0):
+            raise ValueError('Interval, duration and max-images must be positive and finite')
         recorder = DraftRecorder(args.collection, args.session, args.crop)
-        print(f'Monitoring {args.window_title!r}; split={recorder.split}; Ctrl+C stops capture. Drafts require review.', flush=True)
-        with tempfile.TemporaryDirectory(prefix='shotgun-monitor-') as temporary:
-            path = str(Path(temporary) / 'latest.png')
-
-            def capture():
-                result = capture_screen(output_path=path, window_title=args.window_title, activate_window=False)
-                return cv2.imread(path) if result else None
-
+        print(f'Monitoring with {backend}; split={recorder.split}; Ctrl+C stops capture. Drafts require review.', flush=True)
+        with capture_source(backend, args.window_title, args.portal_python) as capture:
             counts = monitor(capture, recorder, interval=args.interval, duration=args.duration,
                              max_images=args.max_images, change_threshold=args.change_threshold,
                              stability_threshold=args.stability_threshold, stable_samples=args.stable_samples)

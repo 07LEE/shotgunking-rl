@@ -30,6 +30,16 @@ To collect drafts while you play, start the passive screen monitor in a separate
 .venv/bin/python tools/monitor_collection.py --session SESSION_ID
 ```
 
+On Wayland, the monitor automatically uses the desktop ScreenCast portal. Select the Shotgun King application window in the sharing dialog; that selection determines what is captured. On X11, it uses the window title. Use `--capture-backend portal` to request the portal explicitly. Sharing is closed when collection stops; cancelling or ending sharing stops collection without falling back to a desktop screenshot.
+
+The Wayland helper uses `/usr/bin/python3` with the system Gio/GStreamer bindings, keeping them separate from the project virtual environment. You can check its dependencies without opening screen sharing:
+
+```bash
+/usr/bin/python3 src/shotgun_king_rl/collection/portal_helper.py --check
+```
+
+On Ubuntu, the required system packages are `python3-gi`, `gir1.2-gstreamer-1.0`, `gstreamer1.0-pipewire`, and `gstreamer1.0-plugins-good`. Set `--portal-python` if your system Python is elsewhere. The portal backend currently applies to the collection monitor; live game control remains experimental.
+
 It checks the game window every 0.5 seconds and saves a screenshot plus unapproved board and page-information proposals when a changed screen settles for two samples. It leaves game input and window focus alone. Ctrl+C stops collection; the defaults also stop after one hour or 500 new images. Open the session with `./scripts/process_session.sh SESSION_ID` to review the drafts. Unknown values remain unfilled, and no automatic proposal is approved or used for training by default.
 
 Use one session ID for the entire play session, including all floors. Change detection uses thumbnail differences, so brief screens and small changes can be missed; `--change-threshold`, `--stability-threshold`, `--stable-samples`, and `--interval` control that tradeoff. If automatic viewport detection fails, supply `--crop LEFT TOP RIGHT BOTTOM` in captured-window pixels. This monitor creates collection drafts; it does not start the autonomous runtime or reinforcement-learning training.
