@@ -17,3 +17,10 @@ buffs:
   melee_kill_extra_turn: false
   move_range_bonus: 0
 verbose: true
+
+# Live perception uses reviewed train references; missing values block actions.
+perception:
+  collection: "data/collection"
+  melee_title_annotation: null # Set a reviewed positive train title reference
+  hover_clear_position: [40, 40] # Window-relative pixels; no click
+  hover_clear_delay: 0.3 # Seconds; verify tooltip dismissal in the game

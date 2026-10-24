@@ -53,7 +53,7 @@ def remember_manual_defeat(agent, state, action, action_mask):
     )
 
 
-def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True, trace_directory="data/runtime_traces", collect_epsilon=0.05, model_path="models/model.pth"):
+def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect", learning_rate=1e-3, epsilon_decay=0.95, epsilon_min=0.05, rank=1, weapon_type=0, current_floor=1, buffs=None, verbose=True, trace_directory="data/runtime_traces", collect_epsilon=0.05, model_path="models/model.pth", perception=None):
     """Executes the DQN training loop over a specified number of episodes.
 
     Args:
@@ -73,6 +73,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect
         collect_epsilon: Fixed exploration rate used only in collect mode.
         model_path: Checkpoint loaded by every mode and written only by train.
     """
+    perception = dict(perception or {})
     runtime_mode = resolve_runtime_mode(mode, collect_epsilon)
     preset = WEAPON_PRESETS.get(weapon_type)
     weapon_name = preset["name"] if preset is not None else "Unknown weapon"
@@ -100,6 +101,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect
         "checkpoint_writes": runtime_mode.checkpoint_writes,
         "requires_checkpoint": runtime_mode.requires_checkpoint,
         "epsilon": epsilon,
+        "perception": perception,
         "scope": {
             "rank": rank,
             "floor": current_floor,
@@ -136,6 +138,10 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect
         rank=rank,
         buffs=buffs,
         verbose=verbose,
+        perception_collection=perception.get("collection", "data/collection"),
+        melee_title_annotation=perception.get("melee_title_annotation"),
+        hover_clear_position=perception.get("hover_clear_position", (40, 40)),
+        hover_clear_delay=perception.get("hover_clear_delay", 0.3),
     )
     
     print("Initializing DQN Agent...")
@@ -526,6 +532,7 @@ if __name__ == "__main__":
             trace_directory=config.get("trace_directory", "data/runtime_traces"),
             collect_epsilon=config.get("collect_epsilon", 0.05),
             model_path=config.get("model_path", "models/model.pth"),
+            perception=config.get("perception"),
         )
     else:
         print("Error: Numpy is not available.")

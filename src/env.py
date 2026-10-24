@@ -6,6 +6,7 @@ This module combines screen capture (state observation) and input simulation
 
 import os
 import time
+from dataclasses import asdict
 
 try:
     import cv2
@@ -28,8 +29,8 @@ except Exception:
     pyautogui = None
 
 from capture import capture_screen
-from input import click_relative_in_window, press_key
-from analyzer import get_state_matrix, check_retry_popup, check_card_selection_screen
+from input import click_relative_in_window, move_relative_in_window, press_key
+from analyzer import check_retry_popup, check_card_selection_screen
 from weapons import WEAPON_PRESETS
 from specs import get_enemy_specs_matrices
 from shotgun_king_rl.runtime.state import (
@@ -46,6 +47,7 @@ from shotgun_king_rl.runtime.actions import (
 from shotgun_king_rl.runtime.rewards import calculate_step_reward
 from shotgun_king_rl.runtime.transitions import (
     RuntimeScreenState,
+    ScreenAssessment,
     apply_screen_state_rules,
     classify_runtime_screen,
     update_countdown,
@@ -53,6 +55,8 @@ from shotgun_king_rl.runtime.transitions import (
 from shotgun_king_rl.runtime.io import CaptureResult, InputResult
 from shotgun_king_rl.runtime.execution import verify_action_completion
 from shotgun_king_rl.runtime.consistency import compare_policy_observation
+from shotgun_king_rl.runtime.perception import build_live_pipeline
+from shotgun_king_rl.perception import ScreenKind
 import sys
 
 # Ensure project root is in python path to support tools module imports
@@ -97,7 +101,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     metadata = {"render_modes": ["human"], "render_fps": 5}
 
-    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1, buffs=None, verbose=True):
+    def __init__(self, window_title="Shotgun King", max_steps=100, weapon_type=0, rank=1, buffs=None, verbose=True, perception_pipeline=None, perception_collection="data/collection", melee_title_annotation=None, hover_clear_position=(40, 40), hover_clear_delay=0.3):
         """Initializes the environment state and spaces.
 
         Args:
@@ -118,6 +122,18 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.last_input_result = None
         self.rank = rank
         self.verbose = verbose
+        if len(hover_clear_position) != 2 or any(type(v) is not int or v < 0 for v in hover_clear_position):
+            raise ValueError("hover_clear_position must contain two nonnegative window coordinates")
+        if not np.isfinite(hover_clear_delay) or hover_clear_delay < 0:
+            raise ValueError("hover_clear_delay must be finite and nonnegative")
+        self.perception_pipeline = perception_pipeline
+        self.perception_collection = perception_collection
+        self.melee_title_annotation = melee_title_annotation
+        self.hover_clear_position = tuple(hover_clear_position)
+        self.hover_clear_delay = hover_clear_delay
+        self.last_perception = None
+        self.perception_metadata = None
+        self.last_hover_result = None
 
         # Define Observation Space: 1D flat vector of size 281
         # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
@@ -299,6 +315,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     def get_action_mask(self):
         """Return valid actions for the current observation without game input."""
+        if self.last_perception is not None and not self.last_perception.ready_for_policy:
+            return np.zeros(self.action_space.n, dtype=np.float32)
         return build_action_mask(
             observation=self.current_state,
             action_count=self.action_space.n,
@@ -312,57 +330,74 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             melee_damage=self.melee_damage,
         )
 
-    def _get_obs(self, force_inject=True):
-        """Captures screen and returns a 281-dimensional flat observation vector.
+    def _perception_info(self):
+        result = self.last_perception
+        return {
+            "ready_for_policy": bool(result and result.ready_for_policy),
+            "issues": list(result.issues) if result else ["observation_unavailable"],
+            "sources": list(result.sources) if result else [],
+            "combat_stats": asdict(result.combat_stats) if result and result.combat_stats else None,
+            "hover_clear": _result_info(self.last_hover_result, "move"),
+        }
 
-        Args:
-            force_inject: If True, injects tracked King coordinate if missing.
-
-        Returns:
-            A 281-dimensional numpy float32 observation vector.
-        """
+    def _get_obs(self, force_inject=False):
+        """Read fresh validated state; force_inject is ignored for compatibility."""
         self._check_emergency_stop()
+        self.last_perception = None
+        self.last_hover_result = None
         image_path = "data/screenshot.png"
-        
-        # Ensure fresh screen capture
-        if not self._capture_screen(image_path):
-            return np.zeros((281,), dtype=np.float32)
-        
-        if cv2 is not None and os.path.exists(image_path):
-            img = cv2.imread(image_path)
-            if img is not None:
-                # Call state extractor to return 8x8 chessboard array
-                state = get_state_matrix(img).astype(np.float32)
-                if force_inject and not np.any(state == 1.0):
-                    if hasattr(self, 'king_row') and hasattr(self, 'king_col'):
-                        if 0 <= self.king_row < 8 and 0 <= self.king_col < 8:
-                            state[self.king_row, self.king_col] = 1.0
-                            print(f"DQN Obs Guard: Player King missing. Force injected at tracked coordinate: ({self.king_row}, {self.king_col})")
-                threat = self._get_threat_matrix(state).astype(np.float32)
-                
-                # Real-time ammo sync from screenshot UI
-                from analyzer import extract_ammo_count
-                self.loaded_ammo, self.reserve_ammo = extract_ammo_count(img)
-                # print(f"Ammo Sync: Real-time UI scan matched (Loaded: {self.loaded_ammo}, Reserve: {self.reserve_ammo})")
 
-                # Construct HP and Turn Speed matrices for detected enemy pieces
-                hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns, self.rank)
+        def capture():
+            self._check_emergency_stop()
+            if not self._capture_screen(image_path) or cv2 is None:
+                return None
+            return cv2.imread(image_path)
 
-                return build_observation(
-                    board=state,
-                    threat=threat,
-                    loaded_ammo=self.loaded_ammo,
-                    reserve_ammo=self.reserve_ammo,
-                    damage=self.damage,
-                    range_limit=self.range_limit,
-                    spread=self.spread,
-                    extra_turn_active=self.is_extra_turn_active,
-                    hp_matrix=hp_matrix,
-                    turn_matrix=turn_matrix,
-                )
-        
-        # Fallback dummy observation if loading fails
-        return np.zeros((281,), dtype=np.float32)
+        image = capture()
+        if image is None:
+            return np.zeros(281, dtype=np.float32)
+        if self.perception_pipeline is None:
+            self.perception_pipeline, self.perception_metadata = build_live_pipeline(
+                self.perception_collection, self.melee_title_annotation,
+            )
+        first = True
+
+        def next_capture():
+            nonlocal first
+            if first:
+                first = False
+                return image
+            return capture()
+
+        def clear_hover():
+            self._check_emergency_stop()
+            self.last_hover_result = move_relative_in_window(
+                self.window_title, *self.hover_clear_position,
+            )
+            return bool(self.last_hover_result)
+
+        result = self.perception_pipeline.observe_live(
+            next_capture, clear_hover, lambda: time.sleep(self.hover_clear_delay),
+        )
+        self.last_perception = result
+        if not result.ready_for_policy:
+            return np.zeros(281, dtype=np.float32)
+        stats = result.combat_stats
+        self.loaded_ammo, self.reserve_ammo = result.ammo.loaded, result.ammo.reserve
+        self.damage, self.falloff_start, self.range_limit = stats.attack, stats.range_min, stats.range_max
+        self.spread = stats.spread_degrees
+        self.pierce_chance = stats.penetration_percent / 100.0
+        self.knockback_chance = stats.knockback_percent / 100.0
+        self.melee_damage = stats.melee_damage
+        state = result.board
+        hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns, self.rank)
+        return build_observation(
+            board=state, threat=self._get_threat_matrix(state),
+            loaded_ammo=self.loaded_ammo, reserve_ammo=self.reserve_ammo,
+            damage=self.damage, range_limit=self.range_limit, spread=self.spread,
+            extra_turn_active=self.is_extra_turn_active,
+            hp_matrix=hp_matrix, turn_matrix=turn_matrix,
+        )
 
     def _get_yes_button_coords(self, img):
         """Finds the precise (x, y) coordinates of the active YES button on the retry screen dynamically.
@@ -396,6 +431,19 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
     def _assess_screen(self, observation, transition_exhausted=False):
         """Classify the latest fresh capture before using it as a transition."""
+        if self.last_perception is not None:
+            result = self.last_perception
+            if result.screen_kind is ScreenKind.RETRY:
+                return ScreenAssessment(RuntimeScreenState.DEFEAT, "retry_popup")
+            if result.screen_kind is ScreenKind.CARD_SELECTION:
+                return ScreenAssessment(RuntimeScreenState.VICTORY, "card_selection")
+            if not result.ready_for_policy:
+                return ScreenAssessment(RuntimeScreenState.OBSERVATION_FAILURE, ";".join(result.issues))
+            return classify_runtime_screen(
+                capture_succeeded=bool(self.last_capture_result),
+                king_count=int(np.count_nonzero(result.board == 1)),
+                enemy_count=int(np.count_nonzero(result.board >= 2)),
+            )
         board = observation[:64].reshape(8, 8)
         capture_succeeded = bool(self.last_capture_result)
         retry_detected = False
@@ -435,6 +483,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     "reason": assessment.reason,
                 },
                 "capture": _result_info(self.last_capture_result, "capture"),
+                "perception": self._perception_info(),
                 "input": None,
             }
 
@@ -453,6 +502,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 "reason": assessment.reason,
             },
             "capture": _result_info(self.last_capture_result, "capture"),
+            "perception": self._perception_info(),
             "input": None,
         }
 
@@ -469,6 +519,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self._check_emergency_stop()
         self.last_capture_result = None
         self.last_input_result = None
+        self.last_perception = None
         if gym is not None:
             super().reset(seed=seed)
 
@@ -522,6 +573,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 return obs, {
                     "reset_ready": False,
                     "capture": _result_info(self.last_capture_result, "capture"),
+                    "perception": self._perception_info(),
                     "input": _result_info(result, "input"),
                 }
             time.sleep(2.5)
@@ -534,6 +586,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 return obs, {
                     "reset_ready": False,
                     "capture": _result_info(self.last_capture_result, "capture"),
+                    "perception": self._perception_info(),
                     "input": _result_info(self.last_input_result, "input"),
                 }
         else:
@@ -543,6 +596,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 return initial_obs, {
                     "reset_ready": False,
                     "capture": _result_info(self.last_capture_result, "capture"),
+                    "perception": self._perception_info(),
                     "input": None,
                 }
             initial_assessment = self._assess_screen(initial_obs)
@@ -589,6 +643,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                     "reason": assessment.reason,
                 },
                 "capture": _result_info(self.last_capture_result, "capture"),
+                "perception": self._perception_info(),
                 "input": _result_info(self.last_input_result, "input"),
             }
             
@@ -609,6 +664,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 "reason": assessment.reason,
             },
             "capture": _result_info(self.last_capture_result, "capture"),
+            "perception": self._perception_info(),
             "input": _result_info(self.last_input_result, "input"),
         }
         return obs, info
@@ -627,8 +683,10 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         next_step = self.current_step + 1
         print(f"Step {next_step} - Executing action: {action}")
 
+        image_path = "data/screenshot.png"
         original_action = action
         action_result = None
+        policy_combat = self.last_perception.combat_stats if self.last_perception is not None else None
         policy_observation = (
             None if self.current_state is None else self.current_state.copy()
         )
@@ -653,6 +711,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 "requested_action": original_action,
                 "action": None,
                 "input_succeeded": None,
+                "perception": self._perception_info(),
                 "action_completed": False,
                 "transition_ready": False,
                 "screen_state": {
@@ -672,7 +731,11 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             policy_observation,
             self.current_state,
         )
-        if not consistency.consistent:
+        combat_changed = (
+            policy_combat is not None and self.last_perception is not None
+            and policy_combat != self.last_perception.combat_stats
+        )
+        if not consistency.consistent or combat_changed:
             info = {
                 "step": self.current_step,
                 "requested_action": original_action,
@@ -681,12 +744,13 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 "action_completed": False,
                 "transition_ready": False,
                 "observation_issue": "pre_action_observation_changed",
-                "observation_consistency": consistency.as_info(),
+                "observation_consistency": {**consistency.as_info(), **({"consistent": False, "reason": "combat_stats_changed"} if combat_changed else {})},
                 "screen_state": {
                     "state": initial_assessment.state.value,
                     "reason": initial_assessment.reason,
                 },
                 "capture": _result_info(self.last_capture_result, "capture"),
+                "perception": self._perception_info(),
             }
             return self.current_state, 0.0, False, self._truncation_status(), info
         from specs import get_enemy_specs_matrices
@@ -784,14 +848,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             if not action_result:
                 return self._input_failure_transition(original_action, action, action_result)
             time.sleep(1.8)
-            # Re-capture and sync real ammo from UI to prevent logical mismatch
-            image_path = "data/screenshot.png"
-            capture_result = self._capture_screen(image_path)
-            if capture_result and cv2 is not None and os.path.exists(image_path):
-                img = cv2.imread(image_path)
-                if img is not None:
-                    from analyzer import extract_ammo_count
-                    self.loaded_ammo, self.reserve_ammo = extract_ammo_count(img)
+            # Final equilibrium observation below synchronizes all readers together.
             print(f"Ammo System: Reload input dispatched. Observed ammo: {self.loaded_ammo}/{self.reserve_ammo}")
             
         elif action == 9:
@@ -827,6 +884,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
                 # Fallback if target is out of range or missing (normally filtered by action guard)
                 print(f"Intel Shoot Guard: Target out of range (dist: {min_dist} > limit: {self.range_limit}) or missing. Bypassing shot event.")
 
+        reward_parameters = {
+            name: getattr(self, name) for name in (
+                "damage", "melee_damage", "falloff_start", "range_limit", "spread",
+                "pierce_chance", "knockback_chance",
+            )
+        }
         # Wait for turn transition and board state stabilization actively
         # Shoot action has heavy fire/smoke animation, enforce guaranteed sleep to ensure clean capture
         if action == 9:
@@ -870,14 +933,14 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             shot_target=shot_target,
             valid_shot_target=has_valid_target,
             shot_was_melee=shot_was_melee,
-            damage=self.damage,
-            melee_damage=self.melee_damage,
+            damage=reward_parameters["damage"],
+            melee_damage=reward_parameters["melee_damage"],
             melee_kill_extra_turn=self.melee_kill_extra_turn,
-            falloff_start=self.falloff_start,
-            range_limit=self.range_limit,
-            spread=self.spread,
-            pierce_chance=self.pierce_chance,
-            knockback_chance=self.knockback_chance,
+            falloff_start=reward_parameters["falloff_start"],
+            range_limit=reward_parameters["range_limit"],
+            spread=reward_parameters["spread"],
+            pierce_chance=reward_parameters["pierce_chance"],
+            knockback_chance=reward_parameters["knockback_chance"],
             target_hp=target_hp,
             promotion_detected=promotion_detected,
         )
@@ -1026,6 +1089,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "screen_state": {"state": assessment.state.value, "reason": assessment.reason},
             "input": _result_info(action_result, "input"),
             "capture": _result_info(self.last_capture_result, "capture"),
+            "perception": self._perception_info(),
         }
         return self.current_state, reward, terminated, truncated, info
 
