@@ -1,7 +1,7 @@
 """Gate independent screen, board, and HUD readers before policy use."""
 
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeVar
+from typing import Any, Callable, Protocol, TypeVar
 
 import numpy as np
 
@@ -34,6 +34,37 @@ class PerceptionPipeline:
     board_reader: Reader[np.ndarray]
     ammo_reader: Reader[AmmoReading]
     combat_stats_reader: Reader[CombatStatsReading]
+
+    def observe_live(
+        self,
+        capture: Callable[[], Any],
+        clear_hover: Callable[[], bool],
+        wait_for_tooltip: Callable[[], None],
+    ) -> FusedPerception:
+        """Retry one gameplay HUD failure after clearing a possible hover overlay.
+
+        Capture must return a fresh image, or None on failure. The caller owns
+        desktop permissions, pointer placement and the tooltip dismissal delay.
+        Offline observe never moves the pointer. No values survive a recapture.
+        """
+        image = capture()
+        if image is None:
+            return FusedPerception(
+                screen_kind=None, board=None, ammo=None, combat_stats=None,
+                ready_for_policy=False, issues=("recovery:capture_failed",), sources=(),
+            )
+        result = self.observe(image)
+        if result.screen_kind is not ScreenKind.GAMEPLAY or not any(
+            issue.startswith("combat_stats:") for issue in result.issues
+        ):
+            return result
+        if not clear_hover():
+            return _recovery_failure(result, "hover_clear_failed")
+        wait_for_tooltip()
+        image = capture()
+        if image is None:
+            return _recovery_failure(result, "recapture_failed")
+        return self.observe(image)
 
     def observe(self, image: Any) -> FusedPerception:
         frame = PreparedFrame(image)
@@ -103,6 +134,18 @@ class PerceptionPipeline:
 def _issue(name: str, prediction: Prediction[Any]) -> str:
     detail = prediction.reason or prediction.status.value
     return f"{name}:{detail}"
+
+
+def _recovery_failure(result: FusedPerception, reason: str) -> FusedPerception:
+    return FusedPerception(
+        screen_kind=result.screen_kind,
+        board=None,
+        ammo=None,
+        combat_stats=None,
+        ready_for_policy=False,
+        issues=(*result.issues, f"recovery:{reason}"),
+        sources=result.sources,
+    )
 
 
 def _valid_board(board: np.ndarray | None) -> bool:

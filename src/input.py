@@ -81,6 +81,23 @@ def click_relative_in_window(window_title, rel_x, rel_y, duration=0.1):
     return click_at(abs_x, abs_y, duration=duration)
 
 
+def move_relative_in_window(window_title, rel_x, rel_y, duration=0.1):
+    """Move without clicking to a caller-selected unobstructed window location."""
+    rect = find_window_geometry(window_title)
+    if rect is None:
+        return InputResult(IOStatus.FAILED, "move", "window_not_found")
+    if not (0 <= rel_x < rect["width"] and 0 <= rel_y < rect["height"]):
+        return InputResult(IOStatus.FAILED, "move", "target_outside_window")
+    target = (rect["left"] + rel_x, rect["top"] + rel_y)
+    if pyautogui is None:
+        return InputResult(IOStatus.UNAVAILABLE, "move", "pyautogui_unavailable", target)
+    try:
+        pyautogui.moveTo(*target, duration=duration)
+    except Exception as error:
+        return InputResult(IOStatus.FAILED, "move", f"move_error:{type(error).__name__}", target)
+    return InputResult(IOStatus.SUCCEEDED, "move", target=target)
+
+
 def press_key(key, press_duration=0.05):
     """Simulates pressing and releasing a specific keyboard key.
 
