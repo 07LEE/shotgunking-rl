@@ -38,7 +38,7 @@ class RuntimeActionTests(unittest.TestCase):
     def test_royal_guard_skips_boss_while_knight_exists(self):
         board = np.zeros((8, 8), dtype=np.float32)
         board[4, 4] = 1
-        board[2, 4] = 6
+        board[2, 4] = 9
         board[4, 6] = 3
 
         target = select_shot_target(

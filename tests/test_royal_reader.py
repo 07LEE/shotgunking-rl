@@ -1,4 +1,4 @@
-"""Offline royal classification and legacy-policy boundary checks."""
+"""Offline royal classification and supported-policy boundary checks."""
 
 import json
 from pathlib import Path
@@ -41,7 +41,7 @@ class RoyalReaderTests(unittest.TestCase):
         self.assertEqual(result[0].tolist(), [1, 8, 4, 0, 0, 0, 0, 0])
         self.assertEqual(board[0, 1], 6)
 
-    def test_extended_ids_never_accepted_for_legacy_policy(self):
+    def test_distinct_royals_are_accepted_but_ambiguous_royal_stays_rejected(self):
         image = np.full((720, 1280, 3), 220, dtype=np.uint8)
         board = np.zeros((8, 8), dtype=int)
         board[7, 4] = 1
@@ -51,7 +51,9 @@ class RoyalReaderTests(unittest.TestCase):
                 reader = TemplatePieceReader(self.reader)
                 with patch.object(self.reader, "refine", return_value=board):
                     prediction = reader.read(image)
-                self.assertFalse(prediction.is_accepted)
+                self.assertEqual(prediction.is_accepted, kind in (8, 9))
+                if kind == 6:
+                    self.assertEqual(prediction.reason, 'ambiguous_royal_kind')
                 self.assertEqual(prediction.value[0, 0], kind)
 
     def test_collection_excludes_nontraining_and_unconfirmed_sources(self):

@@ -29,6 +29,7 @@ from shotgun_king_rl.runtime.suggestions import (
     format_suggestion_view,
 )
 from shotgun_king_rl.runtime.modes import resolve_runtime_mode
+from shotgun_king_rl.state_schema import OBSERVATION_SCHEMA, OBSERVATION_SIZE
 from shotgun_king_rl.runtime.tracing import (
     ActionTraceWriter,
     build_action_trace,
@@ -100,6 +101,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect
         "learning_enabled": runtime_mode.learning_enabled,
         "checkpoint_writes": runtime_mode.checkpoint_writes,
         "requires_checkpoint": runtime_mode.requires_checkpoint,
+        "observation": {"schema": OBSERVATION_SCHEMA, "size": OBSERVATION_SIZE},
         "epsilon": epsilon,
         "perception": perception,
         "scope": {
@@ -148,14 +150,15 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect
     # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130,
     # plus 3 weapon specs is 133, plus 20 buffs/debuffs is 153, plus 64 enemy hp is 217,
     # plus 64 enemy turn speed is 281
-    agent = DQNAgent(state_size=281, action_size=env.action_space.n, lr=learning_rate)
+    agent = DQNAgent(state_size=OBSERVATION_SIZE, action_size=env.action_space.n, lr=learning_rate)
     
     # Every mode may read the same fixed checkpoint; only train may write it.
     model_loaded = agent.load(model_path)
-    if runtime_mode.requires_checkpoint and not model_loaded:
+    if not model_loaded and (runtime_mode.requires_checkpoint or os.path.exists(model_path)):
         print(
             f"Runtime stopped before input because {runtime_mode.name} mode "
-            f"requires a readable checkpoint at {model_path}."
+            f"requires a compatible checkpoint at {model_path}; "
+            "use a separate new model path to start without existing weights."
         )
         return False
     

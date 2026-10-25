@@ -452,7 +452,7 @@ def _piece_prediction_matches(expected, predicted, excluded):
         for col in range(8):
             if (row, col) in excluded_set:
                 continue
-            if _compatible_piece(expected[row][col]) != _compatible_piece(PIECE_LABELS.get(int(predicted[row, col]), "unknown")):
+            if expected[row][col] != PIECE_LABELS.get(int(predicted[row, col]), "unknown"):
                 return False
     return True
 

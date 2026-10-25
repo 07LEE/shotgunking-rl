@@ -16,7 +16,7 @@ class TemplatePieceReader:
     def __init__(self, royal_templates=None):
         self.royal_templates = royal_templates
         if royal_templates is not None:
-            self.source = "piece-templates:royals-v1"
+            self.source = "piece-templates:royals-v2"
 
     @classmethod
     def from_collection(cls, collection):
@@ -48,11 +48,7 @@ class TemplatePieceReader:
             return Prediction.rejected(
                 board, source=self.source, reason="unsupported_runtime_piece:special_knight"
             )
-        if np.any(np.isin(board, (8, 9))):
-            return Prediction.rejected(
-                board, source=self.source, reason="unsupported_runtime_piece:distinct_royal"
-            )
-        if self.royal_templates is not None and np.any(board == 6):
+        if np.any(board == 6):
             return Prediction.rejected(
                 board, source=self.source, reason="ambiguous_royal_kind"
             )

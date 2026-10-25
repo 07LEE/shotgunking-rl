@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..state_schema import QUEEN, WHITE_KING
 from .actions import action_destination, select_shot_target
 
 
@@ -49,6 +50,8 @@ PIECE_MARKS = {
     4: "B",
     5: "R",
     6: "X",
+    QUEEN: "Q",
+    WHITE_KING: "W",
 }
 
 PIECE_NAMES = {
@@ -57,6 +60,8 @@ PIECE_NAMES = {
     4: "bishop",
     5: "rook",
     6: "queen or white king",
+    QUEEN: "queen",
+    WHITE_KING: "white king",
 }
 
 
@@ -170,7 +175,7 @@ def _format_board(board):
     for row in range(8):
         marks = " ".join(PIECE_MARKS.get(int(value), "?") for value in board[row])
         rows.append(f"{8 - row} | {marks}")
-    rows.append("Legend: K player | P N B R enemies | X queen/white king | . empty")
+    rows.append("Legend: K player | P N B R Q enemies | W white king | X unknown royal | . empty")
     return tuple(rows)
 
 

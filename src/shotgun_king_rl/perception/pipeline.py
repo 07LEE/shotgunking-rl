@@ -5,6 +5,7 @@ from typing import Any, Callable, Protocol, TypeVar
 
 import numpy as np
 
+from ..state_schema import SUPPORTED_BOARD_IDS
 from .frame import PreparedFrame, read_frame
 from .validation import valid_combat_stats
 
@@ -153,8 +154,7 @@ def _valid_board(board: np.ndarray | None) -> bool:
         return False
     if not (np.issubdtype(board.dtype, np.integer) or np.issubdtype(board.dtype, np.floating)):
         return False
-    return bool(np.all(np.isfinite(board)) and np.all(board >= 0)
-                and np.all(board <= 6) and np.all(board == np.floor(board)))
+    return bool(np.all(np.isfinite(board)) and np.all(np.isin(board, SUPPORTED_BOARD_IDS)))
 
 
 def _valid_ammo(ammo: AmmoReading | None) -> bool:

@@ -178,6 +178,7 @@ class RuntimeTracingTests(unittest.TestCase):
                 episodes=1,
                 mode="collect",
                 trace_directory=directory,
+                model_path=str(Path(directory) / "new-model.pth"),
                 verbose=False,
             )
             paths = list(Path(directory).glob("*.jsonl"))
@@ -195,10 +196,27 @@ class RuntimeTracingTests(unittest.TestCase):
         self.assertTrue(payload["result"]["transition_verified"])
         self.assertFalse(payload["result"]["accepted_for_replay"])
         self.assertFalse(manifest["learning_enabled"])
+        self.assertEqual(manifest['observation']['schema'], 'distinct-royals-281-v1')
+        self.assertEqual(manifest['observation']['size'], 281)
         agent.remember.assert_not_called()
         agent.replay.assert_not_called()
         agent.update_target_network.assert_not_called()
         agent.save.assert_not_called()
+
+    def test_existing_incompatible_checkpoint_blocks_all_modes_before_input_or_save(self):
+        for mode in ('suggest', 'evaluate', 'collect', 'train'):
+            with self.subTest(mode=mode), TemporaryDirectory() as directory:
+                environment, agent = runtime_doubles()
+                agent.load.return_value = False
+                model = Path(directory) / 'legacy.pth'
+                model.write_bytes(b'legacy weights must be preserved')
+                with patch.object(train, 'ShotgunKingEnv', return_value=environment), patch.object(train, 'DQNAgent', return_value=agent), patch.object(train, 'SummaryWriter', None):
+                    started = train.train_dqn(episodes=1, mode=mode, trace_directory=directory, model_path=str(model), verbose=False)
+                self.assertFalse(started)
+                environment.reset.assert_not_called()
+                environment.step.assert_not_called()
+                agent.save.assert_not_called()
+                self.assertEqual(model.read_bytes(), b'legacy weights must be preserved')
 
     def test_writer_appends_json_safe_action_record(self):
         observation = np.zeros(281, dtype=np.float32)

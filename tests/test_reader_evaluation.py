@@ -58,7 +58,7 @@ def create_reviewed_screen(collection, split="train"):
 
 
 class ReaderEvaluationTests(unittest.TestCase):
-    def test_distinct_queen_is_scored_even_when_policy_rejects_it(self):
+    def test_distinct_queen_is_scored_and_accepted_for_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection)
@@ -66,14 +66,14 @@ class ReaderEvaluationTests(unittest.TestCase):
             board[0, 0], board[7, 4] = 8, 1
             report = evaluate_readers(
                 collection / "sessions",
-                piece_reader=FakeReader(Prediction.rejected(
-                    board, source="pieces:test", reason="unsupported_runtime_piece:distinct_royal"
+                piece_reader=FakeReader(Prediction.accepted(
+                    board, source="pieces:test"
                 ), "pieces:test"),
                 ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source="ammo:test"), "ammo:test"),
                 screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:test"), "screen:test"),
             )
         self.assertEqual(report["overall"]["pieces"]["strict"]["classes"]["queen"]["recall"], 1.0)
-        self.assertEqual(report["overall"]["combined"]["accepted_rate"], 0.0)
+        self.assertEqual(report["overall"]["combined"]["accepted_rate"], 1.0)
 
     def test_rejected_special_knight_remains_visible_in_accuracy_metrics(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -103,7 +103,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             collection = Path(directory)
             create_reviewed_screen(collection)
             predicted_board = np.zeros((8, 8), dtype=int)
-            predicted_board[0][0] = 6
+            predicted_board[0][0] = 8
             predicted_board[7][4] = 1
             report = evaluate_readers(
                 collection / "sessions",
@@ -113,7 +113,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             )
 
         overall = report["overall"]
-        self.assertEqual(overall["pieces"]["strict"]["accuracy"], 0.984375)
+        self.assertEqual(overall["pieces"]["strict"]["accuracy"], 1.0)
         self.assertEqual(overall["pieces"]["legacy_compatible"]["accuracy"], 1.0)
         self.assertEqual(overall["pieces"]["legacy_compatible"]["full_64_cell_board_exact_rate"], 1.0)
         self.assertEqual(overall["pieces"]["player_king"]["correct_position_rate"], 1.0)
@@ -122,12 +122,30 @@ class ReaderEvaluationTests(unittest.TestCase):
         self.assertEqual(overall["combined"]["correct_and_accepted_rate"], 1.0)
         self.assertEqual(report["splits"]["val"]["annotations"], 0)
 
+    def test_wrong_royal_kind_is_not_correct_in_combined_policy_metrics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            create_reviewed_screen(collection)
+            board = np.zeros((8, 8), dtype=int)
+            board[0, 0], board[7, 4] = 9, 1  # Label is queen; prediction is white king.
+            report = evaluate_readers(
+                collection / 'sessions',
+                piece_reader=FakeReader(Prediction.accepted(board, source='pieces:test'), 'pieces:test'),
+                ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source='ammo:test'), 'ammo:test'),
+                screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source='screen:test'), 'screen:test'),
+            )
+        overall = report['overall']
+        self.assertEqual(overall['pieces']['strict']['accuracy'], 63 / 64)
+        self.assertEqual(overall['pieces']['legacy_compatible']['accuracy'], 1.0)
+        self.assertEqual(overall['combined']['accepted_rate'], 1.0)
+        self.assertEqual(overall['combined']['correct_and_accepted_rate'], 0.0)
+
     def test_unknown_screen_prevents_combined_acceptance(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection)
             predicted_board = np.zeros((8, 8), dtype=int)
-            predicted_board[0][0] = 6
+            predicted_board[0][0] = 8
             predicted_board[7][4] = 1
             report = evaluate_readers(
                 collection / "sessions",
@@ -161,7 +179,7 @@ class ReaderEvaluationTests(unittest.TestCase):
                 data["screen_state"]["combat_stats"] = labels
                 path.write_text(json.dumps(data))
                 board = np.zeros((8, 8), dtype=int)
-                board[0, 0], board[7, 4] = 6, 1
+                board[0, 0], board[7, 4] = 8, 1
                 report = evaluate_readers(
                     collection / "sessions",
                     piece_reader=FakeReader(Prediction.accepted(board, source="pieces:test"), "pieces:test"),

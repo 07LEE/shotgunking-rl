@@ -8,6 +8,7 @@ import os
 import random
 from collections import deque
 
+from shotgun_king_rl.state_schema import CHECKPOINT_FORMAT, OBSERVATION_SCHEMA
 try:
     import numpy as np
 except ImportError:
@@ -151,8 +152,8 @@ class DQNAgent:
             lr: Learning rate for training.
             gamma: Discount factor for future rewards.
         """
-        self.state_size = state_size
-        self.action_size = action_size
+        self.state_size = int(state_size)
+        self.action_size = int(action_size)
         self.gamma = gamma
         
         self.memory = ReplayBuffer(capacity=5000)
@@ -251,22 +252,44 @@ class DQNAgent:
         return float(loss.item())
 
     def save(self, filepath="models/model.pth"):
-        """Saves the policy network weights to the specified file path."""
+        """Save weights with the observation meaning and network dimensions."""
         if torch is not None and self.policy_net is not None:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            torch.save(self.policy_net.state_dict(), filepath)
+            torch.save({
+                "format": CHECKPOINT_FORMAT,
+                "observation_schema": OBSERVATION_SCHEMA,
+                "state_size": self.state_size,
+                "action_size": self.action_size,
+                "policy_state_dict": self.policy_net.state_dict(),
+            }, filepath)
             print(f"Successfully saved agent model weights to: '{filepath}'")
 
     def load(self, filepath="models/model.pth"):
-        """Loads the policy network weights from the specified file path."""
+        """Reject legacy or incompatible meanings before modifying either net."""
         if torch is not None and self.policy_net is not None and os.path.exists(filepath):
             try:
-                self.policy_net.load_state_dict(torch.load(filepath, map_location=self.device))
+                checkpoint = torch.load(filepath, map_location=self.device, weights_only=True)
+                if (not isinstance(checkpoint, dict)
+                        or checkpoint.get("format") != CHECKPOINT_FORMAT
+                        or checkpoint.get("observation_schema") != OBSERVATION_SCHEMA
+                        or type(checkpoint.get("state_size")) is not int
+                        or checkpoint["state_size"] != self.state_size
+                        or type(checkpoint.get("action_size")) is not int
+                        or checkpoint["action_size"] != self.action_size):
+                    raise ValueError("incompatible checkpoint observation schema or dimensions")
+                weights = checkpoint.get("policy_state_dict")
+                expected = self.policy_net.state_dict()
+                if (not isinstance(weights, dict) or weights.keys() != expected.keys()
+                        or any(not isinstance(weights[key], torch.Tensor)
+                               or weights[key].shape != tensor.shape
+                               for key, tensor in expected.items())):
+                    raise ValueError("incompatible checkpoint weights")
+                self.policy_net.load_state_dict(weights)
                 self.target_net.load_state_dict(self.policy_net.state_dict())
                 print(f"Successfully loaded agent model weights from: '{filepath}'")
                 return True
             except Exception as e:
-                print(f"Warning: Failed to load existing weights due to dimension mismatch or corrupt file ({e}). Starting with fresh weights.")
+                print(f"Checkpoint rejected; existing weights were not loaded ({e}).")
                 return False
         return False
 

@@ -3,12 +3,13 @@
 import numpy as np
 
 from shotgun_king_rl.perception.types import CombatStatsReading
+from shotgun_king_rl.state_schema import QUEEN, WHITE_KING
 
 from .actions import ACTION_DIRECTIONS, available_moves, select_shot_target
 
 
 def build_threat_matrix(board):
-    """Return the attacked cells for the legacy numeric board format."""
+    """Return base attack ranges, keeping queen rays distinct from king steps."""
     threat = np.zeros((8, 8), dtype=np.int32)
     straight_directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
     diagonal_directions = ((-1, -1), (-1, 1), (1, -1), (1, 1))
@@ -33,11 +34,16 @@ def build_threat_matrix(board):
                     col = enemy_col + col_offset
                     if 0 <= row < 8 and 0 <= col < 8:
                         threat[row, col] = 1
-            elif piece in (4, 5, 6):
+            elif piece == WHITE_KING:
+                for row_offset, col_offset in ACTION_DIRECTIONS:
+                    row, col = enemy_row + row_offset, enemy_col + col_offset
+                    if 0 <= row < 8 and 0 <= col < 8:
+                        threat[row, col] = 1
+            elif piece in (4, 5, 6, QUEEN):
                 directions = ()
-                if piece in (5, 6):
+                if piece in (5, 6, QUEEN):
                     directions += straight_directions
-                if piece in (4, 6):
+                if piece in (4, 6, QUEEN):
                     directions += diagonal_directions
                 for row_offset, col_offset in directions:
                     for distance in range(1, 8):

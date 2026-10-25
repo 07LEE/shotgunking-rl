@@ -9,14 +9,18 @@ try:
 except ImportError:
     np = None
 
+from shotgun_king_rl.state_schema import QUEEN, WHITE_KING
 # Static specifications mapping for enemy pieces: {piece_id: {"hp": default_hp, "turn": default_turn}}
-# 2: Pawn, 3: Knight, 4: Bishop, 5: Rook, 6: Queen/King
+# 6 is retained for legacy callers; runtime observations use 8 and 9.
+# Royal HP/turn defaults remain legacy estimates, not live readings.
 ENEMY_SPECS = {
     2: {"hp": 5.0, "turn": 5.0},
     3: {"hp": 3.0, "turn": 3.0},
     4: {"hp": 3.0, "turn": 3.0},
     5: {"hp": 4.0, "turn": 4.0},
     6: {"hp": 4.0, "turn": 4.0},
+    QUEEN: {"hp": 4.0, "turn": 4.0},
+    WHITE_KING: {"hp": 4.0, "turn": 4.0},
 }
 
 # Max values for normalization to prevent scale instability in neural network inputs
@@ -60,6 +64,8 @@ def get_enemy_specs_matrices(state_matrix, enemy_turns_dict=None, rank=1):
         4: hp_bishop,
         5: hp_rook,
         6: hp_boss,
+        QUEEN: hp_boss,
+        WHITE_KING: hp_boss,
     }
 
     hp_matrix = np.zeros((8, 8), dtype=np.float32)

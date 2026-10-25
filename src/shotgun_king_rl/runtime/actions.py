@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ..state_schema import QUEEN, WHITE_KING
 
 ACTION_DIRECTIONS = (
     (-1, -1),
@@ -73,7 +74,7 @@ def available_moves(board, threat, king_position, move_range_bonus=0):
 def detect_promotion(previous_board, current_board):
     """Detect the legacy pawn-to-piece transition on the bottom rank."""
     for col in range(8):
-        if current_board[7, col] not in (3, 4, 5, 6):
+        if current_board[7, col] not in (3, 4, 5, 6, QUEEN):
             continue
         for previous_col in (col - 1, col, col + 1):
             if 0 <= previous_col < 8 and (
@@ -101,7 +102,7 @@ def select_shot_target(
                 break
             piece = int(board[row, col])
             if piece >= 2:
-                if piece == 6 and royal_guard_active and knights_present:
+                if piece in (6, WHITE_KING) and royal_guard_active and knights_present:
                     break
                 diagonal = row_offset != 0 and col_offset != 0
                 straight = row_offset == 0 or col_offset == 0
@@ -109,7 +110,8 @@ def select_shot_target(
                     (piece == 2 and row_offset == -1 and diagonal and distance == 1)
                     or (piece == 4 and diagonal)
                     or (piece == 5 and straight)
-                    or (piece == 6 and (straight or diagonal))
+                    or (piece in (6, QUEEN) and (straight or diagonal))
+                    or (piece == WHITE_KING and distance == 1)
                 )
                 candidate = ShotTarget(
                     direction=(row_offset, col_offset),

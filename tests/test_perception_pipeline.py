@@ -107,9 +107,9 @@ class PerceptionPipelineTests(unittest.TestCase):
         self.assertIsNone(result.combat_stats)
         self.assertEqual(result.issues, ("combat_stats:unreadable",))
 
-    def test_accepted_board_still_requires_legacy_integer_ids(self):
-        cases = [(0, True), (6, True), (6.0, True)] + [
-            (value, False) for value in (-1, 0.5, 7, 8, 9, float('nan'), float('inf'), 1 + 2j, True)
+    def test_accepted_board_requires_supported_integer_ids(self):
+        cases = [(0, True), (8, True), (9.0, True)] + [
+            (value, False) for value in (-1, 0.5, 6, 7, 10, float('nan'), float('inf'), 1 + 2j, True)
         ]
         for value, allowed in cases:
             with self.subTest(value=value):
