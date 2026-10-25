@@ -10,6 +10,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from context_fixtures import NormalContextReader
 from shotgun_king_rl.perception import (
     AmmoReading,
     CombatStatsReading,
@@ -49,12 +50,12 @@ class PerceptionPipelineTests(unittest.TestCase):
         ammo = FakeReader(Prediction.accepted(AmmoReading(loaded=1, reserve=5), source="ammo:v1"))
         combat = FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source="combat:v1"))
 
-        result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
         self.assertTrue(result.ready_for_policy)
         self.assertEqual(result.issues, ())
         self.assertEqual(result.combat_stats, VALID_COMBAT_STATS)
-        self.assertEqual(result.sources, ("screen:v1", "pieces:v1", "ammo:v1", "combat:v1"))
+        self.assertEqual(result.sources, ("screen:v1", "pieces:v1", "ammo:v1", "combat:v1", "context:test"))
 
     def test_non_gameplay_screen_skips_board_and_ammo_readers(self):
         screen = FakeReader(Prediction.accepted(ScreenKind.CARD_SELECTION, source="screen:v1"))
@@ -62,7 +63,7 @@ class PerceptionPipelineTests(unittest.TestCase):
         ammo = FakeReader(Prediction.unknown(source="ammo:v1", reason="not run"))
         combat = FakeReader(Prediction.unknown(source="combat:v1", reason="not run"))
 
-        result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
         self.assertFalse(result.ready_for_policy)
         self.assertEqual(result.screen_kind, ScreenKind.CARD_SELECTION)
@@ -77,7 +78,7 @@ class PerceptionPipelineTests(unittest.TestCase):
         ammo = FakeReader(Prediction.unknown(source="ammo:v1", reason="low_confidence"))
         combat = FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source="combat:v1"))
 
-        result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
         self.assertFalse(result.ready_for_policy)
         self.assertIsNotNone(result.board)
@@ -90,7 +91,7 @@ class PerceptionPipelineTests(unittest.TestCase):
         ammo = FakeReader(Prediction.accepted(AmmoReading(loaded=1, reserve=5), source="ammo:v1"))
         combat = FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source="combat:v1"))
 
-        result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
         self.assertFalse(result.ready_for_policy)
         self.assertEqual(result.issues, ("board:invalid_shape_or_values",))
@@ -101,7 +102,7 @@ class PerceptionPipelineTests(unittest.TestCase):
         ammo = FakeReader(Prediction.accepted(AmmoReading(loaded=1, reserve=5), source="ammo:v1"))
         combat = FakeReader(Prediction.unknown(source="combat:v1", reason="unreadable"))
 
-        result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
         self.assertFalse(result.ready_for_policy)
         self.assertIsNone(result.combat_stats)
@@ -119,6 +120,7 @@ class PerceptionPipelineTests(unittest.TestCase):
                     FakeReader(Prediction.accepted(values, source='pieces:test')),
                     FakeReader(Prediction.accepted(AmmoReading(1, 5), source='ammo:test')),
                     FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source='combat:test')),
+                    NormalContextReader(values),
                 ).observe(object())
                 self.assertEqual(result.ready_for_policy, allowed)
                 if allowed:
@@ -149,7 +151,7 @@ class PerceptionPipelineTests(unittest.TestCase):
             )
         )
 
-        result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
         self.assertFalse(result.ready_for_policy)
         self.assertIsNone(result.combat_stats)
@@ -176,7 +178,7 @@ class PerceptionPipelineTests(unittest.TestCase):
                 ammo = FakeReader(Prediction.accepted(AmmoReading(loaded=1, reserve=5), source="ammo:v1"))
                 combat = FakeReader(Prediction.accepted(stats, source="combat:v1"))
 
-                result = PerceptionPipeline(screen, board, ammo, combat).observe(object())
+                result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
 
                 self.assertFalse(result.ready_for_policy)
                 self.assertEqual(result.issues, ("combat_stats:invalid_values",))

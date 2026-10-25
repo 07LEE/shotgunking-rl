@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 import env
 from specs import ENEMY_SPECS, get_enemy_specs_matrices
+from context_fixtures import NormalContextReader
 from shotgun_king_rl.perception import AmmoReading, PerceptionPipeline, Prediction, ScreenKind
 from shotgun_king_rl.runtime.actions import detect_promotion, select_shot_target
 from shotgun_king_rl.runtime.io import CaptureResult, IOStatus, InputResult
@@ -101,6 +102,7 @@ class RoyalRuntimeTests(unittest.TestCase):
                 pipeline = PerceptionPipeline(
                     FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source='screen')),
                     pieces, ammo, FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source='combat')),
+                    NormalContextReader(lambda: pieces.prediction.value),
                 )
                 game = env.ShotgunKingEnv(perception_pipeline=pipeline)
 
@@ -115,7 +117,7 @@ class RoyalRuntimeTests(unittest.TestCase):
                     game.current_state = game._get_obs()
                     self.assertTrue(game.last_perception.ready_for_policy)
                     np.testing.assert_array_equal(game.current_state[:64], board.flatten())
-                    self.assertEqual(game.current_state.shape, (281,))
+                    self.assertEqual(game.current_state.shape, (345,))
                     self.assertEqual(game.get_action_mask()[9], 1)
                     view = build_suggestion_view(game.current_state, game.get_action_mask(), None, loaded_ammo=1, max_ammo=2, reserve_ammo=4, range_limit=5)
                     rendered = format_suggestion_view(view)

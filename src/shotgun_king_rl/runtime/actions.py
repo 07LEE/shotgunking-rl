@@ -45,7 +45,19 @@ def action_destination(king_position, action):
     )
 
 
-def available_moves(board, threat, king_position, move_range_bonus=0):
+def moat_allows_move(terrain, origin, destination):
+    """Non-knights must stop on first entering the moat from normal ground."""
+    if terrain is None or terrain[origin] == 1:
+        return True
+    row_delta = destination[0] - origin[0]
+    col_delta = destination[1] - origin[1]
+    distance = max(abs(row_delta), abs(col_delta))
+    row_step, col_step = int(np.sign(row_delta)), int(np.sign(col_delta))
+    return not any(terrain[origin[0] + row_step * step, origin[1] + col_step * step] == 1
+                   for step in range(1, distance))
+
+
+def available_moves(board, threat, king_position, move_range_bonus=0, terrain=None):
     """Return collision-free moves and the safe subset in action order."""
     candidates = list(range(8))
     if move_range_bonus > 0:
@@ -64,6 +76,8 @@ def available_moves(board, threat, king_position, move_range_bonus=0):
             if board[middle_row, middle_col] != 0:
                 continue
         if board[target_row, target_col] != 0:
+            continue
+        if not moat_allows_move(terrain, king_position, (target_row, target_col)):
             continue
         valid.append(action)
         if threat[target_row, target_col] == 0:
@@ -90,6 +104,7 @@ def select_shot_target(
     king_position,
     royal_guard_active=False,
     range_limit=None,
+    terrain=None,
 ):
     """Select the closest threatening target, then the closest other target."""
     best = None
@@ -113,6 +128,7 @@ def select_shot_target(
                     or (piece in (6, QUEEN) and (straight or diagonal))
                     or (piece == WHITE_KING and distance == 1)
                 )
+                threatens = threatens and moat_allows_move(terrain, (row, col), king_position)
                 candidate = ShotTarget(
                     direction=(row_offset, col_offset),
                     distance=distance,
@@ -132,6 +148,6 @@ def select_shot_target(
                 ):
                     best = candidate
                 break
-            if piece == 1:
+            if piece != 0:
                 break
     return best

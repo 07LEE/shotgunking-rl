@@ -8,9 +8,11 @@ import numpy as np
 from ..state_schema import SUPPORTED_BOARD_IDS
 from .frame import PreparedFrame, read_frame
 from .validation import valid_combat_stats
+from .context import encode_sided_board, valid_board_context
 
 from .types import (
     AmmoReading,
+    BoardContextReading,
     CombatStatsReading,
     FusedPerception,
     Prediction,
@@ -35,6 +37,7 @@ class PerceptionPipeline:
     board_reader: Reader[np.ndarray]
     ammo_reader: Reader[AmmoReading]
     combat_stats_reader: Reader[CombatStatsReading]
+    context_reader: Reader[BoardContextReading] | None = None
 
     def observe_live(
         self,
@@ -99,6 +102,7 @@ class PerceptionPipeline:
         accepted_board = None
         accepted_ammo = None
         accepted_combat_stats = None
+        accepted_context = None
 
         if board.is_accepted and _valid_board(board.value):
             accepted_board = board.value
@@ -106,6 +110,19 @@ class PerceptionPipeline:
             issues.append("board:invalid_shape_or_values")
         else:
             issues.append(_issue("board", board))
+
+        context_source = "board-context:unavailable"
+        if accepted_board is not None:
+            context = (read_frame(self.context_reader, frame) if self.context_reader is not None
+                       else Prediction.unknown(source=context_source, reason="reader_unavailable"))
+            context_source = context.source
+            if context.is_accepted and valid_board_context(context.value, accepted_board):
+                accepted_context = BoardContextReading(context.value.piece_sides.copy(), context.value.moat_active)
+                accepted_board = encode_sided_board(accepted_board, accepted_context)
+            elif context.is_accepted:
+                issues.append("board_context:invalid_values")
+            else:
+                issues.append(_issue("board_context", context))
 
         if ammo.is_accepted and _valid_ammo(ammo.value):
             accepted_ammo = ammo.value
@@ -128,7 +145,8 @@ class PerceptionPipeline:
             combat_stats=accepted_combat_stats,
             ready_for_policy=not issues,
             issues=tuple(issues),
-            sources=(screen.source, board.source, ammo.source, combat_stats.source),
+            sources=(screen.source, board.source, ammo.source, combat_stats.source, context_source),
+            board_context=accepted_context,
         )
 
 
@@ -146,6 +164,7 @@ def _recovery_failure(result: FusedPerception, reason: str) -> FusedPerception:
         ready_for_policy=False,
         issues=(*result.issues, f"recovery:{reason}"),
         sources=result.sources,
+        board_context=result.board_context,
     )
 
 

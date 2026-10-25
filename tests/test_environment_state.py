@@ -29,7 +29,7 @@ class EnvironmentStateTests(unittest.TestCase):
             env, "capture_screen", return_value=False
         ), patch.object(env.cv2, "imread") as imread:
             result = game._get_obs()
-        np.testing.assert_array_equal(result, np.zeros(281, dtype=np.float32))
+        np.testing.assert_array_equal(result, np.zeros(345, dtype=np.float32))
         imread.assert_not_called()
 
     def test_action_mask_uses_board_threat_ammo_and_range(self):

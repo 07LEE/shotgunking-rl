@@ -8,7 +8,7 @@ import os
 import random
 from collections import deque
 
-from shotgun_king_rl.state_schema import CHECKPOINT_FORMAT, OBSERVATION_SCHEMA
+from shotgun_king_rl.state_schema import CHECKPOINT_FORMAT, OBSERVATION_SCHEMA, OBSERVATION_SIZE, TERRAIN_OFFSET
 try:
     import numpy as np
 except ImportError:
@@ -27,17 +27,19 @@ except ImportError:
 class QNetwork(nn.Module if nn is not None else object):
     """Deep Q-Network multi-input convolutional neural network."""
 
-    def __init__(self, state_size=281, action_size=10):
+    def __init__(self, state_size=OBSERVATION_SIZE, action_size=10):
         """Initializes the network layers.
 
         Args:
-            state_size: Flattened input state vector dimension (281).
+            state_size: Flattened input state vector dimension (345).
             action_size: Number of discrete action choices (10 or 18).
         """
         super().__init__()
+        if state_size != OBSERVATION_SIZE:
+            raise ValueError(f'Observation size must be {OBSERVATION_SIZE}')
         if nn is not None:
-            # Spatial convolution layers (4 input channels: board, threat, hp, turn speed)
-            self.conv1 = nn.Conv2d(4, 16, kernel_size=3, padding=1)
+            # Board (signed by side), threat, hp, turn speed and terrain grids.
+            self.conv1 = nn.Conv2d(5, 16, kernel_size=3, padding=1)
             self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
             self.relu = nn.ReLU()
             self.flatten = nn.Flatten()
@@ -54,7 +56,7 @@ class QNetwork(nn.Module if nn is not None else object):
         """Forward pass of the network.
 
         Args:
-            x: Input state tensor of shape [Batch, 281].
+            x: Input state tensor of shape [Batch, 345].
 
         Returns:
             Output action Q-values.
@@ -67,7 +69,8 @@ class QNetwork(nn.Module if nn is not None else object):
         grid_threat = x[:, 64:128].view(-1, 1, 8, 8)
         grid_hp = x[:, 153:217].view(-1, 1, 8, 8)
         grid_turn = x[:, 217:281].view(-1, 1, 8, 8)
-        spatial_input = torch.cat([grid_state, grid_threat, grid_hp, grid_turn], dim=1)
+        grid_terrain = x[:, TERRAIN_OFFSET:OBSERVATION_SIZE].view(-1, 1, 8, 8)
+        spatial_input = torch.cat([grid_state, grid_threat, grid_hp, grid_turn, grid_terrain], dim=1)
         
         # Segment non-spatial attributes (25 dimensions)
         meta_ammo = x[:, 128:130]
@@ -143,11 +146,11 @@ class ReplayBuffer:
 class DQNAgent:
     """Deep Q-Network decision-making agent."""
 
-    def __init__(self, state_size=281, action_size=10, lr=1e-3, gamma=0.99):
+    def __init__(self, state_size=OBSERVATION_SIZE, action_size=10, lr=1e-3, gamma=0.99):
         """Initializes the agent parameters, networks, and optimizer.
 
         Args:
-            state_size: Flattened input state vector dimension (133).
+            state_size: Flattened input state vector dimension (345).
             action_size: Number of discrete action choices.
             lr: Learning rate for training.
             gamma: Discount factor for future rewards.
@@ -297,8 +300,8 @@ class DQNAgent:
 if __name__ == "__main__":
     print("Testing DQNAgent initialization and forward pass...")
     if torch is not None and np is not None:
-        agent = DQNAgent(state_size=281, action_size=10)
-        dummy_state = np.zeros((281,), dtype=np.float32)
+        agent = DQNAgent(state_size=OBSERVATION_SIZE, action_size=10)
+        dummy_state = np.zeros((OBSERVATION_SIZE,), dtype=np.float32)
         
         action = agent.act(dummy_state, epsilon=0.0)
         print(f"Decided action for dummy state: {action}")

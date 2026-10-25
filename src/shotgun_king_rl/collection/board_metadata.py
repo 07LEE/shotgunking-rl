@@ -1,7 +1,8 @@
 """Board annotations independent of legacy piece IDs and runtime observations."""
 
+from ..state_schema import MOAT_ROW
+
 MOAT_MOVEMENT = {'knight': 'jump_across', 'other_pieces': 'stop_in_moat_before_continuing'}
-MOAT_ROW = 4  # Zero-based board row, fixed by the moat card effect.
 
 
 def terrain_from_moat(active):

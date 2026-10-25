@@ -45,7 +45,7 @@ def _second_target_distance(board, king_position, target, range_limit):
             break
         if board[row, col] >= 2:
             return distance
-        if board[row, col] == 1:
+        if board[row, col] != 0:
             break
     return None
 

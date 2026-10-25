@@ -11,6 +11,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from context_fixtures import NormalContextReader
 from shotgun_king_rl.collection.combat_evaluation import build_combat_reader
 from shotgun_king_rl.perception import (
     AmmoReading, MeleeDamageReader, PerceptionPipeline, Prediction, PredictionStatus,
@@ -132,7 +133,7 @@ class MeleeAvailabilityReaderTests(unittest.TestCase):
         board[4, 4] = 1
         pipeline = PerceptionPipeline(
             StubReader(ScreenKind.GAMEPLAY), StubReader(board),
-            StubReader(AmmoReading(1, 4)), combat,
+            StubReader(AmmoReading(1, 4)), combat, NormalContextReader(board),
         )
         accepted = pipeline.observe(absent_screen())
         self.assertTrue(accepted.ready_for_policy)

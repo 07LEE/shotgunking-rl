@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 import numpy as np
+from ..state_schema import OBSERVATION_SIZE, TERRAIN_OFFSET
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,7 @@ def compare_policy_observation(expected, actual):
         return ObservationConsistency(False, "observation_missing")
     expected = np.asarray(expected)
     actual = np.asarray(actual)
-    if expected.size < 130 or actual.size < 130:
+    if expected.size < 130 or actual.size < 130 or expected.shape != actual.shape:
         return ObservationConsistency(False, "observation_shape_invalid")
 
     expected_board = expected[:64].reshape(8, 8).astype(int)
@@ -62,6 +63,9 @@ def compare_policy_observation(expected, actual):
         reasons.append("board_changed")
     if expected_ammo != actual_ammo:
         reasons.append("ammo_changed")
+    if expected.size == OBSERVATION_SIZE and not np.array_equal(
+            expected[TERRAIN_OFFSET:], actual[TERRAIN_OFFSET:]):
+        reasons.append("terrain_changed")
     return ObservationConsistency(
         consistent=not reasons,
         reason="match" if not reasons else "+".join(reasons),

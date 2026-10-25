@@ -57,6 +57,8 @@ from shotgun_king_rl.runtime.execution import verify_action_completion
 from shotgun_king_rl.runtime.consistency import compare_policy_observation
 from shotgun_king_rl.runtime.perception import build_live_pipeline
 from shotgun_king_rl.perception import ScreenKind
+from shotgun_king_rl.perception.context import terrain_grid
+from shotgun_king_rl.state_schema import OBSERVATION_SIZE, TERRAIN_OFFSET
 import sys
 
 # Ensure project root is in python path to support tools module imports
@@ -135,12 +137,12 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.perception_metadata = None
         self.last_hover_result = None
 
-        # Define Observation Space: 1D flat vector of size 281
+        # Define the observation space with a final 64-value terrain grid.
         # 128 dimensions from board and threat matrix, plus 2 dimensions for ammo stats,
         # 3 dimensions for weapon specifications, 20 dimensions for buffs/debuffs,
-        # 64 dimensions for enemy HP matrix, and 64 dimensions for enemy turn matrix
+        # 64 enemy HP, 64 enemy turn, and 64 terrain values
         self.observation_space = spaces.Box(
-            low=0, high=90, shape=(281,), dtype=np.float32
+            low=-9, high=90, shape=(OBSERVATION_SIZE,), dtype=np.float32
         )
 
         # Weapon Specifications
@@ -309,9 +311,9 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         time.sleep(0.2)
         return self._get_obs(force_inject=False)
 
-    def _get_threat_matrix(self, state):
+    def _get_threat_matrix(self, state, terrain=None):
         """Return the threat matrix through the pure runtime state module."""
-        return build_threat_matrix(state)
+        return build_threat_matrix(state, terrain)
 
     def get_action_mask(self):
         """Return valid actions for the current observation without game input."""
@@ -337,6 +339,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "issues": list(result.issues) if result else ["observation_unavailable"],
             "sources": list(result.sources) if result else [],
             "combat_stats": asdict(result.combat_stats) if result and result.combat_stats else None,
+            "board_context": asdict(result.board_context) if result and result.board_context else None,
             "hover_clear": _result_info(self.last_hover_result, "move"),
         }
 
@@ -355,7 +358,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
 
         image = capture()
         if image is None:
-            return np.zeros(281, dtype=np.float32)
+            return np.zeros(OBSERVATION_SIZE, dtype=np.float32)
         if self.perception_pipeline is None:
             self.perception_pipeline, self.perception_metadata = build_live_pipeline(
                 self.perception_collection, self.melee_title_annotation,
@@ -381,7 +384,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         )
         self.last_perception = result
         if not result.ready_for_policy:
-            return np.zeros(281, dtype=np.float32)
+            return np.zeros(OBSERVATION_SIZE, dtype=np.float32)
         stats = result.combat_stats
         self.loaded_ammo, self.reserve_ammo = result.ammo.loaded, result.ammo.reserve
         self.damage, self.falloff_start, self.range_limit = stats.attack, stats.range_min, stats.range_max
@@ -390,13 +393,15 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
         self.knockback_chance = stats.knockback_percent / 100.0
         self.melee_damage = stats.melee_damage
         state = result.board
+        terrain = terrain_grid(result.board_context)
         hp_matrix, turn_matrix = get_enemy_specs_matrices(state, self.enemy_turns, self.rank)
         return build_observation(
-            board=state, threat=self._get_threat_matrix(state),
+            board=state, threat=self._get_threat_matrix(state, terrain),
             loaded_ammo=self.loaded_ammo, reserve_ammo=self.reserve_ammo,
             damage=self.damage, range_limit=self.range_limit, spread=self.spread,
             extra_turn_active=self.is_extra_turn_active,
             hp_matrix=hp_matrix, turn_matrix=turn_matrix,
+            terrain=terrain,
         )
 
     def _get_yes_button_coords(self, img):
@@ -783,6 +788,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             (king_row, king_col),
             royal_guard_active=self.royal_guard_active,
             range_limit=self.range_limit,
+            terrain=(self.current_state[TERRAIN_OFFSET:OBSERVATION_SIZE].reshape(8, 8)
+                     if len(self.current_state) == OBSERVATION_SIZE else None),
         )
         has_valid_target = (
             shot_target is not None

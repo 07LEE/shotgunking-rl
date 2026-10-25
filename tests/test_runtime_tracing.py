@@ -25,7 +25,7 @@ from shotgun_king_rl.runtime.tracing import (
 
 def runtime_doubles():
     """One verified transition; all environment and learning methods are mocked."""
-    state = np.zeros(281, dtype=np.float32)
+    state = np.zeros(345, dtype=np.float32)
     state[7 * 8 + 4] = 1
     action_mask = np.zeros(10, dtype=np.float32)
     action_mask[4] = 1
@@ -196,8 +196,8 @@ class RuntimeTracingTests(unittest.TestCase):
         self.assertTrue(payload["result"]["transition_verified"])
         self.assertFalse(payload["result"]["accepted_for_replay"])
         self.assertFalse(manifest["learning_enabled"])
-        self.assertEqual(manifest['observation']['schema'], 'distinct-royals-281-v1')
-        self.assertEqual(manifest['observation']['size'], 281)
+        self.assertEqual(manifest['observation']['schema'], 'board-context-345-v1')
+        self.assertEqual(manifest['observation']['size'], 345)
         agent.remember.assert_not_called()
         agent.replay.assert_not_called()
         agent.update_target_network.assert_not_called()
@@ -219,7 +219,7 @@ class RuntimeTracingTests(unittest.TestCase):
                 self.assertEqual(model.read_bytes(), b'legacy weights must be preserved')
 
     def test_writer_appends_json_safe_action_record(self):
-        observation = np.zeros(281, dtype=np.float32)
+        observation = np.zeros(345, dtype=np.float32)
         observation[60] = 1
         next_observation = observation.copy()
         next_observation[60] = 0
@@ -266,7 +266,7 @@ class RuntimeTracingTests(unittest.TestCase):
         self.assertEqual(payload["result"]["next_board"][6][4], 1.0)
 
     def test_writer_keeps_failed_transition_for_diagnosis(self):
-        observation = np.zeros(281, dtype=np.float32)
+        observation = np.zeros(345, dtype=np.float32)
         record = build_action_trace(
             episode=1,
             step=1,

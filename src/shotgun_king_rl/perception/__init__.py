@@ -13,6 +13,7 @@ from .spread import SpreadReader
 from .readers import OverlayScreenReader, RedPixelAmmoReader, TemplatePieceReader
 from .types import (
     AmmoReading,
+    BoardContextReading,
     CombatStatsReading,
     FusedPerception,
     Prediction,
@@ -24,6 +25,7 @@ from .types import (
 __all__ = [
     "AttackReader",
     "AmmoReading",
+    "BoardContextReading",
     "CombatStatsReading",
     "CombatStatsReader",
     "FusedPerception",

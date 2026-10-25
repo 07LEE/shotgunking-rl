@@ -118,6 +118,17 @@ class CombatStatsReading:
 
 
 @dataclass(frozen=True)
+class BoardContextReading:
+    """Explicit per-cell sides (0 empty, 1 ally, 2 enemy) and moat card state.
+
+    Unknown sides or moat state cannot be approved for runtime policy use.
+    """
+
+    piece_sides: np.ndarray
+    moat_active: bool | None
+
+
+@dataclass(frozen=True)
 class FusedPerception:
     """Validated perception state exposed to an action policy."""
 
@@ -128,3 +139,4 @@ class FusedPerception:
     ready_for_policy: bool
     issues: tuple[str, ...]
     sources: tuple[str, ...]
+    board_context: BoardContextReading | None = None

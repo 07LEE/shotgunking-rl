@@ -9,6 +9,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import input as game_input
 from shotgun_king_rl.perception import AmmoReading, CombatStatsReading, PerceptionPipeline, Prediction, ScreenKind
+from context_fixtures import NormalContextReader
 
 
 class HoverRecoveryTests(unittest.TestCase):
@@ -29,7 +30,8 @@ class HoverRecoveryTests(unittest.TestCase):
         # Mock must expose only the ordinary reader interface.
         for reader in (self.screen, self.pieces, self.ammo, self.combat):
             reader.read_prepared = None
-        self.pipeline = PerceptionPipeline(self.screen, self.pieces, self.ammo, self.combat)
+        self.context = NormalContextReader(lambda: self.board)
+        self.pipeline = PerceptionPipeline(self.screen, self.pieces, self.ammo, self.combat, self.context)
         self.events = []
         self.capture = Mock(side_effect=[self.first, self.second])
         self.clear = Mock(side_effect=lambda: self.events.append('move') or True)
@@ -41,10 +43,15 @@ class HoverRecoveryTests(unittest.TestCase):
     def test_recovery_revalidates_every_reader_from_new_image(self):
         fresh_board = self.board.copy()
         fresh_board[0, 0] = 2
-        self.pieces.read.side_effect = [Prediction.accepted(self.board, source='board'), Prediction.accepted(fresh_board, source='board')]
+        boards = iter((self.board, fresh_board))
+        def read(image):
+            self.board = next(boards)
+            return Prediction.accepted(self.board, source='board')
+        self.pieces.read.side_effect = read
         result = self.observe()
         self.assertTrue(result.ready_for_policy)
-        self.assertIs(result.board, fresh_board)
+        np.testing.assert_array_equal(result.board, fresh_board)
+        self.assertIsNot(result.board, fresh_board)
         self.assertEqual(self.events, ['move', 'wait'])
         for reader in (self.screen, self.pieces, self.ammo, self.combat):
             self.assertEqual([call.args[0] for call in reader.read.call_args_list], [self.first, self.second])

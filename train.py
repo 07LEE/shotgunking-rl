@@ -149,7 +149,7 @@ def train_dqn(episodes=2, batch_size=16, max_steps_per_episode=10, mode="collect
     print("Initializing DQN Agent...")
     # 8x8 input flat is 64, with threat map flat is 128, plus 2 ammo dimensions is 130,
     # plus 3 weapon specs is 133, plus 20 buffs/debuffs is 153, plus 64 enemy hp is 217,
-    # plus 64 enemy turn speed is 281
+    # plus 64 enemy turn speed is 281, plus 64 terrain values is 345
     agent = DQNAgent(state_size=OBSERVATION_SIZE, action_size=env.action_space.n, lr=learning_rate)
     
     # Every mode may read the same fixed checkpoint; only train may write it.

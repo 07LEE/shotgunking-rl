@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from context_fixtures import NormalContextReader
 from shotgun_king_rl.perception.frame import PreparedFrame, read_frame
 from shotgun_king_rl.perception import OverlayScreenReader, PerceptionPipeline, Prediction, RedPixelAmmoReader, TemplatePieceReader
 from shotgun_king_rl.vision import analyzer
@@ -53,7 +54,7 @@ class PreparedFrameTests(unittest.TestCase):
         class Combat:
             def read(self, image):
                 return Prediction.unknown(source="test", reason="unavailable")
-        pipeline = PerceptionPipeline(OverlayScreenReader(), TemplatePieceReader(), RedPixelAmmoReader(), Combat())
+        pipeline = PerceptionPipeline(OverlayScreenReader(), TemplatePieceReader(), RedPixelAmmoReader(), Combat(), NormalContextReader(board))
         with patch("shotgun_king_rl.perception.frame.normalize_game_screen", wraps=normalize_game_screen) as normalize, patch.object(
             analyzer, "crop_chessboard", wraps=analyzer.crop_chessboard
         ) as crop, patch.object(analyzer, "get_state_matrices", return_value=(board, board)), patch(

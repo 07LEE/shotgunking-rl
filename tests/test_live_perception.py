@@ -9,6 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import env
+from context_fixtures import NormalContextReader
 from shotgun_king_rl.perception import AmmoReading, PerceptionPipeline, Prediction, ScreenKind
 from shotgun_king_rl.runtime.io import CaptureResult, IOStatus, InputResult
 from shotgun_king_rl.runtime.transitions import RuntimeScreenState
@@ -23,7 +24,7 @@ class LivePerceptionTests(unittest.TestCase):
         self.stats = replace(VALID_COMBAT_STATS, attack=8, range_min=2, range_max=6, spread_degrees=40, penetration_percent=25, knockback_percent=50, melee_damage=2)
         self.screen = FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source='screen'))
         self.combat = FakeReader(Prediction.accepted(self.stats, source='combat'))
-        self.pipeline = PerceptionPipeline(self.screen, FakeReader(Prediction.accepted(self.board, source='board')), FakeReader(Prediction.accepted(AmmoReading(1, 4), source='ammo')), self.combat)
+        self.pipeline = PerceptionPipeline(self.screen, FakeReader(Prediction.accepted(self.board, source='board')), FakeReader(Prediction.accepted(AmmoReading(1, 4), source='ammo')), self.combat, NormalContextReader(lambda: self.pipeline.board_reader.prediction.value))
         self.game = env.ShotgunKingEnv(perception_pipeline=self.pipeline, hover_clear_position=(45, 50), hover_clear_delay=0.25)
         self.image = np.zeros((720, 1280, 3), dtype=np.uint8)
         self.capture_result = CaptureResult(IOStatus.SUCCEEDED, 'data/screenshot.png')
@@ -40,7 +41,7 @@ class LivePerceptionTests(unittest.TestCase):
 
     def test_observation_mask_and_runtime_stats_use_read_values(self):
         obs = self.game._get_obs(force_inject=True)
-        self.assertEqual(obs.shape, (281,))
+        self.assertEqual(obs.shape, (345,))
         np.testing.assert_array_equal(obs[:64], self.board.flatten())
         np.testing.assert_array_equal(obs[128:133], [1, 4, 8, 6, 40])
         self.assertEqual(self.game.falloff_start, 2)
@@ -74,7 +75,7 @@ class LivePerceptionTests(unittest.TestCase):
             obs, reward, term, trunc, info = self.game.step(4)
         click.assert_not_called()
         key.assert_not_called()
-        np.testing.assert_array_equal(obs, np.zeros(281))
+        np.testing.assert_array_equal(obs, np.zeros(345))
         np.testing.assert_array_equal(self.game.get_action_mask(), np.zeros(10))
         self.assertFalse(info['transition_ready'])
         self.assertEqual(info['screen_state']['state'], 'observation_failure')
@@ -87,7 +88,7 @@ class LivePerceptionTests(unittest.TestCase):
         self.capture.return_value = CaptureResult(IOStatus.FAILED, 'data/screenshot.png')
         self.imread.reset_mock()
         obs = self.game._get_obs()
-        np.testing.assert_array_equal(obs, np.zeros(281))
+        np.testing.assert_array_equal(obs, np.zeros(345))
         self.imread.assert_not_called()
         self.assertEqual(self.game._assess_screen(obs).state, RuntimeScreenState.OBSERVATION_FAILURE)
 

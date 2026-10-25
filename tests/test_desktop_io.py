@@ -85,7 +85,7 @@ class DesktopIOTests(unittest.TestCase):
         with patch.object(game, "_check_emergency_stop"), patch.object(env, "capture_screen", return_value=failure), patch.object(env, "click_relative_in_window") as click, patch.object(env.time, "sleep"):
             observation, info = game.reset()
 
-        np.testing.assert_array_equal(observation, np.zeros(281, dtype=np.float32))
+        np.testing.assert_array_equal(observation, np.zeros(345, dtype=np.float32))
         self.assertFalse(info["reset_ready"])
         self.assertEqual(info["capture"]["reason"], "window_not_found")
         click.assert_not_called()
@@ -101,7 +101,7 @@ class DesktopIOTests(unittest.TestCase):
         ) as click, patch.object(env.time, "sleep"):
             observation, info = game.reset()
 
-        np.testing.assert_array_equal(observation, np.zeros(281, dtype=np.float32))
+        np.testing.assert_array_equal(observation, np.zeros(345, dtype=np.float32))
         self.assertFalse(info["reset_ready"])
         self.assertEqual(info["screen_state"]["state"], "observation_failure")
         click.assert_not_called()

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..state_schema import QUEEN, WHITE_KING
+from ..state_schema import QUEEN, WHITE_KING, OBSERVATION_SIZE, TERRAIN_OFFSET
 from .actions import action_destination, select_shot_target
 
 
@@ -63,6 +63,7 @@ PIECE_NAMES = {
     QUEEN: "queen",
     WHITE_KING: "white king",
 }
+PIECE_MARKS.update({-piece: mark.lower() for piece, mark in tuple(PIECE_MARKS.items()) if piece >= 2})
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,8 @@ def build_suggestion_view(
     """Build a stable view from the exact observation used by the policy."""
     board = np.asarray(observation[:64]).reshape(8, 8)
     threat = np.asarray(observation[64:128]).reshape(8, 8)
+    terrain = (np.asarray(observation[TERRAIN_OFFSET:OBSERVATION_SIZE]).reshape(8, 8)
+               if len(observation) == OBSERVATION_SIZE else None)
     king_positions = np.argwhere(board == 1)
     king_position = None
     if len(king_positions) == 1:
@@ -130,6 +133,7 @@ def build_suggestion_view(
                     range_limit,
                     royal_guard_active,
                     melee_damage,
+                    terrain,
                 ),
                 q_value=q_value,
             )
@@ -175,7 +179,7 @@ def _format_board(board):
     for row in range(8):
         marks = " ".join(PIECE_MARKS.get(int(value), "?") for value in board[row])
         rows.append(f"{8 - row} | {marks}")
-    rows.append("Legend: K player | P N B R Q enemies | W white king | X unknown royal | . empty")
+    rows.append("Legend: K player | P N B R Q W enemies | lowercase allies | . empty")
     return tuple(rows)
 
 
@@ -190,6 +194,7 @@ def _action_reason(
     range_limit,
     royal_guard_active,
     melee_damage,
+    terrain,
 ):
     if action in range(8) or action in range(10, 18):
         if king_position is None:
@@ -208,6 +213,7 @@ def _action_reason(
             king_position,
             royal_guard_active=royal_guard_active,
             range_limit=range_limit,
+            terrain=terrain,
         )
         if target is None:
             return "target unavailable"

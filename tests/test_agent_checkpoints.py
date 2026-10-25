@@ -19,8 +19,9 @@ from shotgun_king_rl.state_schema import CHECKPOINT_FORMAT, OBSERVATION_SCHEMA
 
 class AgentCheckpointTests(unittest.TestCase):
     def setUp(self):
-        with patch.object(torch.cuda, 'is_available', return_value=False):
-            self.agent = DQNAgent(state_size=np.int64(281), action_size=np.int64(10))
+        with torch.random.fork_rng(devices=[]), patch.object(torch.cuda, 'is_available', return_value=False):
+            torch.manual_seed(0)
+            self.agent = DQNAgent(state_size=np.int64(345), action_size=np.int64(10))
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.path = Path(self.directory.name) / 'model.pth'
@@ -29,7 +30,7 @@ class AgentCheckpointTests(unittest.TestCase):
         return {
             'format': CHECKPOINT_FORMAT,
             'observation_schema': OBSERVATION_SCHEMA,
-            'state_size': 281,
+            'state_size': 345,
             'action_size': 10,
             'policy_state_dict': {key: torch.full_like(value, .125) for key, value in self.agent.policy_net.state_dict().items()},
         }
@@ -53,7 +54,7 @@ class AgentCheckpointTests(unittest.TestCase):
         checkpoint = torch.load(self.path, map_location='cpu', weights_only=True)
         self.assertEqual(checkpoint['observation_schema'], OBSERVATION_SCHEMA)
         self.assertEqual(checkpoint['format'], CHECKPOINT_FORMAT)
-        self.assertEqual((checkpoint['state_size'], checkpoint['action_size']), (281, 10))
+        self.assertEqual((checkpoint['state_size'], checkpoint['action_size']), (345, 10))
         with torch.no_grad():
             for parameter in self.agent.policy_net.parameters():
                 parameter.zero_()
@@ -67,7 +68,7 @@ class AgentCheckpointTests(unittest.TestCase):
         self.assert_rejected_without_changes(self.payload()['policy_state_dict'])
 
     def test_wrong_schema_dimensions_and_missing_metadata_are_rejected(self):
-        for key, value in (('observation_schema', 'legacy-281'), ('format', 'other'), ('state_size', 133), ('action_size', 18), ('state_size', True)):
+        for key, value in (('observation_schema', 'distinct-royals-281-v1'), ('format', 'other'), ('state_size', 281), ('action_size', 18), ('state_size', True)):
             with self.subTest(key=key, value=value):
                 self.assert_rejected_without_changes(self.payload() | {key: value})
         payload = self.payload()
@@ -81,13 +82,23 @@ class AgentCheckpointTests(unittest.TestCase):
         weights[key] = torch.zeros(1)
         self.assert_rejected_without_changes(payload)
 
-    def test_forward_accepts_royal_observations_without_changing_vector_length(self):
-        observation = torch.zeros((1, 281))
-        observation[0, :3] = torch.tensor([1, 8, 9])
+    def test_forward_accepts_signed_pieces_and_terrain(self):
+        observation = torch.zeros((1, 345))
+        observation[0, :3] = torch.tensor([1, -5, 9])
+        observation[0, 281 + 4 * 8:281 + 5 * 8] = 1
         with torch.no_grad():
             result = self.agent.policy_net(observation)
         self.assertEqual(result.shape, (1, 10))
         self.assertTrue(torch.isfinite(result).all())
+
+    def test_policy_output_changes_when_only_terrain_changes(self):
+        observation = torch.zeros((1, 345))
+        observation[0, :3] = torch.tensor([1, -5, 9])
+        with torch.no_grad():
+            without_moat = self.agent.policy_net(observation)
+            observation[0, 281 + 4 * 8:281 + 5 * 8] = 1
+            with_moat = self.agent.policy_net(observation)
+        self.assertFalse(torch.equal(without_moat, with_moat))
 
 
 if __name__ == '__main__':

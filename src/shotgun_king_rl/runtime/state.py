@@ -3,12 +3,12 @@
 import numpy as np
 
 from shotgun_king_rl.perception.types import CombatStatsReading
-from shotgun_king_rl.state_schema import QUEEN, WHITE_KING
+from shotgun_king_rl.state_schema import QUEEN, WHITE_KING, TERRAIN_OFFSET, OBSERVATION_SIZE
 
 from .actions import ACTION_DIRECTIONS, available_moves, select_shot_target
 
 
-def build_threat_matrix(board):
+def build_threat_matrix(board, terrain=None):
     """Return base attack ranges, keeping queen rays distinct from king steps."""
     threat = np.zeros((8, 8), dtype=np.int32)
     straight_directions = ((-1, 0), (1, 0), (0, -1), (0, 1))
@@ -52,7 +52,8 @@ def build_threat_matrix(board):
                         if not (0 <= row < 8 and 0 <= col < 8):
                             break
                         threat[row, col] = 1
-                        if board[row, col] != 0:
+                        if (board[row, col] != 0 or (terrain is not None
+                                and terrain[enemy_row, enemy_col] == 0 and terrain[row, col] == 1)):
                             break
     return threat
 
@@ -76,6 +77,8 @@ def build_action_mask(
 
     board = observation[:64].reshape(8, 8)
     threat = observation[64:128].reshape(8, 8)
+    terrain = (observation[TERRAIN_OFFSET:OBSERVATION_SIZE].reshape(8, 8)
+               if len(observation) == OBSERVATION_SIZE else None)
     king_positions = np.argwhere(board == 1)
     if len(king_positions) != 1:
         return mask
@@ -86,6 +89,7 @@ def build_action_mask(
         threat,
         (king_row, king_col),
         move_range_bonus=move_range_bonus,
+        terrain=terrain,
     )
     permitted_moves = safe_moves if safe_moves else valid_moves
     for action in permitted_moves:
@@ -98,6 +102,7 @@ def build_action_mask(
         (king_row, king_col),
         royal_guard_active=royal_guard_active,
         range_limit=range_limit,
+        terrain=terrain,
     )
     melee_available = (
         shot_target is not None
@@ -121,11 +126,12 @@ def build_observation(
     extra_turn_active,
     hp_matrix,
     turn_matrix,
+    terrain=None,
 ):
-    """Assemble the legacy 281-value observation vector."""
+    """Keep legacy field offsets and append explicit terrain for runtime use."""
     status = np.zeros(20, dtype=np.float32)
     status[0] = float(extra_turn_active)
-    return np.concatenate(
+    observation = np.concatenate(
         [
             np.asarray(board, dtype=np.float32).reshape(-1),
             np.asarray(threat, dtype=np.float32).reshape(-1),
@@ -136,6 +142,9 @@ def build_observation(
             np.asarray(turn_matrix, dtype=np.float32).reshape(-1),
         ]
     )
+    if terrain is not None:
+        observation = np.concatenate([observation, np.asarray(terrain, dtype=np.float32).reshape(-1)])
+    return observation
 
 
 def legacy_weapon_features(combat_stats: CombatStatsReading) -> np.ndarray:

@@ -9,6 +9,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from context_fixtures import NormalContextReader
 from shotgun_king_rl.perception import (
     AmmoReading, CombatStatsReader, PerceptionPipeline, Prediction,
     PredictionStatus, RangeReading, ScreenKind,
@@ -50,7 +51,7 @@ class CombatReaderTests(unittest.TestCase):
         reader = replace(make_reader(), melee_reader=None)
         pipeline = PerceptionPipeline(
             StubReader(ScreenKind.GAMEPLAY), StubReader(np.zeros((8, 8))),
-            StubReader(AmmoReading(1, 5)), reader,
+            StubReader(AmmoReading(1, 5)), reader, NormalContextReader(np.zeros((8, 8))),
         )
         result = pipeline.observe(object())
         self.assertFalse(result.ready_for_policy)
