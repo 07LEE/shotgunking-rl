@@ -13,7 +13,7 @@ import env
 from specs import ENEMY_SPECS, get_enemy_specs_matrices
 from context_fixtures import NormalContextReader
 from shotgun_king_rl.perception import AmmoReading, PerceptionPipeline, Prediction, ScreenKind
-from shotgun_king_rl.runtime.actions import detect_promotion, select_shot_target
+from shotgun_king_rl.runtime.actions import select_shot_target
 from shotgun_king_rl.runtime.io import CaptureResult, IOStatus, InputResult
 from shotgun_king_rl.runtime.state import build_threat_matrix, update_enemy_turns
 from shotgun_king_rl.runtime.suggestions import build_suggestion_view, format_suggestion_view
@@ -57,28 +57,6 @@ class RoyalRuntimeTests(unittest.TestCase):
         board[:] = 0
         board[4, 4], board[3, 4] = 1, 9
         self.assertTrue(select_shot_target(board, (4, 4)).threatens_king)
-
-    def test_royal_guard_protects_white_king_but_not_queen(self):
-        for royal in (8, 9):
-            with self.subTest(royal=royal):
-                board = np.zeros((8, 8), dtype=int)
-                board[4, 4], board[2, 4], board[0, 1] = 1, royal, 3
-                target = select_shot_target(board, (4, 4), royal_guard_active=True)
-                if royal == 9:
-                    self.assertIsNone(target)
-                else:
-                    self.assertEqual(target.piece, 8)
-                board[0, 1] = 0
-                self.assertEqual(select_shot_target(board, (4, 4), royal_guard_active=True).piece, royal)
-
-    def test_promotion_can_create_queen_but_not_white_king(self):
-        previous = np.zeros((8, 8), dtype=int)
-        previous[6, 2] = 2
-        for royal in (8, 9):
-            with self.subTest(royal=royal):
-                current = np.zeros((8, 8), dtype=int)
-                current[7, 3] = royal
-                self.assertEqual(detect_promotion(previous, current), royal == 8)
 
     def test_royals_keep_nonzero_estimates_and_separate_turn_tracks(self):
         board = np.zeros((8, 8), dtype=int)

@@ -35,20 +35,26 @@ class RuntimeActionTests(unittest.TestCase):
         self.assertEqual(target.distance, 3)
         self.assertTrue(target.threatens_king)
 
-    def test_royal_guard_skips_boss_while_knight_exists(self):
-        board = np.zeros((8, 8), dtype=np.float32)
-        board[4, 4] = 1
-        board[2, 4] = 9
-        board[4, 6] = 3
-
-        target = select_shot_target(
-            board,
-            (4, 4),
-            royal_guard_active=True,
+    def test_royal_guard_respects_piece_kind_and_knight_presence(self):
+        cases = (
+            (9, (0, 1), None, None),  # Protected king has no other target.
+            (9, (4, 6), 3, (0, 1)),  # Select the other visible target.
+            (9, None, 9, (-1, 0)),
+            (8, (0, 1), 8, (-1, 0)),  # The guard does not protect queens.
+            (8, None, 8, (-1, 0)),
         )
-
-        self.assertEqual(target.piece, 3)
-        self.assertEqual(target.direction, (0, 1))
+        for royal, knight_position, expected_piece, expected_direction in cases:
+            with self.subTest(royal=royal, knight_position=knight_position):
+                board = np.zeros((8, 8), dtype=np.float32)
+                board[4, 4], board[2, 4] = 1, royal
+                if knight_position is not None:
+                    board[knight_position] = 3
+                target = select_shot_target(board, (4, 4), royal_guard_active=True)
+                if expected_piece is None:
+                    self.assertIsNone(target)
+                else:
+                    self.assertEqual(target.piece, expected_piece)
+                    self.assertEqual(target.direction, expected_direction)
 
     def test_target_selection_ignores_out_of_range_priority(self):
         board = np.zeros((8, 8), dtype=np.float32)
@@ -122,13 +128,14 @@ class RuntimeActionTests(unittest.TestCase):
 
         self.assertEqual(mask[9], 1)
 
-    def test_promotion_uses_adjacent_previous_pawn(self):
+    def test_promotion_uses_adjacent_pawn_and_supported_piece_types(self):
         previous = np.zeros((8, 8), dtype=np.float32)
-        current = np.zeros((8, 8), dtype=np.float32)
         previous[6, 2] = 2
-        current[7, 3] = 5
-
-        self.assertTrue(detect_promotion(previous, current))
+        for piece, expected in ((5, True), (8, True), (9, False)):
+            with self.subTest(piece=piece):
+                current = np.zeros((8, 8), dtype=np.float32)
+                current[7, 3] = piece
+                self.assertEqual(detect_promotion(previous, current), expected)
 
     def test_no_melee_damage_preserves_movement_reload_and_loaded_shots(self):
         board = np.zeros((8, 8), dtype=np.float32)

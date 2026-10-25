@@ -12,19 +12,22 @@ sys.path.insert(0, str(ROOT / "src"))
 from shotgun_king_rl.runtime.consistency import compare_policy_observation
 
 
-def observation():
-    state = np.zeros(281, dtype=np.float32)
+def observation(size=281):
+    state = np.zeros(size, dtype=np.float32)
     state[7 * 8 + 4] = 1
     state[128:130] = (2, 6)
     return state
 
 
 class RuntimeConsistencyTests(unittest.TestCase):
-    def test_equal_policy_fields_are_consistent(self):
-        result = compare_policy_observation(observation(), observation())
-
-        self.assertTrue(result.consistent)
-        self.assertEqual(result.reason, "match")
+    def test_observation_layouts_must_match(self):
+        cases = ((281, 281, True, 'match'), (345, 345, True, 'match'),
+                 (281, 345, False, 'observation_shape_invalid'))
+        for expected_size, actual_size, consistent, reason in cases:
+            with self.subTest(expected_size=expected_size, actual_size=actual_size):
+                result = compare_policy_observation(observation(expected_size), observation(actual_size))
+                self.assertEqual(result.consistent, consistent)
+                self.assertEqual(result.reason, reason)
 
     def test_board_change_reports_squares(self):
         expected = observation()

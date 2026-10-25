@@ -16,11 +16,9 @@ from shotgun_king_rl.perception import (
 )
 from shotgun_king_rl.perception.context import terrain_grid
 from shotgun_king_rl.runtime.actions import available_moves, select_shot_target
-from shotgun_king_rl.runtime.consistency import compare_policy_observation
 from shotgun_king_rl.runtime.io import CaptureResult, IOStatus, InputResult
 from shotgun_king_rl.runtime.state import build_threat_matrix
 from test_perception_pipeline import FakeReader, VALID_COMBAT_STATS
-import test_runtime_rewards as reward_fixtures
 
 
 def context_for(board, ally=None, moat=True):
@@ -76,16 +74,12 @@ class BoardContextTests(unittest.TestCase):
         self.pipeline.context_reader = None
         self.assertEqual(self.pipeline.observe(object()).issues, ('board_context:reader_unavailable',))
 
-    def test_non_gameplay_skips_context_and_next_unknown_frame_is_not_reused(self):
+    def test_context_is_not_reused_when_the_next_frame_is_unknown(self):
         self.assertTrue(self.pipeline.observe(object()).ready_for_policy)
         self.context_reader.prediction = Prediction.unknown(source='context', reason='unreadable')
         result = self.pipeline.observe(object())
         self.assertFalse(result.ready_for_policy)
         self.assertIsNone(result.board_context)
-        calls = self.context_reader.calls
-        self.pipeline.screen_reader.prediction = Prediction.accepted(ScreenKind.CARD_SELECTION, source='screen')
-        self.pipeline.observe(object())
-        self.assertEqual(self.context_reader.calls, calls)
 
     def test_allies_block_rays_but_are_not_threats_or_shot_targets(self):
         board = self.pipeline.observe(object()).board
@@ -184,28 +178,6 @@ class BoardContextTests(unittest.TestCase):
                     self.assertIn('board_context:hidden', info['screen_state']['reason'])
                 click.assert_not_called()
                 key.assert_not_called()
-
-    def test_allied_loss_is_not_counted_as_enemy_kill_or_piercing_target(self):
-        # Reuse the reward scenario builder without inheriting its test cases.
-        fixture = reward_fixtures.RuntimeRewardTests()
-        fixture.setUp()
-        before = fixture.board.copy()
-        before[4, 7] = -5
-        after = before.copy()
-        after[4, 7] = 0
-        result = fixture.calculate(shot_board=before, current_board=after, previous_enemy_count=1)
-        self.assertEqual(result.killed_enemies, 0)
-        pierced = before.copy()
-        pierced[4, 5], pierced[4, 6], pierced[4, 7] = 2, -5, 2
-        from shotgun_king_rl.runtime.actions import ShotTarget
-        values = dict(shot_board=pierced, current_board=pierced, previous_enemy_count=2,
-                      shot_target=ShotTarget((0, 1), 1, 2, False))
-        without_pierce = fixture.calculate(**values)
-        with_pierce = fixture.calculate(**values, pierce_chance=1)
-        self.assertEqual(with_pierce.expected_damage, without_pierce.expected_damage)
-
-    def test_old_and_current_observation_shapes_cannot_be_mixed(self):
-        self.assertFalse(compare_policy_observation(np.zeros(281), np.zeros(345)).consistent)
 
     def test_live_shot_does_not_reward_allied_loss_or_track_allied_turns(self):
         self.board[5, 4], self.board[6, 5] = 0, 5

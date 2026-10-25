@@ -57,20 +57,20 @@ class PerceptionPipelineTests(unittest.TestCase):
         self.assertEqual(result.combat_stats, VALID_COMBAT_STATS)
         self.assertEqual(result.sources, ("screen:v1", "pieces:v1", "ammo:v1", "combat:v1", "context:test"))
 
-    def test_non_gameplay_screen_skips_board_and_ammo_readers(self):
+    def test_non_gameplay_screen_skips_all_gameplay_readers(self):
         screen = FakeReader(Prediction.accepted(ScreenKind.CARD_SELECTION, source="screen:v1"))
         board = FakeReader(Prediction.unknown(source="pieces:v1", reason="not run"))
         ammo = FakeReader(Prediction.unknown(source="ammo:v1", reason="not run"))
         combat = FakeReader(Prediction.unknown(source="combat:v1", reason="not run"))
+        context = FakeReader(Prediction.unknown(source="context:v1", reason="not run"))
 
-        result = PerceptionPipeline(screen, board, ammo, combat, NormalContextReader(lambda: board.prediction.value)).observe(object())
+        result = PerceptionPipeline(screen, board, ammo, combat, context).observe(object())
 
         self.assertFalse(result.ready_for_policy)
         self.assertEqual(result.screen_kind, ScreenKind.CARD_SELECTION)
         self.assertEqual(result.issues, ("screen:card_selection",))
-        self.assertEqual(board.calls, 0)
-        self.assertEqual(ammo.calls, 0)
-        self.assertEqual(combat.calls, 0)
+        for reader in (board, ammo, combat, context):
+            self.assertEqual(reader.calls, 0)
 
     def test_unknown_ammo_blocks_policy_without_discarding_valid_board(self):
         screen = FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:v1"))

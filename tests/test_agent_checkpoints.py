@@ -82,15 +82,6 @@ class AgentCheckpointTests(unittest.TestCase):
         weights[key] = torch.zeros(1)
         self.assert_rejected_without_changes(payload)
 
-    def test_forward_accepts_signed_pieces_and_terrain(self):
-        observation = torch.zeros((1, 345))
-        observation[0, :3] = torch.tensor([1, -5, 9])
-        observation[0, 281 + 4 * 8:281 + 5 * 8] = 1
-        with torch.no_grad():
-            result = self.agent.policy_net(observation)
-        self.assertEqual(result.shape, (1, 10))
-        self.assertTrue(torch.isfinite(result).all())
-
     def test_policy_output_changes_when_only_terrain_changes(self):
         observation = torch.zeros((1, 345))
         observation[0, :3] = torch.tensor([1, -5, 9])
@@ -98,6 +89,9 @@ class AgentCheckpointTests(unittest.TestCase):
             without_moat = self.agent.policy_net(observation)
             observation[0, 281 + 4 * 8:281 + 5 * 8] = 1
             with_moat = self.agent.policy_net(observation)
+        for output in (without_moat, with_moat):
+            self.assertEqual(output.shape, (1, 10))
+            self.assertTrue(torch.isfinite(output).all())
         self.assertFalse(torch.equal(without_moat, with_moat))
 
 

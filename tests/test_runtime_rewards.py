@@ -114,6 +114,21 @@ class RuntimeRewardTests(unittest.TestCase):
         self.assertFalse(result.melee_kill)
         self.assertAlmostEqual(result.reward, -0.9)
 
+    def test_allied_loss_is_not_counted_as_enemy_kill_or_piercing_target(self):
+        before = self.board.copy()
+        before[4, 7] = -5
+        after = before.copy()
+        after[4, 7] = 0
+        result = self.calculate(shot_board=before, current_board=after, previous_enemy_count=1)
+        self.assertEqual(result.killed_enemies, 0)
+        pierced = before.copy()
+        pierced[4, 5], pierced[4, 6], pierced[4, 7] = 2, -5, 2
+        values = dict(shot_board=pierced, current_board=pierced, previous_enemy_count=2,
+                      shot_target=ShotTarget((0, 1), 1, 2, False))
+        without_pierce = self.calculate(**values)
+        with_pierce = self.calculate(**values, pierce_chance=1)
+        self.assertEqual(with_pierce.expected_damage, without_pierce.expected_damage)
+
 
 if __name__ == "__main__":
     unittest.main()
