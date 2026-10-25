@@ -100,6 +100,20 @@ class RuntimeRewardTests(unittest.TestCase):
         self.assertAlmostEqual(result.reward, -4.6)
         self.assertTrue(result.threatened)
 
+    def test_unavailable_melee_has_no_damage_kill_or_extra_turn_reward(self):
+        cleared_board = self.board.copy()
+        cleared_board[4, 6] = 0
+        result = self.calculate(
+            current_board=cleared_board, shot_was_melee=True,
+            melee_damage=0, melee_kill_extra_turn=True, target_hp=0,
+            pierce_chance=1, knockback_chance=1,
+        )
+        self.assertEqual(result.expected_damage, 0)
+        self.assertEqual(result.expected_knockback_reward, 0)
+        self.assertEqual(result.killed_enemies, 0)
+        self.assertFalse(result.melee_kill)
+        self.assertAlmostEqual(result.reward, -0.9)
+
 
 if __name__ == "__main__":
     unittest.main()

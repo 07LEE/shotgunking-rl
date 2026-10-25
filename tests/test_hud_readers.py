@@ -36,7 +36,7 @@ class HudCase:
 CASES = (
     HudCase('melee_damage', MeleeDamageReader, melee_damage_patch, 192, 2, 3, '2', '8',
             {'melee_damage': 2},
-            tuple({'melee_damage': value} for value in (-1, 0, None, True))),
+            tuple({'melee_damage': value} for value in (-1, None, True))),
     HudCase('attack', AttackReader, attack_patch, 0, 4, 8, '4', None, {'attack': 4}),
     HudCase('range', RangeReader, range_patch, 64, RangeReading(3, 5), RangeReading(3, 6), '3-5', '2-8',
             {'range_min': 3, 'range_max': 5},
@@ -110,7 +110,7 @@ class HudReaderTests(unittest.TestCase):
 
     def test_melee_requires_visible_title_reference_and_filters_other_titles(self):
         case = next(case for case in CASES if case.name == 'melee_damage')
-        self.assertEqual(MeleeDamageReader.source, 'melee-damage-reviewed-templates:v1')
+        self.assertEqual(MeleeDamageReader.source, 'melee-damage-reviewed-templates:v2')
         for value in (0, -1, True, None):
             self.assertFalse(MeleeDamageReader([(value, case.patch(screen(case)))]).read(screen(case)).is_accepted)
         with tempfile.TemporaryDirectory() as directory:
@@ -125,7 +125,10 @@ class HudReaderTests(unittest.TestCase):
                     'game_crop': [0, 0, 1280, 720], 'screen_state': {
                         'screen_kind': 'gameplay', 'combat_stats': {'melee_damage': 2 if seed == 7 else 40},
                         'reviews': {'screen_kind': True, 'combat_stats': True}}}))
-            for title in (None, np.zeros((30, 84), dtype=np.uint8), np.ones((5, 5), dtype=np.uint8)):
+            reader = MeleeDamageReader.from_collection(collection)
+            self.assertEqual(len(reader.examples), 0)
+            self.assertFalse(reader.read(screen(case)).is_accepted)
+            for title in (np.zeros((30, 84), dtype=np.uint8), np.ones((5, 5), dtype=np.uint8)):
                 with self.subTest(title_shape=getattr(title, 'shape', None)), self.assertRaises(ValueError):
                     MeleeDamageReader.from_collection(collection, title_reference=title)
             reader = MeleeDamageReader.from_collection(collection, title_reference=case.patch(screen(case))[:30])

@@ -17,7 +17,7 @@ from ..vision.layout import normalize_game_screen
 def build_combat_reader(collection, title_annotation=None):
     collection = Path(collection).resolve()
     metadata = {"melee_title": None}
-    melee = None
+    title_reference = None
     if title_annotation is not None:
         path = Path(title_annotation).resolve()
         if not path.is_relative_to(collection / "sessions"):
@@ -38,12 +38,15 @@ def build_combat_reader(collection, title_annotation=None):
         if image is None:
             raise ValueError("Unreadable title reference image")
         patch = melee_damage_patch(normalize_game_screen(image, data.get("game_crop")))
-        melee = MeleeDamageReader.from_collection(collection, title_reference=None if patch is None else patch[:30])
+        if patch is None:
+            raise ValueError("A visible melee title reference is required")
+        title_reference = patch[:30]
         metadata["melee_title"] = {
             "annotation": path.relative_to(collection).as_posix(),
             "annotation_sha256": hashlib.sha256(raw).hexdigest(),
             "image_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
         }
+    melee = MeleeDamageReader.from_collection(collection, title_reference=title_reference)
     readers = {
         "attack_reader": AttackReader.from_collection(collection),
         "range_reader": RangeReader.from_collection(collection),
@@ -58,6 +61,7 @@ def build_combat_reader(collection, title_annotation=None):
         name: {"source": reader.source, "references": len(reader.examples)} if reader is not None else None
         for name, reader in readers.items()
     }
+    metadata["readers"]["melee_reader"]["zero_references"] = len(melee.zero_examples)
     digest = hashlib.sha256()
     for path in sorted((collection / "sessions").glob("*/annotations/*.json")):
         raw = path.read_bytes()

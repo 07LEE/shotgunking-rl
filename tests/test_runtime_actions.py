@@ -130,6 +130,24 @@ class RuntimeActionTests(unittest.TestCase):
 
         self.assertTrue(detect_promotion(previous, current))
 
+    def test_no_melee_damage_preserves_movement_reload_and_loaded_shots(self):
+        board = np.zeros((8, 8), dtype=np.float32)
+        board[4, 4] = 1
+        board[4, 5] = 2
+        observation = np.zeros(281, dtype=np.float32)
+        observation[:64] = board.reshape(-1)
+        for loaded_ammo in (0, 1):
+            with self.subTest(loaded_ammo=loaded_ammo):
+                mask = build_action_mask(
+                    observation, action_count=10, tracked_king=(4, 4),
+                    loaded_ammo=loaded_ammo, max_ammo=2, reserve_ammo=4,
+                    range_limit=5, melee_damage=0,
+                )
+                self.assertEqual(mask[9], float(loaded_ammo > 0))
+                self.assertEqual(mask[8], 1)
+                self.assertEqual(mask[3], 1)
+                self.assertEqual(mask[4], 0)
+
     def test_terminal_rules_preserve_existing_evaluation_order(self):
         result = apply_terminal_rules(
             reward=-0.1,

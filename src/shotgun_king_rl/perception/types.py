@@ -101,7 +101,10 @@ class RangeReading:
 
 @dataclass(frozen=True)
 class CombatStatsReading:
-    """Current combat values read from the gameplay HUD."""
+    """Current HUD values; confirmed melee damage zero means no melee attack.
+
+    Unknown melee availability must remain an unaccepted prediction, not zero.
+    """
 
     attack: float
     range_min: float

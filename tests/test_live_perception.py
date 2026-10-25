@@ -91,6 +91,44 @@ class LivePerceptionTests(unittest.TestCase):
         self.imread.assert_not_called()
         self.assertEqual(self.game._assess_screen(obs).state, RuntimeScreenState.OBSERVATION_FAILURE)
 
+    def test_confirmed_no_melee_blocks_empty_weapon_attack_without_input(self):
+        self.board[0, 0], self.board[4, 5] = 0, 2
+        self.combat.prediction = Prediction.accepted(replace(self.stats, melee_damage=0), source='combat')
+        self.pipeline.ammo_reader.prediction = Prediction.accepted(AmmoReading(0, 4), source='ammo')
+        self.game.current_state = self.game._get_obs()
+        self.assertTrue(self.game.last_perception.ready_for_policy)
+        self.assertEqual(self.game.melee_damage, 0)
+        mask = self.game.get_action_mask()
+        self.assertEqual(mask[9], 0)
+        self.assertEqual(mask[3], 1)
+        self.assertEqual(mask[8], 1)
+        with patch.object(env, 'click_relative_in_window') as click, patch.object(env, 'press_key') as key:
+            _, reward, _, _, info = self.game.step(9)
+        click.assert_not_called()
+        key.assert_not_called()
+        self.assertEqual(info['action_issue'], 'not_permitted_by_action_mask')
+        self.assertFalse(info['transition_ready'])
+        self.assertEqual(reward, 0)
+        self.move.assert_not_called()
+
+    def test_confirmed_no_melee_uses_loaded_ranged_shot_at_adjacent_enemy(self):
+        self.board[0, 0], self.board[4, 5] = 0, 2
+        self.combat.prediction = Prediction.accepted(replace(self.stats, melee_damage=0), source='combat')
+        self.game.current_state = self.game._get_obs()
+        self.assertEqual(self.game.get_action_mask()[9], 1)
+
+        def after_shot():
+            self.pipeline.ammo_reader.prediction = Prediction.accepted(AmmoReading(0, 4), source='ammo')
+            return self.game._get_obs()
+
+        with patch.object(self.game, '_wait_for_equilibrium', side_effect=after_shot), patch.object(env, 'click_relative_in_window', return_value=InputResult(IOStatus.SUCCEEDED, 'click')) as click, patch.object(env, 'calculate_step_reward', wraps=env.calculate_step_reward) as reward:
+            _, _, _, _, info = self.game.step(9)
+        # Aim past the adjacent enemy, so the click is a ranged shot.
+        click.assert_called_once_with('Shotgun King', 796, 408)
+        self.assertFalse(reward.call_args.kwargs['shot_was_melee'])
+        self.assertEqual(reward.call_args.kwargs['melee_damage'], 0)
+        self.assertTrue(info['transition_ready'])
+
     def test_change_outside_legacy_features_blocks_action(self):
         self.game.current_state = self.game._get_obs()
         self.combat.prediction = Prediction.accepted(replace(self.stats, penetration_percent=75), source='combat')

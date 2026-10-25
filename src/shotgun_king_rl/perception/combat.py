@@ -12,6 +12,7 @@ from .validation import valid_combat_stats
 class CombatStatsReader:
     """Require every field, including grenade damage at zero remaining grenades.
 
+    Confirmed melee damage zero permits policy use with melee disabled.
     A missing melee reader remains unknown until a verified reader is supplied.
     Explicitly accepted zero values are retained; no preset supplies defaults.
     """

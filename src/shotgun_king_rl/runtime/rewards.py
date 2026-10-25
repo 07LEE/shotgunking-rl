@@ -73,9 +73,11 @@ def calculate_step_reward(
     promotion_detected,
 ):
     """Calculate the legacy step reward from already observed action facts."""
+    melee_unavailable = shot_was_melee and not melee_damage > 0
+    valid_shot_target = valid_shot_target and not melee_unavailable
     current_enemy_count = int(np.sum(current_board >= 2))
     killed_enemies = max(0, int(previous_enemy_count) - current_enemy_count)
-    if executed_action != 9:
+    if executed_action != 9 or melee_unavailable:
         killed_enemies = 0
 
     expected_damage = 0.0
