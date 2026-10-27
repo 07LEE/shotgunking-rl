@@ -14,6 +14,7 @@ import capture as desktop_capture
 from shotgun_king_rl.collection.monitor import ChangeDetector, DraftRecorder, monitor
 from shotgun_king_rl.collection.prepare import draft_annotation
 from shotgun_king_rl.collection.dataset import build_dataset
+from shotgun_king_rl.perception.royals import RoyalTemplates
 from collection_fixtures import game_screen
 
 
@@ -155,16 +156,26 @@ class CollectionMonitorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             board = np.zeros((8, 8), dtype=int)
             board[0, :4] = (6, 6, 6, 7)
-            refined = board.copy()
-            refined[0, :2] = (8, 9)
+            rng = np.random.default_rng(42)
+            queen, king, unseen = [rng.uniform(0, 255, (45, 45)).astype(np.float32) for _ in range(3)]
+            reader = RoyalTemplates(((8, queen), (9, king)))
             with patch('shotgun_king_rl.collection.prepare.analyzer.get_state_matrix', return_value=board), patch(
                 'shotgun_king_rl.collection.prepare.RoyalTemplates.from_collection'
-            ) as templates:
-                templates.return_value.refine.return_value = refined
+            ) as templates, patch('shotgun_king_rl.perception.royals.analyzer._extract_signal', side_effect=(queen, king, unseen)):
+                templates.return_value = reader
                 result = draft_annotation(game_screen(), 'test.png', Path(directory), 'session', 'train')
             self.assertEqual(result['board'][0][:4], ['queen', 'white_king', 'ambiguous_royal', 'special_knight'])
             self.assertFalse(result['confirmed'])
             self.assertNotIn('provisionally mapped', result['annotation_source'])
+
+    def test_missing_royal_references_leave_draft_unresolved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = np.zeros((8, 8), dtype=int)
+            board[0, 0] = 6
+            with patch('shotgun_king_rl.collection.prepare.analyzer.get_state_matrix', return_value=board):
+                result = draft_annotation(game_screen(), 'test.png', Path(directory), 'session', 'train')
+            self.assertEqual(result['board'][0][0], 'ambiguous_royal')
+            self.assertFalse(result['confirmed'])
 
     def test_shared_draft_function_does_not_approve_predictions(self):
         with tempfile.TemporaryDirectory() as directory:

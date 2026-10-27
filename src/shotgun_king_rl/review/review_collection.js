@@ -45,7 +45,7 @@ async function moveTo(item) {
 }
 function reviewMarker(item) { if (currentReviewTab === 'pieces') return pieceApplicable(item) ? item.confirmed ? '✓' : '○' : '—'; if (pageWorkflowComplete(item)) return '✓'; return pageReviewCount(item) > 0 || item.reviews?.soul === true ? '◐' : '○' }
 function showReviewStatus() { if (!data) return; const item = items.find(candidate => candidate.id === currentId); const approvedAt = item.piece_review?.reviewed_at; const pieceMessage = !pieceApplicable(item) ? 'Piece review does not apply to this screen type.' : !data.confirmed ? 'Piece labels are still a draft.' : approvedAt ? 'Piece labels approved · ' + new Date(approvedAt).toLocaleString() : 'Piece labels approved · approval time unavailable.'; const pageMessage = !pageComplete(item) ? 'Page information review is incomplete.' : soulReviewPending(item) ? 'Page information reviewed · harvested souls still need review.' : 'Page information and harvested souls reviewed.'; status(currentReviewTab === 'pieces' ? pieceMessage : pageMessage) }
-for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c; $('label').append(o) }
+for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c === 'ambiguous_royal' ? 'Queen / white king (unresolved)' : c; $('label').append(o) }
 async function api(url, options) { const r = await fetch(url, options); const a = await r.json(); if (!r.ok) throw Error(a.error || r.statusText); return a }
 function status(s, error = false) {
     $('status').textContent = s;
@@ -66,7 +66,7 @@ function draw() {
             button.setAttribute('aria-label', button.title);
             const text = document.createElement('span');
             text.className = data.board[r][c] === 'empty' ? 'empty-label' : 'piece-label';
-            text.textContent = (data.piece_sides[r][c] === 'ally' && data.board[r][c] !== 'player_king' ? 'Ally ' : '') + data.board[r][c].replace('player_king', 'Player king').replace('white_king', 'White king').replace('special_knight', 'Special N');
+            text.textContent = (data.piece_sides[r][c] === 'ally' && data.board[r][c] !== 'player_king' ? 'Ally ' : '') + data.board[r][c].replace('ambiguous_royal', 'Queen / king?').replace('player_king', 'Player king').replace('white_king', 'White king').replace('special_knight', 'Special N');
             button.append(text);
             button.onclick = () => { selected = [r, c]; draw(); };
             grid.append(button);
@@ -79,6 +79,7 @@ function draw() {
     $('excluded').checked = exclude(r, c);
     $('locked').checked = data.screen_state.locked_cells.some(x => x[0] === r && x[1] === c);
     $('cellInfo').textContent = String.fromCharCode(97 + c) + (8 - r) + ': ' + data.board[r][c] + ' · ' + (data.piece_sides[r][c] ?? 'no piece') + ' · ' + data.terrain[r][c];
+    if (data.board[r][c] === 'ambiguous_royal') $('cellInfo').textContent += ' · Select queen or white king, or exclude this cell from training.';
 }
 function labelView() {
     $('grid').classList.toggle('show-labels', $('showLabels').checked);
@@ -156,6 +157,17 @@ async function save(confirmed) {
         const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
         const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : completingPieceApproval ? true : data.confirmed;
         const pieceReviewed = (currentReviewTab === 'pieces' && confirmed) || completingPieceApproval;
+        if (boardConfirmed && screen_kind === 'gameplay') {
+            for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+                if (data.board[r][c] === 'ambiguous_royal' && !exclude(r, c)) {
+                    selected = [r, c];
+                    switchReviewTab('pieces');
+                    draw();
+                    $('label').focus();
+                    throw Error('Select queen or white king for the highlighted cell, or exclude it from training.');
+                }
+            }
+        }
         status('Saving review…');
         const result = await api('/api/save', {
             method: 'POST',
