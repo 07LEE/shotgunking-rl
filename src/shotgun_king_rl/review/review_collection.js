@@ -3,7 +3,7 @@ const combatFields = ['attack', 'range_min', 'range_max', 'spread_degrees', 'pen
 const reviewInputs = { screen_kind: 'screenKindReviewed', ammo: 'ammoReviewed', combat_stats: 'combatReviewed' };
 const independentReviewInputs = { soul: 'soulReviewed' };
 const soulPieces = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
-const token = document.querySelector('meta[name=review-token]').content, classes = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
+const token = document.querySelector('meta[name=review-token]').content, classes = ['ambiguous_royal', 'empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
 const $ = id => document.getElementById(id); let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces', pendingPieceApprovalId = null;
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }

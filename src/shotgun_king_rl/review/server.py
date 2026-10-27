@@ -160,7 +160,7 @@ def save_item(collection, payload):
     if payload.get('revision') != revision:
         raise ValueError('Annotation changed; reload before saving')
     board = payload['board']
-    if not isinstance(board, list) or len(board) != 8 or any(not isinstance(row, list) or len(row) != 8 or any(v not in CLASSES for v in row) for row in board):
+    if not isinstance(board, list) or len(board) != 8 or any(not isinstance(row, list) or len(row) != 8 or any(v not in (*CLASSES, 'ambiguous_royal') for v in row) for row in board):
         raise ValueError('Board must contain 8x8 valid labels')
     context = {
         'board': board,
@@ -193,6 +193,9 @@ def save_item(collection, payload):
     excluded = payload['exclude_cells']
     if not isinstance(excluded, list) or any(not isinstance(cell, list) or len(cell) != 2 or any(type(v) is not int or not 0 <= v < 8 for v in cell) for cell in excluded):
         raise ValueError('Invalid excluded cells')
+    if confirmed and any(label == 'ambiguous_royal' and [r, c] not in excluded
+                         for r, row in enumerate(board) for c, label in enumerate(row)):
+        raise ValueError('Resolve or exclude ambiguous royal cells before approval')
     siblings = list(path.parent.glob('*.json'))
     for sibling in siblings:
         other = json.loads(sibling.read_text())

@@ -42,6 +42,21 @@ class PieceDatasetTests(unittest.TestCase):
             self.assertEqual({r["split"] for r in records}, {"train"})
             self.assertTrue(all((output / r["path"]).exists() for r in records))
 
+    def test_ambiguous_royals_never_become_training_classes(self):
+        data = json.loads(self.annotation.read_text())
+        data['confirmed'] = True
+        data['board'][0][0] = 'ambiguous_royal'
+        self.annotation.write_text(json.dumps(data))
+        output = self.fixtures / 'cells'
+        with self.assertRaisesRegex(ValueError, 'unknown class label'):
+            build_dataset(self.annotations, output)
+        self.assertFalse(output.exists())
+        data['exclude_cells'] = [[0, 0]]
+        self.annotation.write_text(json.dumps(data))
+        summary = build_dataset(self.annotations, output)
+        self.assertEqual(summary['cells'], 63)
+        self.assertNotIn('ambiguous_royal', summary['classes'])
+
     def test_session_cannot_span_splits(self):
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)

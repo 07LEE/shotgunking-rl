@@ -151,6 +151,21 @@ class CollectionMonitorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     monitor(Mock(), recorder, **kwargs)
 
+    def test_draft_preserves_distinct_and_ambiguous_royals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = np.zeros((8, 8), dtype=int)
+            board[0, :4] = (6, 6, 6, 7)
+            refined = board.copy()
+            refined[0, :2] = (8, 9)
+            with patch('shotgun_king_rl.collection.prepare.analyzer.get_state_matrix', return_value=board), patch(
+                'shotgun_king_rl.collection.prepare.RoyalTemplates.from_collection'
+            ) as templates:
+                templates.return_value.refine.return_value = refined
+                result = draft_annotation(game_screen(), 'test.png', Path(directory), 'session', 'train')
+            self.assertEqual(result['board'][0][:4], ['queen', 'white_king', 'ambiguous_royal', 'special_knight'])
+            self.assertFalse(result['confirmed'])
+            self.assertNotIn('provisionally mapped', result['annotation_source'])
+
     def test_shared_draft_function_does_not_approve_predictions(self):
         with tempfile.TemporaryDirectory() as directory:
             result = draft_annotation(game_screen(), 'test.png', Path(directory), 'session', 'train')

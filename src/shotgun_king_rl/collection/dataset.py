@@ -85,7 +85,8 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
         board = data["board"]
         if len(board) != 8 or any(len(row) != 8 for row in board):
             raise ValueError(f"{path}: board must be 8x8")
-        if any(label not in CLASSES for row in board for label in row):
+        if any(label not in CLASSES and not (label == "ambiguous_royal" and [r, c] in data.get("exclude_cells", []))
+               for r, row in enumerate(board) for c, label in enumerate(row)):
             raise ValueError(f"{path}: unknown class label")
         data['terrain_source'] = terrain_source(data)
         data['piece_sides'], data['terrain'] = board_metadata(data)

@@ -24,8 +24,28 @@ class ReviewCollectionTests(unittest.TestCase):
         names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king']
         ids = np.asarray([[names.index(label) for label in row] for row in piece_annotation()['board']])
         reader = patch('shotgun_king_rl.collection.prepare.analyzer.get_state_matrix', return_value=ids)
+        ids[ids == 6] = 9
         reader.start()
         self.addCleanup(reader.stop)
+
+    def test_ambiguous_royal_requires_resolution_or_exclusion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            (collection / 'inbox').mkdir()
+            cv2.imwrite(str(collection / 'inbox/screen.png'), game_screen())
+            prepare_session(collection, 'session')
+            relative = 'sessions/session/annotations/screen.png.json'
+            _, data, _, revision = load_item(collection, relative)
+            data['board'][0][0] = 'ambiguous_royal'
+            payload = dict(data, id=relative, revision=revision, floor=1, confirmed=False)
+            saved = save_item(collection, payload)
+            self.assertEqual(load_item(collection, relative)[1]['board'][0][0], 'ambiguous_royal')
+            _, _, _, payload['revision'] = load_item(collection, relative)
+            payload['confirmed'] = True
+            with self.assertRaisesRegex(ValueError, 'Resolve or exclude'):
+                save_item(collection, payload)
+            payload['exclude_cells'] = [[0, 0]]
+            self.assertTrue(save_item(collection, payload)['confirmed'])
 
     def test_prepare_preserves_review_and_checks_revision(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -11,6 +11,7 @@ from .images import detect_crop, normalize
 from .importer import import_images
 from .screen_state import propose
 from ..vision import analyzer
+from ..perception.royals import RoyalTemplates
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -23,8 +24,9 @@ def draft_annotation(image, image_name, collection, session_id, split, crop=None
     screen = normalize(image, game_crop)
     analyzer.reset_analyzer_cache()
     ids = analyzer.get_state_matrix(screen, include_special_knights=True)
-    names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'white_king', 'special_knight']
-    data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_name, 'session_id': session_id, 'floor': None, 'split': split, 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions; human review required; ID 6 provisionally mapped to white_king', 'board': [[names[int(v)] for v in row] for row in ids]}
+    ids = RoyalTemplates.from_collection(collection).refine(screen, ids)
+    names = ['empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'ambiguous_royal', 'special_knight', 'queen', 'white_king']
+    data = {'schema': 'piece-cells-v1', 'image': '../originals/' + image_name, 'session_id': session_id, 'floor': None, 'split': split, 'confirmed': False, 'game_crop': game_crop, 'exclude_cells': [], 'annotation_source': 'Automatic template predictions with reviewed royal references; human review required; unresolved royal kinds remain ambiguous_royal', 'board': [[names[int(v)] for v in row] for row in ids]}
     data.update(propose(screen, collection))
     return data
 
