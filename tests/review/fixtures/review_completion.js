@@ -63,7 +63,21 @@
   check($('screenKind').disabled&&$('draft').disabled&&$('approve').disabled,'reviewed non-gameplay screenshot is read-only');
   check(!$('piecesTab').disabled,'completed non-gameplay screen does not trap category navigation');
   switchReviewTab('pieces');await idle();
-  check(currentId.endsWith('b-partial.png.json'),'category navigation reaches another session with unfinished pieces');
+  check(needsReview(savedItem())&&pieceApplicable(savedItem()),'category navigation reaches another session with unfinished pieces');
+  switchReviewTab('screen');await idle();$('showCompleted').checked=false;await $('showCompleted').onchange();await idle();
+  await pick('sessions/finish-page/annotations/finish-page.png.json');
+  check(!$('screenKindReviewed').checked&&!$('ammoReviewed').checked&&!$('combatReviewed').checked&&!$('soulReviewed').checked,'page starts with unchecked review sections');
+  await $('approve').onclick();await idle();
+  const finishedPage=await api('/api/item?id='+encodeURIComponent('sessions/finish-page/annotations/finish-page.png.json'));
+  check(['screen_kind','ammo','combat_stats','soul'].every(key=>finishedPage.data.screen_state.reviews[key])&&!finishedPage.data.confirmed,'complete page action saves all applicable reviews without approving pieces');
+  check(!document.querySelector('[data-id="sessions/finish-page/annotations/finish-page.png.json"]'),'completed page leaves the pending sidebar');
+  items=await api('/api/items');renderOptions();
+  check(!document.querySelector('[data-id="sessions/finish-page/annotations/finish-page.png.json"]'),'completed page stays out after reading saved state');
+  await pick('sessions/finish-card/annotations/finish-card.png.json');await $('approve').onclick();await idle();
+  const finishedCard=await api('/api/item?id='+encodeURIComponent('sessions/finish-card/annotations/finish-card.png.json'));
+  check(finishedCard.data.screen_state.reviews.screen_kind&&!finishedCard.data.screen_state.reviews.ammo&&!finishedCard.data.screen_state.reviews.soul&&!document.querySelector('[data-id="sessions/finish-card/annotations/finish-card.png.json"]'),'non-gameplay completion marks only applicable page sections');
+  await pick('sessions/finish-unknown/annotations/finish-unknown.png.json');const beforeUnknown=revision;await $('approve').onclick();
+  check(revision===beforeUnknown&&document.querySelector('[data-id="sessions/finish-unknown/annotations/finish-unknown.png.json"]')&&$('status').textContent.includes('Not saved'),'invalid completion remains pending with an error');
   document.body.innerHTML='<pre id="browser-test-result">'+JSON.stringify({ok:true,checks})+'</pre>';
  }catch(e){document.body.innerHTML='<pre id="browser-test-result">'+JSON.stringify({ok:false,checks,error:e.stack})+'</pre>'}
 })();

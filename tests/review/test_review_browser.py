@@ -23,7 +23,7 @@ class ReviewBrowserTests(unittest.TestCase):
     def test_completed_sections_and_screens_have_explicit_edit_and_browse_actions(self):
         with tempfile.TemporaryDirectory(prefix='review-completion-') as temporary:
             root = Path(temporary)
-            cases = [('play', 'a-complete', True), ('play', 'b-partial', False), ('play', 'c-pending', False), ('finished', 'done', True), ('missing-floor', 'no-floor', False), ('cards', 'card-screen', True)]
+            cases = [('play', 'a-complete', True), ('play', 'b-partial', False), ('play', 'c-pending', False), ('finished', 'done', True), ('missing-floor', 'no-floor', False), ('cards', 'card-screen', True), ('finish-page', 'finish-page', False), ('finish-card', 'finish-card', False), ('finish-unknown', 'finish-unknown', False)]
             for session, name, complete in cases:
                 directory = root / 'sessions' / session
                 (directory / 'originals').mkdir(parents=True, exist_ok=True)
@@ -38,9 +38,11 @@ class ReviewBrowserTests(unittest.TestCase):
                     reviews = {key: True for key in reviews}
                     data['floor'] = None
                 data['screen_state'] = {'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4}, 'souls': [], 'reviews': reviews}
-                if name == 'card-screen':
+                if name in ('card-screen', 'finish-card'):
                     data['screen_state']['screen_kind'] = 'card_selection'
                     data['confirmed'] = False
+                if name == 'finish-unknown':
+                    data['screen_state']['screen_kind'] = None
                 (directory / 'annotations' / (name + '.png.json')).write_text(json.dumps(data))
             try:
                 server = make_server(root, 0)
@@ -68,7 +70,7 @@ class ReviewBrowserTests(unittest.TestCase):
                 self.assertIsNotNone(match, result.stderr[-1500:] + result.stdout[-2000:])
                 report = json.loads(html.unescape(match.group(1)))
                 self.assertTrue(report['ok'], json.dumps(report, indent=2))
-                self.assertEqual(len(report['checks']), 29)
+                self.assertEqual(len(report['checks']), 35)
             finally:
                 server.shutdown()
                 server.server_close()

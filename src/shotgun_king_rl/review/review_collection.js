@@ -259,15 +259,19 @@ async function save(confirmed) {
         const ammo = Object.fromEntries(Object.entries(ammoInputs).map(([key, id]) => [key, $(id).value === '' ? null : Number($(id).value)]));
         const combat_stats = Object.fromEntries(combatFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
         if ([...Object.values(ammo), ...Object.values(combat_stats)].some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Numeric values must be nonnegative integers.');
-        const reviews = { ...data.screen_state.reviews, ...Object.fromEntries(Object.entries({ ...reviewInputs, ...independentReviewInputs }).map(([section, id]) => [section, $(id).checked])) };
         const screen_kind = $('screenKind').value || null;
+        const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
+        const reviews = { ...data.screen_state.reviews, ...Object.fromEntries(Object.entries({ ...reviewInputs, ...independentReviewInputs }).map(([section, id]) => [section, $(id).checked])) };
+        if (confirmed && currentReviewTab === 'screen' && !completingPieceApproval) {
+            for (const section of pageSections({ screen_kind })) reviews[section] = true;
+            if (screen_kind === 'gameplay') reviews.soul = true;
+        }
         if (reviews.screen_kind && screen_kind === null) throw Error('Select a screen kind before marking it reviewed.');
         const cards = data.screen_state.cards ?? { left: null, right: null };
         const selectedSouls = soulValues();
         if (reviews.soul && selectedSouls.some(piece => !piece)) throw Error('Select a piece for every harvested soul slot.');
         const souls = reviews.soul ? selectedSouls : null;
         data.screen_state = { screen_kind, ammo, combat_stats, cards, card_choices: data.screen_state.card_choices ?? null, card_reviewed_slots: data.screen_state.card_reviewed_slots ?? [], souls, locked_cells: data.screen_state.locked_cells, reviews };
-        const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
         const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : completingPieceApproval ? true : data.confirmed;
         const pieceReviewed = (currentReviewTab === 'pieces' && confirmed) || completingPieceApproval;
         if (boardConfirmed && screen_kind === 'gameplay') {
@@ -296,6 +300,7 @@ async function save(confirmed) {
         item.piece_review = result.piece_review;
         item.screen_kind = screen_kind;
         item.reviews = { ...reviews };
+        for (const [section, input] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(input).checked = reviews[section] === true;
         editingSections.clear();
         renderOptions();
         if (completingPieceApproval) {
@@ -449,9 +454,9 @@ function switchReviewTab(name, focus = false) {
         $(key === 'pieces' ? 'piecesControls' : 'screenControls').hidden = !active;
         if (active && focus) $(tab).focus();
     }
-    $('draft').textContent = name === 'pieces' ? 'Save draft' : 'Save page info';
-    $('approve').textContent = name === 'pieces' ? 'Approve pieces ✓' : 'Save & next →';
-    $('saveHelp').textContent = name === 'pieces' ? 'Check every piece label before approval.' : 'Save page information and harvested souls, then continue to the next unfinished screen.';
+    $('draft').textContent = name === 'pieces' ? 'Save draft' : 'Save progress';
+    $('approve').textContent = name === 'pieces' ? 'Approve pieces ✓' : 'Complete review ✓';
+    $('saveHelp').textContent = name === 'pieces' ? 'Check every piece label before approval.' : 'Complete review to mark this page reviewed and remove it from pending work. Save progress to continue later.';
     if (items.length) {
         if (!loading && !dirty && !pendingPieceApprovalId && !saving) selectVisible();
         renderOptions(); showReviewStatus();
