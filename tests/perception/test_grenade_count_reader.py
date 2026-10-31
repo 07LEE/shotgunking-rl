@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 from shotgun_king_rl.perception import GrenadeCountReader
-from shotgun_king_rl.perception.grenade_count import grenade_count_patch
+from shotgun_king_rl.perception.grenade_count import grenade_count_patch, grenade_context_patch
 
 
 def screen(count):
@@ -57,6 +57,42 @@ class GrenadeCountReaderTests(unittest.TestCase):
         image = np.zeros((720, 1280, 3), dtype=np.uint8)
         cv2.line(image, (592, 78), (641, 111), (220, 220, 220), 3)
         self.assertFalse(self.reader.read(image).is_accepted)
+
+    def test_featureless_zero_needs_reviewed_slots_and_visible_context(self):
+        image = np.zeros((720, 1280, 3), dtype=np.uint8)
+        cv2.rectangle(image, (390, 40), (410, 60), (0, 0, 255), -1)
+        slots, context = grenade_count_patch(image), grenade_context_patch(image)
+        reader = GrenadeCountReader(zero_examples=[(context, slots)])
+        self.assertEqual(reader.read(image).value, 0)
+        self.assertFalse(GrenadeCountReader().read(image).is_accepted)
+        self.assertFalse(reader.read(np.zeros_like(image)).is_accepted)
+        changed = image.copy()
+        changed[85:90, 600:605] = 100
+        self.assertFalse(reader.read(changed).is_accepted)
+        image[:] = 0  # Reader owns copies of both reference crops.
+        self.assertGreater(reader.zero_examples[0][0].std(), 5)
+
+    def test_featureless_zero_references_use_only_reviewed_train_labels(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = np.zeros((720, 1280, 3), dtype=np.uint8)
+            image[40:60, 390:410] = (0, 0, 255)
+            cases = (("train", True, 0), ("val", True, 0), ("test", True, 0),
+                     ("train", False, 0), ("train", True, 1))
+            for index, (split, reviewed, value) in enumerate(cases):
+                session = root / "sessions" / str(index)
+                (session / "annotations").mkdir(parents=True)
+                (session / "originals").mkdir()
+                cv2.imwrite(str(session / "originals/screen.png"), image)
+                data = {"split": split, "image": "../originals/screen.png",
+                        "game_crop": [0, 0, 1280, 720], "screen_state": {
+                            "screen_kind": "gameplay", "reviews": {"screen_kind": True, "combat_stats": reviewed},
+                            "combat_stats": {"grenades_remaining": value}}}
+                (session / "annotations/screen.json").write_text(json.dumps(data))
+            reader = GrenadeCountReader.from_collection(root)
+            self.assertEqual(len(reader.examples), 0)
+            self.assertEqual(len(reader.zero_examples), 1)
+            self.assertEqual(reader.read(image).value, 0)
 
     def test_loads_only_reviewed_gameplay_train_counts(self):
         with tempfile.TemporaryDirectory() as directory:

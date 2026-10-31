@@ -19,6 +19,7 @@ class RoyalTemplates:
     def __init__(self, examples=()):
         self.examples = tuple((kind, signal.copy()) for kind, signal in examples)
         self._template_stds = tuple(template.std() for _, template in self.examples)
+        self._head_stds = tuple(template[:22].std() for _, template in self.examples)
 
     @classmethod
     def from_collection(cls, collection):
@@ -63,7 +64,28 @@ class RoyalTemplates:
         if set(scores) != set(ROYAL_IDS.values()):
             return 6
         ranked = sorted(scores.items(), key=lambda pair: pair[1], reverse=True)
-        if ranked[0][1] < .90 or ranked[0][1] - ranked[1][1] < .10:
+        if ranked[0][1] < .90:
+            return 6
+        if ranked[0][1] - ranked[1][1] >= .10:
+            return ranked[0][0]
+        # Similar bodies can hide the distinctive crown. Require both kinds
+        # in the head references, a strong head match, and agreement with the
+        # full silhouette; a missing or conflicting crown stays unresolved.
+        head = query[:22]
+        if head.std() < 5:
+            return 6
+        head_search = np.pad(head, 1, mode="edge") if align else head
+        head_scores = {}
+        for (kind, template), template_std, head_std in zip(self.examples, self._template_stds, self._head_stds):
+            if template.shape != query.shape or template_std < 5 or head_std < 5:
+                continue
+            head_score = float(cv2.matchTemplate(head_search, template[:22], cv2.TM_CCOEFF_NORMED).max())
+            head_scores[kind] = max(head_scores.get(kind, -1), head_score)
+        if set(head_scores) != set(ROYAL_IDS.values()):
+            return 6
+        heads = sorted(head_scores.items(), key=lambda pair: pair[1], reverse=True)
+        if (heads[0][0] != ranked[0][0] or heads[0][1] < .90
+                or heads[0][1] - heads[1][1] < .10):
             return 6
         return ranked[0][0]
 

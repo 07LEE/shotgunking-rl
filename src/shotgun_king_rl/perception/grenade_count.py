@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from ..vision.layout import normalize_game_screen
 from .types import Prediction
@@ -14,23 +15,31 @@ def grenade_count_patch(image):
     return cv2.cvtColor(image[78:112, 592:642], cv2.COLOR_BGR2GRAY)
 
 
+def grenade_context_patch(image):
+    """Keep the visible ammunition HUD as evidence for reviewed empty slots."""
+    return cv2.cvtColor(image[34:112, 382:706], cv2.COLOR_BGR2GRAY)
+
+
 class GrenadeCountReader:
     """Return a reviewed grenade-slot count; other combat fields remain unavailable to policy.
 
     This recognizes reviewed whole HUD values, not arbitrary unseen numbers.
     References must come from train; val and test are evaluation inputs only.
-    Missing or featureless slots are unknown, never inferred as zero.
+    Featureless slots require a reviewed zero and matching visible HUD context.
     """
 
-    source = "grenade-count-reviewed-templates:v1"
+    source = "grenade-count-reviewed-templates:v2"
 
-    def __init__(self, examples=()):
+    def __init__(self, examples=(), zero_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
         self._template_stds = tuple(template.std() for _, template in self.examples)
+        self.zero_examples = tuple((context.copy(), slots.copy()) for context, slots in zero_examples)
+        self._zero_stds = tuple(context.std() for context, _ in self.zero_examples)
 
     @classmethod
     def from_collection(cls, collection):
         examples = []
+        zero_examples = []
         for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
@@ -54,7 +63,11 @@ class GrenadeCountReader:
             template = grenade_count_patch(image)
             if template is not None and template.std() >= 5:
                 examples.append((value, template))
-        return cls(examples)
+            elif value == 0 and template is not None:
+                context = grenade_context_patch(image)
+                if context.std() >= 5:
+                    zero_examples.append((context, template))
+        return cls(examples, zero_examples)
 
     def read(self, image) -> Prediction[int]:
         try:
@@ -63,6 +76,15 @@ class GrenadeCountReader:
         except (AttributeError, IndexError, TypeError, ValueError, cv2.error):
             return Prediction.unknown(source=self.source, reason="invalid_image")
         if query is None or query.std() < 5:
+            # A blank crop alone is never a zero. Require the reviewed slots
+            # exactly and visible surrounding HUD from a reviewed train zero.
+            context = grenade_context_patch(image)
+            scores = [float(cv2.matchTemplate(context, reference, cv2.TM_CCOEFF_NORMED)[0, 0])
+                      for (reference, slots), deviation in zip(self.zero_examples, self._zero_stds)
+                      if deviation >= 5 and context.shape == reference.shape
+                      and context.std() >= 5 and np.array_equal(query, slots)]
+            if scores and max(scores) >= .97:
+                return Prediction.accepted(0, source=self.source, confidence=max(scores))
             return Prediction.unknown(source=self.source, reason="grenades_remaining_not_found")
         scores = {}
         for (value, template), template_std in zip(self.examples, self._template_stds):

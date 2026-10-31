@@ -241,14 +241,14 @@ def _template_features(template):
 
 
 def _shifted_template_score(query, template, *, query_std=None, template_std=None):
-    """Compare an uncertain cell allowing at most two pixels of translation."""
+    """Compare an uncertain cell allowing at most three pixels of translation."""
     if query_std is None:
         query_std = query.std()
     if template_std is None:
         template_std = template.std()
     if query_std == 0 or template_std == 0:
         return -1.0
-    padded = cv2.copyMakeBorder(query, 2, 2, 2, 2, cv2.BORDER_CONSTANT, value=0)
+    padded = cv2.copyMakeBorder(query, 3, 3, 3, 3, cv2.BORDER_CONSTANT, value=0)
     return float(cv2.matchTemplate(padded, template, cv2.TM_CCOEFF_NORMED).max())
 
 

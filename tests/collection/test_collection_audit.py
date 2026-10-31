@@ -107,7 +107,7 @@ class CollectionAuditTests(unittest.TestCase):
         self.assertEqual(report["soul_values"], {"bishop": 1, "knight": 2})
         self.assertEqual(report["soul_slot_counts"], {"3": 1})
 
-    def test_grenade_damage_is_required_only_when_grenades_remain(self):
+    def test_unknown_grenade_damage_is_not_usable_even_with_zero_grenades(self):
         with tempfile.TemporaryDirectory() as directory:
             sessions = Path(directory)
             add_annotation(sessions, "run-zero", "train", "zero", image=b"zero")
@@ -121,8 +121,25 @@ class CollectionAuditTests(unittest.TestCase):
 
             report = audit_collection(sessions)
 
-        self.assertEqual(report["usable_labels"]["train"]["combat_stats"], 1)
+        self.assertEqual(report["usable_labels"]["train"]["combat_stats"], 0)
         self.assertEqual(report["usable_labels"]["val"]["combat_stats"], 0)
+
+    def test_invalid_combat_values_do_not_count_as_usable_labels(self):
+        invalid = ({"range_min": 6, "range_max": 3}, {"penetration_percent": 101},
+                   {"knockback_percent": -1}, {"spread_degrees": 361},
+                   {"attack": True}, {"attack": float("nan")},
+                   {"grenades_remaining": 1.5})
+        for values in invalid:
+            with self.subTest(values=values), tempfile.TemporaryDirectory() as directory:
+                sessions = Path(directory)
+                add_annotation(sessions, "run", "train", "screen")
+                path = sessions / "run/annotations/screen.json"
+                data = json.loads(path.read_text())
+                data["screen_state"]["combat_stats"].update(values)
+                path.write_text(json.dumps(data))
+                report = audit_collection(sessions)
+                self.assertEqual(report["usable_labels"]["train"]["combat_stats"], 0)
+                self.assertIn("missing_usable_labels:train:combat_stats", report["issues"])
 
     def test_non_gameplay_screen_does_not_require_piece_or_stat_review(self):
         with tempfile.TemporaryDirectory() as directory:
