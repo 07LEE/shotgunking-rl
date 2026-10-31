@@ -64,7 +64,7 @@ class ShiftedTemplateTests(unittest.TestCase):
         return query, template
 
     def test_thin_displaced_piece_matches_before_geometry_rejection(self):
-        query, template = self.signals(2)
+        query, template = self.signals(3)
         self.assertLess(float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED)[0, 0]), .50)
         templates = {key: [] for key in range(1, 8)}
         templates[4] = [template]
@@ -79,8 +79,10 @@ class ShiftedTemplateTests(unittest.TestCase):
             self.assertEqual(vision_analyzer.classify_patch(image, gray), 2)
 
     def test_translation_search_is_bounded(self):
-        query, template = self.signals(2)
-        self.assertAlmostEqual(vision_analyzer._shifted_template_score(query, template), 1.0, places=5)
+        for displacement in (2, 3):
+            query, template = self.signals(displacement)
+            with self.subTest(displacement=displacement):
+                self.assertAlmostEqual(vision_analyzer._shifted_template_score(query, template), 1.0, places=5)
         query, template = self.signals(8)
         self.assertLess(vision_analyzer._shifted_template_score(query, template), .50)
 
