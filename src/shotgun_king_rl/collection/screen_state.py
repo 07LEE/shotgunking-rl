@@ -9,6 +9,8 @@ from .images import normalize
 from ..vision import analyzer, screens
 from ..perception.hud import stat_patch
 from .numeric import numeric_token, match_numeric, match_floor_shapes
+from .loaded_ammo import loaded_shell_count, match_loaded
+from .reserve_ammo import reserve_shell_count, match_reserve
 from .named_stats import match_named_integer
 from .optional_combat import propose_optional_combat
 
@@ -78,6 +80,8 @@ def propose(screen, collection, exclude=None):
     examples = {key: [] for key in REGIONS}
     stat_examples = {key: [] for key in STAT_OFFSETS}
     numeric_examples = {key: [] for key in STAT_OFFSETS}
+    loaded_examples = []
+    reserve_examples = []
     grenade_damage_examples = []
     optional_titles = []
     integer_examples = []
@@ -113,6 +117,10 @@ def propose(screen, collection, exclude=None):
             value = _section(state, section).get(key)
             if type(value) is int and value >= 0:
                 examples[key].append((value, patch(image, box)))
+                if key == 'loaded' and loaded_shell_count(image) == value:
+                    loaded_examples.append((value, patch(image, box)))
+                if key == 'reserve' and reserve_shell_count(image) == value:
+                    reserve_examples.append((value, patch(image, box)))
                 used = True
         if reviews['combat_stats']:
             stats = _section(state, 'combat_stats')
@@ -171,6 +179,8 @@ def propose(screen, collection, exclude=None):
     }
     confidence = {}
     numeric_fields = []
+    loaded_method = None
+    reserve_method = None
     confidence['screen_kind'] = 1.0 if screen_kind is not None else None
     floor_result = match(floor_patch(screen), floor_examples, threshold=.85, margin=.1)
     floor_method = 'red-mask-correlation-v1' if floor_result else None
@@ -189,6 +199,16 @@ def propose(screen, collection, exclude=None):
         section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
         state[section][key] = result[0] if result else None
         confidence[key] = result[1] if result else None
+    loaded_result = match_loaded(screen, loaded_examples)
+    if loaded_result is not None:
+        state['ammo']['loaded'] = loaded_result[0]
+        confidence['loaded'] = loaded_result[1]
+        loaded_method = 'reviewed-shell-bars-v2'
+    reserve_result = match_reserve(screen, reserve_examples)
+    if reserve_result is not None:
+        state['ammo']['reserve'] = reserve_result[0]
+        confidence['reserve'] = reserve_result[1]
+        reserve_method = 'reviewed-reserve-bars-v1'
     damage_candidates = []
     for offset in (192, 256, 320):
         result = match(stat_patch(screen, row_offset=offset, padding=8), grenade_damage_examples)
@@ -229,7 +249,7 @@ def propose(screen, collection, exclude=None):
     soul_result = match(patch(screen, (left - 4, top - 4, right + 4, bottom + 4)), souls, threshold=.9, margin=.04)
     state['souls'] = ([] if soul_result[0] == 'none' else [soul_result[0]]) if soul_result else None
     confidence['soul'] = soul_result[1] if soul_result else None
-    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v8', 'optional_combat': optional_evidence, 'floor_method': floor_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
+    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v8', 'optional_combat': optional_evidence, 'floor_method': floor_method, 'loaded_method': loaded_method, 'reserve_method': reserve_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
 
 
 def _reviews(state):
