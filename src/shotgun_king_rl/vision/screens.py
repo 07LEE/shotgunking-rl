@@ -65,7 +65,7 @@ def check_retry_popup(img, *, board_gray=None, gray=None):
 
 
 def check_card_selection_screen(img, *, gray=None):
-    """Return whether all known card-border sample points are bright."""
+    """Require all card-border points at one shared nearby alignment."""
     if img is None or cv2 is None or np is None:
         return False
 
@@ -81,7 +81,11 @@ def check_card_selection_screen(img, *, gray=None):
             (420, 545), (420, 619), (528, 545), (528, 619),
             (420, 656), (420, 730), (528, 656), (528, 730),
         )
-        return all(gray[y, x] >= 215 for y, x in card_borders)
+        return any(
+            all(gray[y + dy, x + dx] >= 215 for y, x in card_borders)
+            for dy in range(-4, 5)
+            for dx in range(-4, 5)
+        )
     except (AttributeError, IndexError, TypeError, ValueError, cv2.error):
         return False
 
