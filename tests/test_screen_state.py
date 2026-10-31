@@ -14,6 +14,46 @@ from shotgun_king_rl.collection.screen_state import match, propose, propose_scre
 
 
 class ScreenStateRecognitionTests(unittest.TestCase):
+    def test_shifted_empty_soul_slot_is_distinct_from_unknown(self):
+        screen = np.zeros((720, 1280, 3), np.uint8)
+        pattern = np.random.default_rng(75).integers(0, 255, (117, 85, 3), dtype=np.uint8)
+        screen[311:428, 928:1013] = pattern
+        shifted = np.zeros_like(screen)
+        shifted[314:431, 930:1015] = pattern
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            session = root / 'sessions/ref'
+            (session / 'originals').mkdir(parents=True)
+            (session / 'annotations').mkdir()
+            cv2.imwrite(str(session / 'originals/screen.png'), screen)
+            annotation = session / 'annotations/screen.json'
+            annotation.write_text(json.dumps({'image': '../originals/screen.png', 'split': 'train', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'souls': [], 'reviews': {'soul': True}}}))
+            self.assertEqual(propose(shifted, root)['screen_state']['souls'], [])
+            self.assertIsNone(propose(np.zeros_like(screen), root)['screen_state']['souls'])
+            self.assertIsNone(propose(shifted, root, exclude=annotation)['screen_state']['souls'])
+
+    def test_stat_proposals_follow_shifted_panel_and_reject_missing_anchor(self):
+        screen = np.zeros((720, 1280, 3), dtype=np.uint8)
+        rng = np.random.default_rng(42)
+        for offset in (0, 64, 128):
+            screen[195 + offset:210 + offset, 270:285] = rng.integers(0, 255, (15, 15, 3), dtype=np.uint8)
+            screen[230 + offset:245 + offset, 300:320] = rng.integers(160, 255, (15, 20, 3), dtype=np.uint8)
+        shifted = np.zeros_like(screen)
+        shifted[40:, 3:] = screen[:-40, :-3]
+        with tempfile.TemporaryDirectory() as directory:
+            collection = Path(directory)
+            session = collection / 'sessions/run-shift'
+            (session / 'originals').mkdir(parents=True)
+            (session / 'annotations').mkdir()
+            cv2.imwrite(str(session / 'originals/screen.png'), screen)
+            annotation = session / 'annotations/screen.json'
+            annotation.write_text(json.dumps({'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'spread_degrees': 65}, 'reviews': {'combat_stats': True}}}))
+            stats = propose(shifted, collection)['screen_state']['combat_stats']
+            for key, value in {'attack': 4, 'range_min': 3, 'range_max': 5, 'spread_degrees': 65}.items():
+                self.assertEqual(stats[key], value)
+            missing = propose(np.zeros_like(screen), collection)['screen_state']['combat_stats']
+            self.assertTrue(all(value is None for value in missing.values()))
+
     def test_screen_kind_prefers_overlays_and_requires_one_player_king(self):
         image = np.zeros((720, 1280, 3), dtype=np.uint8)
         board = np.zeros((8, 8), dtype=np.uint8)

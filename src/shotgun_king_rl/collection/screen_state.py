@@ -7,17 +7,18 @@ import numpy as np
 
 from .images import normalize
 from ..vision import analyzer, screens
+from ..perception.hud import stat_patch
+from .numeric import numeric_token, match_numeric, match_floor_shapes
+from .named_stats import match_named_integer
+from .optional_combat import propose_optional_combat
 
 # Coordinates refer to a normalized 1280x720 gameplay screenshot.
 REGIONS = {
     'loaded': (382, 34, 550, 75),
     'reserve': (382, 78, 706, 111),
-    'attack': (270, 262, 354, 300),
-    'range_min': (270, 326, 354, 365),
-    'range_max': (270, 326, 354, 365),
-    'spread_degrees': (270, 390, 354, 430),
-    'knockback_percent': (270, 454, 354, 492),
+    'grenades_remaining': (592, 78, 642, 112),
 }
+STAT_OFFSETS = {'attack': 0, 'range': 64, 'spread_degrees': 128}
 FLOOR_REGION = (670, 15, 725, 75)
 SOUL_REGION = (928, 311, 1013, 428)
 COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage')
@@ -54,13 +55,13 @@ def propose_screen_kind(image):
 
 def match(query, examples, threshold=.97, margin=.04):
     """Reject ambiguous or featureless matches, including conflicting labels."""
-    if query.std() < 5:
+    if query is None or query.std() < 5:
         return None
     scores = {}
     for label, template in examples:
-        if template.shape != query.shape or template.std() < 5:
+        if any(t > q for t, q in zip(template.shape, query.shape)) or template.std() < 5:
             continue
-        score = float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED)[0, 0])
+        score = float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED).max())
         scores[label] = max(scores.get(label, -1), score)
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     if not ranked or ranked[0][1] < threshold:
@@ -75,9 +76,14 @@ def propose(screen, collection, exclude=None):
     if screen.shape[:2] != (720, 1280):
         raise ValueError('Screen must be normalized to 1280x720')
     examples = {key: [] for key in REGIONS}
+    stat_examples = {key: [] for key in STAT_OFFSETS}
+    numeric_examples = {key: [] for key in STAT_OFFSETS}
+    grenade_damage_examples = []
+    optional_titles = []
+    integer_examples = []
     floor_examples = []
-    cards = []
     souls = []
+    cards = []
     references = []
     for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
         if exclude is not None and path.resolve() == Path(exclude).resolve():
@@ -108,6 +114,33 @@ def propose(screen, collection, exclude=None):
             if type(value) is int and value >= 0:
                 examples[key].append((value, patch(image, box)))
                 used = True
+        if reviews['combat_stats']:
+            stats = _section(state, 'combat_stats')
+            damage = stats.get('grenade_damage')
+            if type(damage) is int and damage >= 0:
+                template = stat_patch(image, row_offset=256)
+                if template is not None:
+                    grenade_damage_examples.append((damage, template))
+                    optional_titles.append(('grenade_damage', template[:30]))
+                    token = numeric_token(image, 256)
+                    if token is not None:
+                        integer_examples.append((damage, token))
+            for key, offset in STAT_OFFSETS.items():
+                value = stats.get(key)
+                if key == 'range':
+                    value = (stats.get('range_min'), stats.get('range_max'))
+                    valid = all(type(v) is int for v in value) and 0 <= value[0] <= value[1]
+                else:
+                    valid = type(value) is int and value >= 0
+                template = stat_patch(image, row_offset=offset)
+                if valid and template is not None:
+                    stat_examples[key].append((value, template))
+                    token = numeric_token(image, offset)
+                    if token is not None:
+                        numeric_examples[key].append((value, token, template))
+                        if key == 'attack':
+                            integer_examples.append((value, token))
+                    used = True
         if reviews['cards']:
             for side in ('left', 'right'):
                 for index, label in enumerate(state.get('cards', {}).get(side) or []):
@@ -125,7 +158,7 @@ def propose(screen, collection, exclude=None):
         'screen_kind': screen_kind,
         'ammo': {},
         'combat_stats': {key: None for key in COMBAT_FIELDS},
-        'cards': {},
+        'cards': {'left': None, 'right': None},
         'souls': None,
         'locked_cells': [],
         'reviews': {
@@ -137,14 +170,53 @@ def propose(screen, collection, exclude=None):
         },
     }
     confidence = {}
+    numeric_fields = []
     confidence['screen_kind'] = 1.0 if screen_kind is not None else None
     floor_result = match(floor_patch(screen), floor_examples, threshold=.85, margin=.1)
+    floor_method = 'red-mask-correlation-v1' if floor_result else None
+    if floor_result is None:
+        floor_result = match_floor_shapes(floor_patch(screen), floor_examples)
+        if floor_result is not None:
+            floor_method = 'red-stroke-distance-v1'
     confidence['floor'] = floor_result[1] if floor_result else None
     for key, box in REGIONS.items():
-        result = match(patch(screen, box), examples[key])
+        if key == 'grenades_remaining':
+            left, top, right, bottom = box
+            query = patch(screen, (left - 4, top - 4, right + 4, bottom + 4))
+        else:
+            query = patch(screen, box)
+        result = match(query, examples[key])
         section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
         state[section][key] = result[0] if result else None
         confidence[key] = result[1] if result else None
+    damage_candidates = []
+    for offset in (192, 256, 320):
+        result = match(stat_patch(screen, row_offset=offset, padding=8), grenade_damage_examples)
+        if result is not None:
+            damage_candidates.append(result)
+    if damage_candidates and len({value for value, _ in damage_candidates}) == 1:
+        state['combat_stats']['grenade_damage'], confidence['grenade_damage'] = max(damage_candidates, key=lambda result: result[1])
+    if state['combat_stats']['grenade_damage'] is None:
+        result = match_named_integer(screen, 'grenade_damage', optional_titles, integer_examples)
+        if result is not None:
+            state['combat_stats']['grenade_damage'], confidence['grenade_damage'] = result
+            numeric_fields.append('grenade_damage')
+    optional_values, optional_evidence = propose_optional_combat(screen, collection, exclude=exclude)
+    state['combat_stats'].update(optional_values)
+    for field, evidence in optional_evidence.items():
+        confidence[field] = evidence['confidence']
+    for key, offset in STAT_OFFSETS.items():
+        context = stat_patch(screen, row_offset=offset, padding=8)
+        result = match(context, stat_examples[key])
+        if result is None:
+            result = match_numeric(numeric_token(screen, offset), context, numeric_examples[key])
+            if result is not None:
+                numeric_fields.append(key)
+        fields = ('range_min', 'range_max') if key == 'range' else (key,)
+        values = result[0] if result and key == 'range' else (result[0],) if result else (None,) * len(fields)
+        for field, value in zip(fields, values):
+            state['combat_stats'][field] = value
+            confidence[field] = result[1] if result else None
     for side in ('left', 'right'):
         # Preserve slot positions; trailing unidentified slots remain unknown too.
         values = []
@@ -153,10 +225,11 @@ def propose(screen, collection, exclude=None):
             values.append(result[0] if result else 'unknown')
             confidence[f'{side}_{index}'] = result[1] if result else None
         state['cards'][side] = values if any(v != 'unknown' for v in values) else None
-    soul_result = match(patch(screen, SOUL_REGION), souls, threshold=.9, margin=.04)
+    left, top, right, bottom = SOUL_REGION
+    soul_result = match(patch(screen, (left - 4, top - 4, right + 4, bottom + 4)), souls, threshold=.9, margin=.04)
     state['souls'] = ([] if soul_result[0] == 'none' else [soul_result[0]]) if soul_result else None
     confidence['soul'] = soul_result[1] if soul_result else None
-    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v1', 'confidence': confidence, 'references': references, 'human_review_required': True}}
+    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v8', 'optional_combat': optional_evidence, 'floor_method': floor_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
 
 
 def _reviews(state):
