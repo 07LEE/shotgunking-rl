@@ -12,27 +12,32 @@
     <div class="app">
         <header class="page-header">
             <h1>Screenshot review</h1>
-        </header>
-        <div class="review-workspace">
-            <aside class="review-sidebar" aria-label="Review queue">
-                <h2>Review queue</h2>
-                <div class="review-tabs" role="tablist" aria-label="Review category" aria-orientation="vertical">
+        <section class="review-type" aria-labelledby="reviewTypeHeading">
+            <h2 id="reviewTypeHeading">Review type</h2>
+                <div class="review-tabs" role="tablist" aria-label="Review category" aria-orientation="horizontal">
                     <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
                     <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Screen type</button>
                     <button id="ammoTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Ammunition</button>
                     <button id="combatTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Combat stats</button>
                     <button id="soulTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Harvested souls</button>
                 </div>
-                <label class="toggle completed-filter"><input type="checkbox" id="showCompleted"> Show completed</label>
-                <p id="queueTotals" class="help"></p>
-                <nav id="sessionList" aria-label="Screenshots grouped by session"></nav>
-            </aside>
-            <div class="review-content">
+        </section>
+        </header>
                 <section class="review-summary" aria-label="Review completion">
                     <div class="review-summary-heading"><p id="reviewSummaryText" role="status"></p><div class="button-row"><button id="previous" aria-label="Previous screenshot" title="Previous screenshot">←</button><button id="next" aria-label="Next screenshot" title="Next screenshot">→</button></div></div>
                     <p id="currentScreenshot" class="current-screenshot"></p>
                     <div id="reviewSectionStatus" class="review-section-status"></div>
                 </section>
+        <div class="review-workspace">
+            <aside class="review-sidebar" aria-label="Review queue">
+                <h2>Review queue</h2>
+
+                <label class="toggle completed-filter"><input type="checkbox" id="showCompleted"> Show completed</label>
+                <p id="queueTotals" class="help"></p>
+                <nav id="sessionList" aria-label="Screenshots grouped by session"></nav>
+            </aside>
+            <div class="review-content">
+
         <main>
 
 
@@ -95,9 +100,10 @@
                     <details class="advanced-tools"><summary>Advanced</summary><button id="predictState">Auto-fill unknowns</button><p id="split" class="help"></p><label>Game crop<input id="crop" spellcheck="false"></label><button id="editCrop" type="button">Edit crop</button><button id="preview">Preview crop</button></details>
                 </section></aside></div>        <section class="panel controls save-panel"><p id="saveHelp" class="help">Check every piece label before approval.</p><p id="progress" hidden></p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve pieces ✓</button></div><p id="status" role="status" aria-live="polite"></p></section></div>
         </main>
-        <footer><a id="cardReviewLink" href="/cards">Card review →</a></footer>
+
             </div>
         </div>
+        <footer><a id="cardReviewLink" href="/cards">Card review →</a></footer>
     </div>
 </body>
 </html>

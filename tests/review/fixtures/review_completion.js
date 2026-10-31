@@ -26,7 +26,7 @@
         await idle();
         check(currentId === id('play', 'b-partial'), 'starts at unfinished screenshot');
         check(document.querySelector('.review-sidebar').getBoundingClientRect().right < document.querySelector('.review-content').getBoundingClientRect().left, 'review queue stays on the left');
-        check(!document.querySelector('select#sessions, select#items'), 'selection dropdowns stay removed');
+        check(!document.querySelector('select#sessions, select#items') && !document.querySelector('.review-sidebar .review-tabs') && document.querySelector('.review-type .review-tabs'), 'review types stay separate from the image queue without selection dropdowns');
         check(!row(id('play', 'a-complete')), 'completed screenshots stay hidden');
         const originalId = currentId;
         queueFor('missing-floor').querySelector('summary').click();

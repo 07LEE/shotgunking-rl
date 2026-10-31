@@ -183,3 +183,57 @@ select:disabled, input:disabled { opacity: .6; color: var(--muted); cursor: defa
 @media (max-width: 850px) { .app { padding: 20px 16px; } .review-controls { position: static; } }
 @media (max-width: 700px) { .review-sidebar .review-tabs { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 420px) { .panel-heading { flex-wrap: wrap; } .board-panel, .controls, .screen-panel { padding: 14px; } }
+
+/* Keep desktop review columns within the same available window height. */
+@media (min-width: 1201px) {
+    .app { height: 100dvh; display: flex; flex-direction: column; }
+    .page-header { flex: 0 0 auto; }
+    .review-workspace { flex: 1; min-height: 0; align-items: stretch; }
+    .review-sidebar { position: static; height: 100%; max-height: none; min-height: 0; overflow-y: auto; }
+    .review-sidebar > :not(#sessionList) { flex-shrink: 0; }
+    #sessionList { flex: 1; }
+    .review-content { display: flex; flex-direction: column; min-height: 0; }
+    .review-summary, .app > footer { flex: 0 0 auto; }
+    .review-content main { flex: 1; min-height: 0; align-items: stretch; }
+    .board-panel, .screen-panel { min-height: 0; overflow: auto; }
+    .review-controls { position: static; height: 100%; min-height: 0; }
+    .input-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+    .input-scroll > aside { height: 100%; }
+    .input-scroll > aside > .panel { min-height: 100%; }
+    .save-panel { flex: 0 0 auto; max-height: 50%; overflow-y: auto; }
+}
+
+/* Review type selects the task; the queue selects an image. */
+.review-type { flex: 0 0 auto; margin-bottom: 18px; }
+.review-type h2 { font-size: 14px; margin-bottom: 10px; }
+.review-type .review-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.review-type .review-tabs button { padding: 8px 14px; }
+
+/* A compact task bar leaves the workspace available for review. */
+.app { padding: 20px 24px 16px; }
+.page-header { gap: 24px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+.page-header h1 { font-size: 20px; letter-spacing: -.3px; white-space: nowrap; }
+.review-type { margin: 0; display: flex; align-items: center; gap: 12px; }
+.review-type h2 { margin: 0; font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.review-type .review-tabs { gap: 4px; }
+.review-type .review-tabs button { padding: 7px 12px; background: transparent; border-color: transparent; }
+.review-type .review-tabs [aria-selected=true] { background: var(--accent); border-color: var(--accent); }
+.review-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 20px; margin-bottom: 14px; padding-bottom: 0; border: 0; }
+.review-summary-heading { display: contents; }
+#reviewSummaryText { grid-column: 1; grid-row: 2; font-size: 11px; }
+.review-summary-heading .button-row { grid-column: 2; grid-row: 1; }
+.current-screenshot { grid-column: 1; grid-row: 1; margin: 0; font-size: 12px; }
+.review-section-status { grid-column: 2; grid-row: 2; margin: 0; justify-content: flex-end; }
+.review-workspace { gap: 18px; }
+.panel, .review-sidebar { border-radius: 10px; box-shadow: none; }
+.panel-heading h2, .controls h2, .review-sidebar h2 { font-size: 16px; }
+.app > footer { margin-top: 12px; }
+@media (max-width: 1100px) {
+    .page-header { align-items: flex-start; flex-direction: column; gap: 12px; }
+}
+@media (max-width: 700px) {
+    .app { padding: 16px; }
+    .review-type { align-items: flex-start; flex-direction: column; gap: 8px; }
+    .review-summary { gap: 8px; }
+    .review-section-status { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; flex-wrap: wrap; }
+}
