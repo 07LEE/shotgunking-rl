@@ -14,21 +14,23 @@
             <div><p class="eyebrow">DATA COLLECTION / REVIEW</p><h1>Piece annotation studio</h1></div>
             <span class="badge"><span class="dot"></span> Local workspace</span>
         </header>
-        <div class="workspace-toolbar">
-        <div class="review-tabs" role="tablist" aria-label="Review category">
-            <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
-            <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Page info</button>
-        </div>
-        <section class="shared-selection" aria-label="Session and screenshot"><section class="panel controls">
-            <div class="selection-row">
-            <label><span>Session</span><select id="sessions"></select></label>
-            <label><span>Screenshot</span><select id="items"></select></label>
-            <label class="toggle completed-filter"><input type="checkbox" id="showCompleted"> Show completed</label>
-            <div class="button-row"><button id="previous" aria-label="Previous screenshot" title="Previous screenshot">←</button><button id="next" aria-label="Next screenshot" title="Next screenshot">→</button></div>
-            </div>
-        </section></section>
-        </div>
-        <section class="review-summary" aria-label="Review completion"><p id="reviewSummaryText" role="status"></p><div id="reviewSectionStatus" class="review-section-status"></div></section>
+        <div class="review-workspace">
+            <aside class="review-sidebar" aria-label="Review queue">
+                <h2>Review queue</h2>
+                <div class="review-tabs" role="tablist" aria-label="Review category" aria-orientation="vertical">
+                    <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
+                    <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Page info</button>
+                </div>
+                <label class="toggle completed-filter"><input type="checkbox" id="showCompleted"> Show completed</label>
+                <p id="queueTotals" class="help"></p>
+                <nav id="sessionList" aria-label="Screenshots grouped by session"></nav>
+            </aside>
+            <div class="review-content">
+                <section class="review-summary" aria-label="Review completion">
+                    <div class="review-summary-heading"><p id="reviewSummaryText" role="status"></p><div class="button-row"><button id="previous" aria-label="Previous screenshot" title="Previous screenshot">←</button><button id="next" aria-label="Next screenshot" title="Next screenshot">→</button></div></div>
+                    <p id="currentScreenshot" class="current-screenshot"></p>
+                    <div id="reviewSectionStatus" class="review-section-status"></div>
+                </section>
         <main>
 
 
@@ -83,6 +85,8 @@
                 </section></aside><aside id="screenControls" hidden><section class="panel controls"><div class="compact-heading"><h2>Screen type</h2><button id="predictState">Auto-fill unknowns</button></div><p id="split" class="badge"></p><div class="review-section"><label>Screen kind<select id="screenKind"><option value="">Unknown</option><option value="gameplay">Gameplay</option><option value="card_selection">Card selection</option><option value="retry">Retry</option><option value="transition">Transition</option></select></label><label class="toggle"><input id="screenKindReviewed" type="checkbox"> Screen kind reviewed</label></div><details><summary>Adjust game crop</summary><label>Left, top, right, bottom<input id="crop" spellcheck="false"></label><button id="preview">Preview crop</button><p class="help">Coordinates refer to the original screenshot. Check alignment before saving.</p></details></section></aside></div>        <section class="panel controls save-panel"><p id="saveHelp" class="help">Check every piece label before approval.</p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve pieces ✓</button></div><p id="status" role="status" aria-live="polite"></p></section></div>
         </main>
         <footer><a id="cardReviewLink" href="/cards">Review card names and effects separately</a><p>Originals stay intact. Only approved annotations enter the final dataset.</p></footer>
+            </div>
+        </div>
     </div>
 </body>
 </html>

@@ -4,7 +4,8 @@ const reviewInputs = { screen_kind: 'screenKindReviewed', ammo: 'ammoReviewed', 
 const independentReviewInputs = { soul: 'soulReviewed' };
 const soulPieces = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
 const token = document.querySelector('meta[name=review-token]').content, classes = ['ambiguous_royal', 'empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
-const $ = id => document.getElementById(id); let editingSections = new Set(), loading = false, saving = false, loadedId = '';
+const $ = id => document.getElementById(id); let editingSections = new Set(), loading = false, saving = false, loadedId = '', currentId = '';
+const expandedSessions = new Set();
 let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces', pendingPieceApprovalId = null;
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }
@@ -28,6 +29,10 @@ function sectionLocked(section) { return sectionReviewed(section) && !editingSec
 function setDisabled(ids, disabled) { for (const id of ids) $(id).disabled = disabled }
 function syncReviewLocks() {
     const item = savedItem();
+    $('showCompleted').disabled = saving;
+    $('screenTab').disabled = saving;
+    $('piecesTab').disabled = saving || (nonGameplay($('screenKind').value || null) && dirty);
+    for (const button of $('sessionList').querySelectorAll('button')) button.disabled = saving;
     const unavailable = !data || loadedId !== currentId || loading || saving || document.querySelector('main').hidden;
     const piecesLocked = unavailable || sectionLocked('pieces');
     setDisabled(['label', 'pieceSide', 'locked', 'excluded', 'moatActive'], piecesLocked);
@@ -84,7 +89,7 @@ function reopenSection(section, focus = true) {
 }
 async function selectVisible(reload = false) {
     const list = visibleItems();
-    const target = list.find(item => item.id === currentId) || firstPending(list) || list[0];
+    const target = list.find(item => item.id === currentId) || firstPending(list) || list[0] || items.find(needsReview);
     if (target) {
         if (target.id !== currentId || reload) await moveTo(target);
         else renderOptions();
@@ -110,7 +115,7 @@ async function moveTo(item) {
     if (item.id !== currentId) pendingPieceApprovalId = null;
     if (item.session !== currentSession) {
         currentSession = item.session;
-        $('sessions').value = currentSession;
+        expandedSessions.add(currentSession);
     }
     currentId = item.id;
     remember();
@@ -162,7 +167,7 @@ function labelView() {
 $('showLabels').onchange = labelView;
 labelView();
 function cropValue() { const parts = $('crop').value.split(',').map(x => x.trim()); if (parts.length !== 4 || parts.some(x => !/^\d+$/.test(x))) throw Error('Enter four nonnegative integer crop coordinates'); return parts.map(Number) }
-function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent($('items').value) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
+function preview() { const crop = cropValue(); $('image').src = '/api/board?id=' + encodeURIComponent(currentId) + '&crop=' + encodeURIComponent(JSON.stringify(crop)); if (data) draw(); }
 function renderSoulSlots(souls) {
     $('soulSlots').replaceChildren();
     for (const piece of souls || []) {
@@ -207,12 +212,12 @@ async function load() {
     finally { if (id === currentId) { loading = false; syncReviewLocks(); } }
 }
 $('image').onerror = () => status('Board preview failed. Check crop coordinates.');
-$('items').onchange = () => { if (dirty && !confirm('Discard unsaved edits?')) { $('items').value = currentId; return } pendingPieceApprovalId = null; currentId = $('items').value; remember(); renderOptions(); load() }; let currentId = '';
-$('sessions').onchange = async () => {
-    if (dirty && !confirm('Discard unsaved edits?')) { $('sessions').value = currentSession; return; }
-    pendingPieceApprovalId = null; dirty = false; editingSections.clear(); currentSession = $('sessions').value;
-    await selectVisible(true); remember();
-};
+async function selectReview(item) {
+    if (saving || item.id === currentId) return;
+    if (dirty && !confirm('Discard unsaved edits?')) return;
+    pendingPieceApprovalId = null;
+    await moveTo(item);
+}
 $('showCompleted').onchange = async () => {
     if (dirty && !confirm('Discard unsaved edits?')) { $('showCompleted').checked = !$('showCompleted').checked; return; }
     dirty = false; editingSections.clear(); pendingPieceApprovalId = null;
@@ -326,7 +331,7 @@ async function save(confirmed) {
     } catch (error) {
         status('Not saved — ' + error.message, true);
     } finally {
-        saving = false; syncReviewLocks();
+        saving = false; renderOptions();
     }
 }
 $('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
@@ -336,33 +341,63 @@ $('toggleFields').onclick = () => {
     $('toggleFields').setAttribute('aria-pressed', String(hidden));
 };
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
+function renderQueue() {
+    const showCompleted = $('showCompleted').checked;
+    const relevant = items.filter(item => currentReviewTab !== 'pieces' || pieceApplicable(item));
+    const pending = relevant.filter(needsReview).length;
+    $('queueTotals').textContent = pending + ' pending · ' + (relevant.length - pending) + ' reviewed';
+    $('sessionList').replaceChildren();
+    for (const session of [...new Set(relevant.map(item => item.session))]) {
+        const all = relevant.filter(item => item.session === session);
+        const list = all.filter(item => showCompleted || needsReview(item) || (item.id === currentId && (dirty || editingSections.size || pendingPieceApprovalId === currentId)));
+        if (!list.length) continue;
+        const group = document.createElement('details'); group.className = 'queue-session'; group.dataset.session = session;
+        group.open = session === currentSession || expandedSessions.has(session);
+        group.ontoggle = () => { if (group.isConnected) { if (group.open) expandedSessions.add(session); else expandedSessions.delete(session); } };
+        const summary = document.createElement('summary');
+        const name = document.createElement('span'); name.textContent = session;
+        const count = document.createElement('span'); count.className = 'queue-count'; count.textContent = all.filter(needsReview).length + ' pending';
+        summary.append(name, count); group.append(summary);
+        const entries = document.createElement('ul');
+        for (const item of list) {
+            const entry = document.createElement('li'), button = document.createElement('button');
+            const active = item.id === currentId;
+            button.type = 'button'; button.className = 'queue-item' + (active ? ' active' : '');
+            button.dataset.id = item.id; button.disabled = saving;
+            if (active) button.setAttribute('aria-current', 'true');
+            const title = document.createElement('span'); title.className = 'queue-item-name';
+            const filename = item.id.split('/').pop().replace(/\.json$/, '');
+            title.textContent = filename.replace(/^Screenshot From /, ''); button.title = filename;
+            const state = document.createElement('span'); state.className = 'queue-item-state';
+            state.textContent = (active && editingSections.size ? 'Editing · review again' : needsReview(item) ? '○ Needs review' : '✓ Reviewed · read-only') + (item.floor ? ' · Floor ' + item.floor : '');
+            button.append(title, state); button.onclick = () => selectReview(item);
+            entry.append(button); entries.append(entry);
+        }
+        group.append(entries); $('sessionList').append(group);
+    }
+    if (!$('sessionList').children.length) {
+        const empty = document.createElement('p'); empty.className = 'queue-empty';
+        empty.textContent = showCompleted ? 'No screenshots for this review category.' : 'No pending reviews. Enable “Show completed” to inspect previous work.';
+        $('sessionList').append(empty);
+    }
+}
 function renderOptions() {
     const all = relevantItems(), list = visibleItems();
-    $('items').replaceChildren();
-    for (const item of list) {
-        const option = document.createElement('option'); option.value = item.id;
-        option.textContent = (item.id === currentId && editingSections.size ? '○ Editing · ' : needsReview(item) ? '○ Needs review · ' : '✓ Reviewed · ') + item.id.split('/').pop();
-        $('items').append(option);
-    }
-    $('items').value = currentId;
     const index = list.findIndex(item => item.id === currentId), remaining = all.filter(needsReview).length;
-    $('items').disabled = !list.length || saving;
     $('previous').disabled = index <= 0 || saving;
     $('next').disabled = saving || (index >= list.length - 1 && !otherSessionPending());
-    for (const option of $('sessions').options) {
-        const matching = items.filter(item => item.session === option.value && (currentReviewTab !== 'pieces' || pieceApplicable(item)));
-        const pending = matching.filter(needsReview).length;
-        option.textContent = option.value + ' · ' + pending + ' pending';
-    }
+    renderQueue();
     const current = list.find(item => item.id === currentId);
     document.querySelector('main').hidden = !current;
     $('reviewSummaryText').textContent = !list.length
-        ? '✓ No pending ' + (currentReviewTab === 'pieces' ? 'piece' : 'page information') + ' reviews in this session. Enable “Show completed” to inspect previous work.'
-        : remaining + ' pending · ' + (all.length - remaining) + ' reviewed' + (editingSections.size ? ' · Editing reviewed work; review it again before saving.' : current && !needsReview(current) ? ' · This screenshot is read-only. Choose Edit for the section you want to change.' : '');
+        ? '✓ No pending ' + (currentReviewTab === 'pieces' ? 'piece' : 'page information') + ' reviews in this session. Select another screenshot on the left or enable “Show completed”.'
+        : remaining + ' pending · ' + (all.length - remaining) + ' reviewed' + (editingSections.size ? ' · Editing reviewed work; review it again before saving.' : current && !needsReview(current) ? ' · Read-only. Choose Edit to make a correction.' : '');
+    $('currentScreenshot').textContent = current ? current.session + ' / ' + current.id.split('/').pop().replace(/\.json$/, '') : '';
     $('progress').textContent = (all.length - remaining) + '/' + all.length + ' reviewed · screenshot ' + Math.max(0, index + 1) + '/' + list.length;
     syncReviewLocks();
 }
 async function navigate(delta) {
+    if (saving) return;
     const list = visibleItems(), index = list.findIndex(item => item.id === currentId);
     const target = delta < 0 ? list[index - 1] : list[index + 1] || otherSessionPending();
     if (!target) return;
@@ -378,8 +413,7 @@ window.onbeforeunload = e => { if (dirty) { e.preventDefault(); e.returnValue = 
         const sessions = [...new Set(items.map(item => item.session))], saved = recalled();
         const requestedSession = new URLSearchParams(location.search).get('session');
         currentSession = sessions.includes(requestedSession) ? requestedSession : sessions.includes(saved.session) && items.some(item => item.session === saved.session && needsReview(item)) ? saved.session : items.find(needsReview)?.session || sessions[0];
-        for (const session of sessions) { const option = document.createElement('option'); option.value = session; $('sessions').append(option); }
-        $('sessions').value = currentSession;
+        expandedSessions.add(currentSession);
         const list = visibleItems(); currentId = list.some(item => item.id === saved.id) ? saved.id : firstPending(list)?.id || '';
         if (requestedSession) history.replaceState(null, '', location.pathname + location.hash);
         remember(); renderOptions(); if (currentId) await load();
@@ -438,7 +472,7 @@ for (const [id, name] of [['piecesTab', 'pieces'], ['screenTab', 'screen']]) {
         history.replaceState(null, '', name === 'screen' ? '#page-info' : '#pieces');
     };
     $(id).onkeydown = event => {
-        if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
             event.preventDefault();
             switchReviewTab(event.key === 'Home' ? 'pieces' : event.key === 'End' ? 'screen' : name === 'pieces' ? 'screen' : 'pieces', true);
         }

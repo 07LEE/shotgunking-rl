@@ -63,12 +63,12 @@ class ReviewBrowserTests(unittest.TestCase):
             worker = threading.Thread(target=server.serve_forever, daemon=True)
             worker.start()
             try:
-                result = subprocess.run([CHROME, '--headless', '--no-sandbox', '--disable-gpu', '--no-proxy-server', '--disable-dev-shm-usage', '--disable-background-networking', '--no-first-run', f'--user-data-dir={root}/chrome', '--virtual-time-budget=16000', '--dump-dom', f'http://127.0.0.1:{server.server_port}/?session=play'], capture_output=True, text=True, timeout=40)
+                result = subprocess.run([CHROME, '--headless', '--no-sandbox', '--disable-gpu', '--no-proxy-server', '--disable-dev-shm-usage', '--disable-background-networking', '--no-first-run', f'--user-data-dir={root}/chrome', '--virtual-time-budget=16000', '--window-size=1440,1000', '--dump-dom', f'http://127.0.0.1:{server.server_port}/?session=play'], capture_output=True, text=True, timeout=40)
                 match = re.search(r'<pre id="browser-test-result">(.*?)</pre>', result.stdout, re.S)
                 self.assertIsNotNone(match, result.stderr[-1500:] + result.stdout[-2000:])
                 report = json.loads(html.unescape(match.group(1)))
                 self.assertTrue(report['ok'], json.dumps(report, indent=2))
-                self.assertEqual(len(report['checks']), 25)
+                self.assertEqual(len(report['checks']), 29)
             finally:
                 server.shutdown()
                 server.server_close()
