@@ -3,6 +3,7 @@
 import argparse
 from datetime import datetime, timezone
 import hashlib
+from http.client import HTTPConnection, HTTPException
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -30,6 +31,29 @@ COLLECTION = ROOT / 'data/collection'
 def review_url(port, session=None):
     url = f'http://127.0.0.1:{port}'
     return f'{url}/?session={quote(session, safe="")}' if session else url
+
+
+def server_identity(collection):
+    return {'application': 'shotgun-king-review', 'collection': str(Path(collection).resolve())}
+
+
+def running_review(collection, port):
+    if not port:
+        return False
+    connection = HTTPConnection('127.0.0.1', port, timeout=0.5)
+    try:
+        connection.request('GET', '/api/status')
+        response = connection.getresponse()
+        return response.status == 200 and json.loads(response.read(4096)) == server_identity(collection)
+    except (OSError, HTTPException, ValueError):
+        return False
+    finally:
+        connection.close()
+
+
+def open_review(url):
+    if not webbrowser.open(url):
+        print(f'Could not open a browser automatically. Open {url}', flush=True)
 
 
 def annotation_paths(collection):
@@ -249,6 +273,8 @@ def make_server(collection, port=0):
             try:
                 request = urlparse(self.path)
                 route = request.path
+                if route == '/api/status':
+                    return self.reply(json.dumps(server_identity(collection)).encode())
                 if route == '/':
                     html = Path(__file__).with_name('review_collection.html').read_text().replace('__TOKEN__', token)
                     return self.reply(html.encode(), 'text/html; charset=utf-8')
@@ -336,12 +362,25 @@ def main():
             print(json.dumps(prepare_session(args.collection, args.session, args.crop), indent=2), flush=True)
         if args.prepare_only:
             return
-        server = make_server(args.collection, args.port)
+        url = review_url(args.port, args.session)
+        if args.open and running_review(args.collection, args.port):
+            print(f'Review: {url} (already running)', flush=True)
+            open_review(url)
+            return
+        try:
+            server = make_server(args.collection, args.port)
+        except OSError:
+            # Another launcher may have finished starting while we checked.
+            if args.open and running_review(args.collection, args.port):
+                print(f'Review: {url} (already running)', flush=True)
+                open_review(url)
+                return
+            raise
         url = review_url(server.server_port, args.session)
         print(f'Review: {url} (Ctrl+C to stop)', flush=True)
-        if args.open:
-            webbrowser.open(url)
         try:
+            if args.open:
+                open_review(url)
             server.serve_forever()
         finally:
             server.server_close()

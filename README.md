@@ -17,7 +17,7 @@ Put screenshots from one play session in `data/collection/inbox/`, process them,
 
 ```bash
 .venv/bin/python tools/process_collection.py --session SESSION_ID
-./scripts/run_review.sh
+./review.sh
 ```
 
 Processing classifies the current inbox and creates annotation drafts, then exits. Reuse the session ID for the same play session and review the predictions before using them as labels.
