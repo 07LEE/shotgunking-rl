@@ -9,6 +9,7 @@ import cv2
 from .dataset import choose_session_split
 from .images import detect_crop, normalize
 from .importer import import_images
+from .locking import serialized
 from .screen_state import propose
 from ..vision import analyzer
 from ..perception.royals import RoyalTemplates
@@ -36,8 +37,9 @@ def draft_annotation(image, image_name, collection, session_id, split, crop=None
     return data
 
 
-def prepare_session(collection, session_id, crop=None):
-    moved = import_images(collection, session_id)
+@serialized
+def prepare_session(collection, session_id, crop=None, image_names=None, original_names=None):
+    moved = import_images(collection, session_id, image_names)
     session = collection / 'sessions' / session_id
     image_paths = [
         path for path in sorted((session / 'originals').iterdir())
@@ -47,6 +49,8 @@ def prepare_session(collection, session_id, crop=None):
     created = 0
     errors = []
     for image_path in image_paths:
+        if original_names is not None and image_path.name not in original_names:
+            continue
         annotation = session / 'annotations' / (image_path.name + '.json')
         # Preserve earlier annotations, including names used before this tool.
         existing = [json.loads(p.read_text()) for p in (session / 'annotations').glob('*.json')]
@@ -57,7 +61,9 @@ def prepare_session(collection, session_id, crop=None):
             if image is None:
                 raise ValueError('Image cannot be read')
             data = draft_annotation(image, image_path.name, collection, session_id, split, crop)
-            annotation.write_text(json.dumps(data, indent=2) + '\n')
+            temporary = annotation.with_suffix('.json.tmp')
+            temporary.write_text(json.dumps(data, indent=2) + '\n')
+            temporary.replace(annotation)
             created += 1
         except ValueError as exc:
             errors.append(f'{image_path.name}: {exc}')

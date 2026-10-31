@@ -4,16 +4,21 @@ import argparse
 from pathlib import Path
 import re
 
+from .locking import serialized
+
 ROOT = Path(__file__).resolve().parents[3]
 COLLECTION = ROOT / "data" / "collection"
 
 
-def import_images(collection, session_id):
+@serialized
+def import_images(collection, session_id, image_names=None):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", session_id):
         raise ValueError("Session ID must contain only letters, digits, '-' and '_'")
     inbox = collection / "inbox"
     session = collection / "sessions" / session_id
     images = sorted(p for p in inbox.iterdir() if p.is_file() and p.suffix.lower() in (".png", ".jpg", ".jpeg")) if inbox.exists() else []
+    if image_names is not None:
+        images = [image for image in images if image.name in image_names]
     for image in images:
         if (session / "originals" / image.name).exists():
             raise ValueError(f"Already exists: {image.name}; no images were moved")
