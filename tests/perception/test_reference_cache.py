@@ -52,8 +52,8 @@ class ReferenceCacheTests(unittest.TestCase):
         first = self.query.astype(np.float32).view(CountingTemplate)
         second = first.copy()
         reader = RoyalTemplates(((8, first), (9, second)))
-        self.assertEqual(CountingTemplate.std_calls, 2)
+        self.assertEqual(CountingTemplate.std_calls, 4)
         first[:] = 0
         for _ in range(2):
             self.assertEqual(reader.classify(self.query), 6)
-        self.assertEqual(CountingTemplate.std_calls, 2)
+        self.assertEqual(CountingTemplate.std_calls, 4)

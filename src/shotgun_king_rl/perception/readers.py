@@ -16,7 +16,7 @@ class TemplatePieceReader:
     def __init__(self, royal_templates=None):
         self.royal_templates = royal_templates
         if royal_templates is not None:
-            self.source = "piece-templates:royals-v2"
+            self.source = "piece-templates:royals-v3"
 
     @classmethod
     def from_collection(cls, collection):
@@ -36,7 +36,7 @@ class TemplatePieceReader:
 
         board = frame.boards[1].copy()
         if self.royal_templates is not None:
-            board = self.royal_templates.refine(image, board, board_gray=frame.board_gray)
+            board = self.royal_templates.refine(image, board, board_gray=frame.board_gray, align=True)
         king_count = int(np.count_nonzero(board == 1))
         if king_count != 1:
             return Prediction.rejected(
