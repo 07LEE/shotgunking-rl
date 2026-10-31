@@ -101,7 +101,7 @@ class ScreenStateRecognitionTests(unittest.TestCase):
             result = propose(screen, collection)
             self.assertEqual(result['screen_state']['ammo']['loaded'], 2)
             self.assertEqual(result['screen_state']['combat_stats']['attack'], 4)
-            self.assertEqual(result['screen_state']['cards']['left'][0], 'known_card')
+            self.assertIsNone(result['screen_state']['cards']['left'])
             self.assertEqual(result['screen_state']['souls'], ['knight'])
             self.assertIsNone(propose(screen, collection, exclude=annotation)['screen_state']['combat_stats']['attack'])
             self.assertIsNone(propose(screen, collection, exclude=annotation)['screen_state']['souls'])

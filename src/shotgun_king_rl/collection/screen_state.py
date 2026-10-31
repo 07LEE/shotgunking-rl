@@ -13,6 +13,7 @@ from .loaded_ammo import loaded_shell_count, match_loaded
 from .reserve_ammo import reserve_shell_count, match_reserve
 from .named_stats import match_named_integer
 from .optional_combat import propose_optional_combat
+from .card_recognition import propose_cards
 
 # Coordinates refer to a normalized 1280x720 gameplay screenshot.
 REGIONS = {
@@ -87,7 +88,6 @@ def propose(screen, collection, exclude=None):
     integer_examples = []
     floor_examples = []
     souls = []
-    cards = []
     references = []
     for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
         if exclude is not None and path.resolve() == Path(exclude).resolve():
@@ -149,12 +149,6 @@ def propose(screen, collection, exclude=None):
                         if key == 'attack':
                             integer_examples.append((value, token))
                     used = True
-        if reviews['cards']:
-            for side in ('left', 'right'):
-                for index, label in enumerate(state.get('cards', {}).get(side) or []):
-                    if label != 'unknown' and index < 10:
-                        cards.append((label, patch(image, card_box(side, index))))
-                        used = True
         reviewed_souls = state.get('souls')
         if reviews['soul'] and reviewed_souls is not None and len(reviewed_souls) <= 1:
             souls.append(((reviewed_souls or ['none'])[0], patch(image, SOUL_REGION)))
@@ -237,19 +231,16 @@ def propose(screen, collection, exclude=None):
         for field, value in zip(fields, values):
             state['combat_stats'][field] = value
             confidence[field] = result[1] if result else None
-    for side in ('left', 'right'):
-        # Preserve slot positions; trailing unidentified slots remain unknown too.
-        values = []
-        for index in range(10):
-            result = match(patch(screen, card_box(side, index)), cards)
-            values.append(result[0] if result else 'unknown')
-            confidence[f'{side}_{index}'] = result[1] if result else None
-        state['cards'][side] = values if any(v != 'unknown' for v in values) else None
     left, top, right, bottom = SOUL_REGION
     soul_result = match(patch(screen, (left - 4, top - 4, right + 4, bottom + 4)), souls, threshold=.9, margin=.04)
     state['souls'] = ([] if soul_result[0] == 'none' else [soul_result[0]]) if soul_result else None
     confidence['soul'] = soul_result[1] if soul_result else None
-    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v8', 'optional_combat': optional_evidence, 'floor_method': floor_method, 'loaded_method': loaded_method, 'reserve_method': reserve_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
+    card_result = propose_cards(screen, collection, screen_kind, exclude=exclude)
+    for side in ('left', 'right'):
+        if card_result['cards'][side] is not None:
+            state['cards'][side] = card_result['cards'][side]
+    state['card_choices'] = card_result['card_choices']
+    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v9', 'card_recognition': card_result, 'optional_combat': optional_evidence, 'floor_method': floor_method, 'loaded_method': loaded_method, 'reserve_method': reserve_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
 
 
 def _reviews(state):

@@ -18,6 +18,8 @@ from ..collection.board_metadata import board_metadata, terrain_source, MOAT_ROW
 from ..collection.images import normalize
 from ..collection.prepare import prepare_session
 from ..collection.screen_state import propose
+from ..collection.card_catalog import load_catalog, slot_box
+from .cards import save_card_review
 from ..vision import analyzer
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -111,6 +113,14 @@ def validate_screen_state(value):
     for entries in cards.values():
         if entries is not None and (not isinstance(entries, list) or len(entries) > 14 or any(not isinstance(entry, str) or not entry.strip() or len(entry) > 300 for entry in entries)):
             raise ValueError('Cards must be slot-ordered names or unknown')
+    card_choices = value.get('card_choices')
+    if card_choices is not None and (not isinstance(card_choices, list) or len(card_choices) != 4 or any(entry is not None and (not isinstance(entry, str) or not entry.strip() or len(entry) > 300) for entry in card_choices)):
+        raise ValueError('Card choices must contain four catalog keys or unknowns')
+    card_reviewed_slots = value.get('card_reviewed_slots', [])
+    if not isinstance(card_reviewed_slots, list) or len(card_reviewed_slots) > 24 or any(not isinstance(slot, str) for slot in card_reviewed_slots) or len(set(card_reviewed_slots)) != len(card_reviewed_slots):
+        raise ValueError('Invalid reviewed card slots')
+    for slot in card_reviewed_slots:
+        slot_box(slot)
     souls = value.get('souls')
     legacy_soul = value.get('soul_piece')
     if souls is None and legacy_soul is not None:
@@ -149,6 +159,8 @@ def validate_screen_state(value):
         'ammo': {key: ammo.get(key) for key in AMMO_FIELDS},
         'combat_stats': {key: combat.get(key) for key in COMBAT_FIELDS},
         'cards': {side: cards.get(side) for side in ('left', 'right')},
+        'card_choices': card_choices,
+        'card_reviewed_slots': card_reviewed_slots,
         'souls': souls,
         'locked_cells': locked,
         'reviews': reviews,
@@ -240,9 +252,15 @@ def make_server(collection, port=0):
                 if route == '/':
                     html = Path(__file__).with_name('review_collection.html').read_text().replace('__TOKEN__', token)
                     return self.reply(html.encode(), 'text/html; charset=utf-8')
+                if route == '/cards':
+                    html = Path(__file__).with_name('card_review.html').read_text().replace('__TOKEN__', token)
+                    return self.reply(html.encode(), 'text/html; charset=utf-8')
+                if route == '/api/card-catalog':
+                    return self.reply(json.dumps(load_catalog(collection)).encode())
                 static_files = {
                     '/review_collection.css': 'text/css; charset=utf-8',
                     '/review_collection.js': 'text/javascript; charset=utf-8',
+                    '/card_review.js': 'text/javascript; charset=utf-8',
                 }
                 if route in static_files:
                     asset = Path(__file__).with_name(route[1:])
@@ -280,7 +298,7 @@ def make_server(collection, port=0):
                 self.reply(json.dumps({'error': str(exc)}).encode(), status=400)
 
         def do_POST(self):
-            if self.path not in ('/api/save', '/api/predict') or self.headers.get('X-Review-Token') != token:
+            if self.path not in ('/api/save', '/api/predict', '/api/card-review') or self.headers.get('X-Review-Token') != token:
                 return self.reply(b'{"error":"Unauthorized"}', status=403)
             try:
                 size = int(self.headers.get('Content-Length', '0'))
@@ -293,6 +311,8 @@ def make_server(collection, port=0):
                         if payload.get('revision') != revision:
                             raise ValueError('Annotation changed; reload before predicting')
                         result = propose(normalize(image, payload['game_crop']), collection, exclude=path)
+                    elif self.path == '/api/card-review':
+                        result = save_card_review(collection, payload)
                     else:
                         result = save_item(collection, payload)
                 self.reply(json.dumps(result).encode())
