@@ -11,15 +11,17 @@
 <body>
     <div class="app">
         <header class="page-header">
-            <div><p class="eyebrow">DATA COLLECTION / REVIEW</p><h1>Piece annotation studio</h1></div>
-            <span class="badge"><span class="dot"></span> Local workspace</span>
+            <h1>Screenshot review</h1>
         </header>
         <div class="review-workspace">
             <aside class="review-sidebar" aria-label="Review queue">
                 <h2>Review queue</h2>
                 <div class="review-tabs" role="tablist" aria-label="Review category" aria-orientation="vertical">
                     <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
-                    <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Page info</button>
+                    <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Screen type</button>
+                    <button id="ammoTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Ammunition</button>
+                    <button id="combatTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Combat stats</button>
+                    <button id="soulTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Harvested souls</button>
                 </div>
                 <label class="toggle completed-filter"><input type="checkbox" id="showCompleted"> Show completed</label>
                 <p id="queueTotals" class="help"></p>
@@ -36,55 +38,64 @@
 
             <div id="piecesView" class="review-view" role="tabpanel" aria-labelledby="piecesTab">
 <section class="panel board-panel" aria-label="Board review">
-                <div class="panel-heading"><div><p class="eyebrow">01 / INSPECT</p><h2>Game board</h2></div><label class="toggle"><input type="checkbox" id="showLabels" checked> Piece names</label></div>
+                <div class="panel-heading"><h2>Game board</h2><label class="toggle"><input type="checkbox" id="showLabels" checked> Piece names</label></div>
                 <div class="board-frame">
                     <div class="files" aria-label="Board files"><span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span></div>
                     <div class="ranks" aria-label="Board ranks"><span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span></div>
                     <div id="board"><img id="image" alt="Game board"><div id="grid"></div></div>
                 </div>
                 <div class="board-footer"><p id="cellInfo" aria-live="polite">Select a cell to correct its label.</p><div class="legend"><span class="legend-selected"></span> Selected <span class="legend-excluded"></span> Excluded</div></div>
-                <p class="help">Coordinates sit outside the board. Click any cell to inspect its label.</p>
+
             </section>
 
             </div>
             <div id="screenView" class="review-view" role="tabpanel" aria-labelledby="screenTab" hidden>
                 <section class="panel screen-panel">
-                    <div class="panel-heading"><h2>Full game screen</h2><div class="screen-heading-actions"><p id="progress" class="progress"></p><button id="toggleFields" type="button" aria-pressed="false">Hide fields</button></div></div>
+                    <div class="panel-heading"><h2>Screenshot</h2></div>
                     <div class="screen-overview">
                         <a id="fullLink" target="_blank" rel="noopener"><img id="fullImage" alt="Full game screen"></a>
-                        <div id="gameplayFields" class="screen-input-overlay" aria-label="Values positioned over the game screen">
-                            <label class="screen-field overlay-ammo-loaded"><span class="field-name">Loaded ammo</span><input id="ammo_loaded" type="number" min="0" step="1" placeholder="Loaded"></label>
-                            <label class="screen-field overlay-ammo-reserve"><span class="field-name">Reserve ammo</span><input id="ammo_reserve" type="number" min="0" step="1" placeholder="Reserve"></label>
-                            <label class="screen-field overlay-floor"><span class="field-name">Floor</span><input id="floor" type="number" min="1" step="1" placeholder="Floor"></label>
-                            <label class="screen-field overlay-grenades"><span class="field-name">Grenades remaining</span><input id="grenades_remaining" type="number" min="0" step="1" placeholder="Count"></label>
-                            <label class="screen-field overlay-grenade-damage"><span class="field-name">Grenade damage</span><input id="grenade_damage" type="number" min="0" step="1" placeholder="Damage"></label>
-                            <label class="screen-field overlay-attack"><span class="field-name">Attack</span><input id="attack" type="number" min="0" step="1" placeholder="Attack"></label>
-                            <label class="screen-field overlay-range"><span class="field-name">Range</span><span class="range-pair"><input id="range_min" type="number" min="0" step="1" placeholder="Min"><b>–</b><input id="range_max" type="number" min="0" step="1" placeholder="Max"></span></label>
-                            <label class="screen-field overlay-spread"><span class="field-name">Spread (°)</span><input id="spread_degrees" type="number" min="0" step="1" placeholder="Spread"></label>
-                            <label class="screen-field overlay-penetration"><span class="field-name">Penetration (%)</span><input id="penetration_percent" type="number" min="0" max="100" step="1" placeholder="Unknown"></label>
-                            <label class="screen-field overlay-knockback"><span class="field-name">Knockback (%)</span><input id="knockback_percent" type="number" min="0" max="100" step="1" placeholder="Unknown"></label>
-                            <label class="screen-field overlay-melee"><span class="field-name">Melee attack</span><input id="melee_damage" type="number" min="0" step="1" placeholder="Melee"></label>
-                            <div class="screen-field overlay-souls"><span class="field-name">Harvested souls</span><div id="soulSlots" class="soul-slots"></div><button id="addSoul" type="button">+ Add soul</button></div>
-                            <label class="overlay-review overlay-ammo-review"><input id="ammoReviewed" type="checkbox"> Ammunition reviewed</label>
-                            <label class="overlay-review overlay-combat-review"><input id="combatReviewed" type="checkbox"> Combat reviewed</label>
-                            <label class="overlay-review overlay-soul-review"><input id="soulReviewed" type="checkbox"> Soul reviewed</label>
-                        </div>
                     </div>
-                    <p class="help">Enter values in the compact fields, or hide them to inspect the complete screen.</p>
+                    <a class="image-link" id="openOriginal" target="_blank" rel="noopener">Open full size ↗</a>
                 </section>
 
             </div>
 
-<div class="review-controls"><div class="input-scroll"><aside id="piecesControls"><section class="panel controls"><div class="panel-heading"><div><p class="eyebrow">03 / CORRECT</p><h2>Piece details</h2></div></div>
+<div class="review-controls"><div class="input-scroll"><aside id="piecesControls"><section class="panel controls"><div class="panel-heading"><h2>Piece details</h2></div>
                     <label>Selected cell label<select id="label"></select></label>
                     <label>Piece side<select id="pieceSide"><option value="">No piece</option><option value="ally">Ally (black)</option><option value="enemy">Enemy (white)</option><option value="unknown">Unknown</option></select></label>
                     <label>Moat card effect<select id="moatActive"><option value="">Unknown</option><option value="false">Inactive</option><option value="true">Active</option></select></label>
-                    <p class="help">Active moat cards automatically mark the fixed moat row. Knights jump across a moat. Other pieces stop inside it before continuing. Player king identifies the king you control.</p>
+
                     <label class="toggle"><input type="checkbox" id="locked"> Locked by ability</label>
                     <label class="toggle exclude-toggle"><input type="checkbox" id="excluded"> Exclude this cell from training</label>
-                </section></aside><aside id="screenControls" hidden><section class="panel controls"><div class="compact-heading"><h2>Screen type</h2><button id="predictState">Auto-fill unknowns</button></div><p id="split" class="badge"></p><div class="review-section"><label>Screen kind<select id="screenKind"><option value="">Unknown</option><option value="gameplay">Gameplay</option><option value="card_selection">Card selection</option><option value="retry">Retry</option><option value="transition">Transition</option></select></label><label class="toggle"><input id="screenKindReviewed" type="checkbox"> Screen kind reviewed</label></div><details><summary>Adjust game crop</summary><label>Left, top, right, bottom<input id="crop" spellcheck="false"></label><button id="preview">Preview crop</button><p class="help">Coordinates refer to the original screenshot. Check alignment before saving.</p></details></section></aside></div>        <section class="panel controls save-panel"><p id="saveHelp" class="help">Check every piece label before approval.</p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve pieces ✓</button></div><p id="status" role="status" aria-live="polite"></p></section></div>
+                </section></aside><aside id="screenControls" hidden><section class="panel controls">
+                    <h2 id="taskTitle">Screen type</h2>
+                    <div class="task-fields" data-review-task="screen_kind">
+                        <label>Screen kind<select id="screenKind"><option value="">Unknown</option><option value="gameplay">Gameplay</option><option value="card_selection">Card selection</option><option value="retry">Retry</option><option value="transition">Transition</option></select></label>
+                        <label>Floor<input id="floor" type="number" min="1" step="1" placeholder="Unknown"></label>
+                    </div>
+                    <div class="task-fields" data-review-task="ammo" hidden>
+                        <label>Loaded ammo<input id="ammo_loaded" type="number" min="0" step="1" placeholder="Unknown"></label>
+                        <label>Reserve ammo<input id="ammo_reserve" type="number" min="0" step="1" placeholder="Unknown"></label>
+                    </div>
+                    <div class="task-fields combat-fields" data-review-task="combat_stats" hidden>
+                        <label>Attack<input id="attack" type="number" min="0" step="1" placeholder="Unknown"></label>
+                        <label>Range<span class="range-pair"><input id="range_min" type="number" min="0" step="1" placeholder="Min"><span>–</span><input id="range_max" type="number" min="0" step="1" placeholder="Max"></span></label>
+                        <label>Spread (°)<input id="spread_degrees" type="number" min="0" step="1" placeholder="Unknown"></label>
+                        <label>Penetration (%)<input id="penetration_percent" type="number" min="0" max="100" step="1" placeholder="Unknown"></label>
+                        <label>Knockback (%)<input id="knockback_percent" type="number" min="0" max="100" step="1" placeholder="Unknown"></label>
+                        <label>Melee damage<input id="melee_damage" type="number" min="0" step="1" placeholder="Unknown"></label>
+                        <label>Grenades remaining<input id="grenades_remaining" type="number" min="0" step="1" placeholder="Unknown"></label>
+                        <label>Grenade damage<input id="grenade_damage" type="number" min="0" step="1" placeholder="Unknown"></label>
+                    </div>
+                    <div class="task-fields" data-review-task="soul" hidden>
+                        <div id="soulSlots" class="soul-slots"></div><button id="addSoul" type="button">+ Add soul</button>
+                        <p class="help">Leave empty if no souls are shown.</p>
+                    </div>
+                    <input id="screenKindReviewed" type="checkbox" hidden><input id="ammoReviewed" type="checkbox" hidden><input id="combatReviewed" type="checkbox" hidden><input id="soulReviewed" type="checkbox" hidden>
+                    <details class="advanced-tools"><summary>Advanced</summary><button id="predictState">Auto-fill unknowns</button><p id="split" class="help"></p><label>Game crop<input id="crop" spellcheck="false"></label><button id="editCrop" type="button">Edit crop</button><button id="preview">Preview crop</button></details>
+                </section></aside></div>        <section class="panel controls save-panel"><p id="saveHelp" class="help">Check every piece label before approval.</p><p id="progress" hidden></p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve pieces ✓</button></div><p id="status" role="status" aria-live="polite"></p></section></div>
         </main>
-        <footer><a id="cardReviewLink" href="/cards">Review card names and effects separately</a><p>Originals stay intact. Only approved annotations enter the final dataset.</p></footer>
+        <footer><a id="cardReviewLink" href="/cards">Card review →</a></footer>
             </div>
         </div>
     </div>

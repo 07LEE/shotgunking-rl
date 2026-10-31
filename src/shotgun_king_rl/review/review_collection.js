@@ -6,19 +6,24 @@ const soulPieces = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', '
 const token = document.querySelector('meta[name=review-token]').content, classes = ['ambiguous_royal', 'empty', 'player_king', 'pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
 const $ = id => document.getElementById(id); let editingSections = new Set(), loading = false, saving = false, loadedId = '', currentId = '';
 const expandedSessions = new Set();
+const reviewTasks = [
+    { key: 'pieces', tab: 'piecesTab', label: 'Pieces' },
+    { key: 'screen_kind', tab: 'screenTab', label: 'Screen type' },
+    { key: 'ammo', tab: 'ammoTab', label: 'Ammunition' },
+    { key: 'combat_stats', tab: 'combatTab', label: 'Combat stats' },
+    { key: 'soul', tab: 'soulTab', label: 'Harvested souls' },
+];
+function currentTask() { return reviewTasks.find(task => task.key === currentReviewTab) }
+function taskApplies(item) { return currentReviewTab === 'pieces' ? pieceApplicable(item) : currentReviewTab === 'screen_kind' || item.screen_kind === 'gameplay' }
+
 let items = [], data, revision, selected = [0, 0], dirty = false, currentSession = '', currentReviewTab = 'pieces', pendingPieceApprovalId = null;
 function remember() { try { localStorage.setItem('piece-review-selection', JSON.stringify({ session: currentSession, id: currentId })) } catch (e) { } }
 function recalled() { try { return JSON.parse(localStorage.getItem('piece-review-selection')) || {} } catch (e) { return {} } }
 function sessionItems() { return items.filter(item => item.session === currentSession) }
 function nonGameplay(kind) { return Boolean(kind && kind !== 'gameplay') }
 function pieceApplicable(item) { return !nonGameplay(item.screen_kind) }
-function pageSections(item) { return nonGameplay(item.screen_kind) ? ['screen_kind'] : Object.keys(reviewInputs) }
-function pageReviewCount(item) { return pageSections(item).filter(section => item.reviews?.[section] === true).length }
-function pageComplete(item) { return pageReviewCount(item) === pageSections(item).length }
-function soulReviewPending(item) { return item.screen_kind === 'gameplay' && item.reviews?.soul !== true }
-function pageWorkflowComplete(item) { return pageComplete(item) && !soulReviewPending(item) }
-function needsReview(item) { return currentReviewTab === 'pieces' ? pieceApplicable(item) && !item.confirmed : !pageWorkflowComplete(item) }
-function relevantItems() { return sessionItems().filter(item => currentReviewTab !== 'pieces' || pieceApplicable(item)) }
+function needsReview(item) { return taskApplies(item) && !(currentReviewTab === 'pieces' ? item.confirmed : item.reviews?.[currentReviewTab]) }
+function relevantItems() { return sessionItems().filter(taskApplies) }
 function visibleItems() {
     return relevantItems().filter(item => $('showCompleted').checked || needsReview(item) || (item.id === currentId && (dirty || editingSections.size || pendingPieceApprovalId === currentId)));
 }
@@ -30,8 +35,7 @@ function setDisabled(ids, disabled) { for (const id of ids) $(id).disabled = dis
 function syncReviewLocks() {
     const item = savedItem();
     $('showCompleted').disabled = saving;
-    $('screenTab').disabled = saving;
-    $('piecesTab').disabled = saving || (nonGameplay($('screenKind').value || null) && dirty);
+    for (const task of reviewTasks) $(task.tab).disabled = saving;
     for (const button of $('sessionList').querySelectorAll('button')) button.disabled = saving;
     const unavailable = !data || loadedId !== currentId || loading || saving || document.querySelector('main').hidden;
     const piecesLocked = unavailable || sectionLocked('pieces');
@@ -47,13 +51,14 @@ function syncReviewLocks() {
     $('floor').disabled = unavailable || (sectionLocked('screen_kind') && data.floor !== null);
     $('crop').disabled = unavailable || ['pieces', ...Object.keys(reviewInputs), 'soul'].some(sectionLocked);
     $('preview').disabled = unavailable || $('crop').disabled;
-    $('predictState').disabled = unavailable || ['screen_kind', 'ammo', 'combat_stats', 'soul'].every(sectionLocked);
-    const applicableSections = item && nonGameplay(item.screen_kind) ? ['screen_kind'] : ['screen_kind', 'ammo', 'combat_stats', 'soul'];
-    const editable = pendingPieceApprovalId === currentId || (currentReviewTab === 'pieces' ? !sectionLocked('pieces') : applicableSections.some(section => !sectionLocked(section)));
+    $('predictState').disabled = unavailable || sectionLocked(currentReviewTab);
+    $('editCrop').hidden = !['pieces', ...Object.keys(reviewInputs), 'soul'].some(sectionReviewed);
+    $('editCrop').disabled = unavailable;
+    const editable = pendingPieceApprovalId === currentId || !sectionLocked(currentReviewTab);
     setDisabled(['draft', 'approve'], unavailable || !item || !editable);
     $('reviewSectionStatus').replaceChildren();
     if (!item || !data || loadedId !== currentId || document.querySelector('main').hidden) return;
-    const sections = currentReviewTab === 'pieces' ? [['pieces', 'Pieces']] : nonGameplay(item.screen_kind) ? [['screen_kind', 'Screen type']] : [['screen_kind', 'Screen type'], ['ammo', 'Ammunition'], ['combat_stats', 'Combat stats'], ['soul', 'Harvested souls']];
+    const sections = [[currentReviewTab, currentTask().label]];
     for (const [key, label] of sections) {
         const complete = sectionLocked(key);
         const chip = document.createElement('span');
@@ -68,16 +73,8 @@ function syncReviewLocks() {
         }
         $('reviewSectionStatus').append(chip);
     }
-    if (sections.some(([key]) => sectionLocked(key))) {
-        const cropEdit = document.createElement('button'); cropEdit.type = 'button'; cropEdit.textContent = 'Edit crop'; cropEdit.disabled = unavailable;
-        cropEdit.onclick = () => {
-            if (!confirm('Changing the crop requires reviewing this screenshot again. Continue?')) return;
-            for (const key of ['pieces', 'screen_kind', 'ammo', 'combat_stats', 'soul']) reopenSection(key, false);
-            $('crop').closest('details').open = true; $('crop').focus();
-        };
-        $('reviewSectionStatus').append(cropEdit);
-    }
 }
+
 function reopenSection(section, focus = true) {
     editingSections.add(section);
     if (section === 'pieces') data.confirmed = false;
@@ -122,7 +119,7 @@ async function moveTo(item) {
     renderOptions();
     await load();
 }
-function showReviewStatus() { if (!data || !savedItem() || document.querySelector('main').hidden) return; const item = items.find(candidate => candidate.id === currentId); const approvedAt = item.piece_review?.reviewed_at; const pieceMessage = !pieceApplicable(item) ? 'Piece review does not apply to this screen type.' : !data.confirmed ? 'Piece labels are still a draft.' : approvedAt ? 'Piece labels approved · ' + new Date(approvedAt).toLocaleString() : 'Piece labels approved · approval time unavailable.'; const pageMessage = !pageComplete(item) ? 'Page information review is incomplete.' : soulReviewPending(item) ? 'Page information reviewed · harvested souls still need review.' : 'Page information and harvested souls reviewed.'; status(currentReviewTab === 'pieces' ? pieceMessage : pageMessage) }
+function showReviewStatus() { if (data && !document.querySelector('main').hidden) status('') }
 for (const c of classes) { const o = document.createElement('option'); o.value = c; o.textContent = c === 'ambiguous_royal' ? 'Queen / white king (unresolved)' : c; $('label').append(o) }
 async function api(url, options) { const r = await fetch(url, options); const a = await r.json(); if (!r.ok) throw Error(a.error || r.statusText); return a }
 function status(s, error = false) {
@@ -203,7 +200,7 @@ async function load() {
         for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? '';
         for (const [section, input] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(input).checked = data.screen_state.reviews[section] === true;
         renderSoulSlots(data.screen_state.souls);
-        $('fullImage').src = '/api/screen?id=' + encodeURIComponent(id); $('fullLink').href = $('fullImage').src;
+        $('fullImage').src = '/api/screen?id=' + encodeURIComponent(id); $('fullLink').href = $('fullImage').src; $('openOriginal').href = $('fullImage').src;
         selected = [0, 0]; $('floor').value = data.floor ?? ''; $('crop').value = data.game_crop.join(', ');
         $('split').textContent = 'Session split: ' + data.split;
         dirty = false; syncScreenKind(); preview(); draw();
@@ -260,11 +257,10 @@ async function save(confirmed) {
         const combat_stats = Object.fromEntries(combatFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
         if ([...Object.values(ammo), ...Object.values(combat_stats)].some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Numeric values must be nonnegative integers.');
         const screen_kind = $('screenKind').value || null;
-        const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
+        const completingPieceApproval = currentReviewTab !== 'pieces' && pendingPieceApprovalId === currentId;
         const reviews = { ...data.screen_state.reviews, ...Object.fromEntries(Object.entries({ ...reviewInputs, ...independentReviewInputs }).map(([section, id]) => [section, $(id).checked])) };
-        if (confirmed && currentReviewTab === 'screen' && !completingPieceApproval) {
-            for (const section of pageSections({ screen_kind })) reviews[section] = true;
-            if (screen_kind === 'gameplay') reviews.soul = true;
+        if (confirmed && currentReviewTab !== 'pieces' && !completingPieceApproval) {
+            reviews[currentReviewTab] = true;
         }
         if (reviews.screen_kind && screen_kind === null) throw Error('Select a screen kind before marking it reviewed.');
         const cards = data.screen_state.cards ?? { left: null, right: null };
@@ -340,15 +336,15 @@ async function save(confirmed) {
     }
 }
 $('floor').addEventListener('input', () => $('floor').setCustomValidity(''));
-$('toggleFields').onclick = () => {
-    const hidden = $('gameplayFields').classList.toggle('fields-hidden');
-    $('toggleFields').textContent = hidden ? 'Show fields' : 'Hide fields';
-    $('toggleFields').setAttribute('aria-pressed', String(hidden));
+$('editCrop').onclick = () => {
+    if (!confirm('Changing the crop requires reviewing this screenshot again. Continue?')) return;
+    for (const key of ['pieces', 'screen_kind', 'ammo', 'combat_stats', 'soul']) reopenSection(key, false);
+    $('crop').focus();
 };
 $('draft').onclick = () => save(false); $('approve').onclick = () => save(true);
 function renderQueue() {
     const showCompleted = $('showCompleted').checked;
-    const relevant = items.filter(item => currentReviewTab !== 'pieces' || pieceApplicable(item));
+    const relevant = items.filter(taskApplies);
     const pending = relevant.filter(needsReview).length;
     $('queueTotals').textContent = pending + ' pending · ' + (relevant.length - pending) + ' reviewed';
     $('sessionList').replaceChildren();
@@ -380,6 +376,12 @@ function renderQueue() {
         }
         group.append(entries); $('sessionList').append(group);
     }
+    const selected = $('sessionList').querySelector('[aria-current="true"]');
+    if (selected) {
+        const bounds = $('sessionList').getBoundingClientRect(), row = selected.getBoundingClientRect();
+        if (row.bottom > bounds.bottom) $('sessionList').scrollTop += row.bottom - bounds.bottom + 8;
+        else if (row.top < bounds.top) $('sessionList').scrollTop -= bounds.top - row.top + 8;
+    }
     if (!$('sessionList').children.length) {
         const empty = document.createElement('p'); empty.className = 'queue-empty';
         empty.textContent = showCompleted ? 'No screenshots for this review category.' : 'No pending reviews. Enable “Show completed” to inspect previous work.';
@@ -395,7 +397,7 @@ function renderOptions() {
     const current = list.find(item => item.id === currentId);
     document.querySelector('main').hidden = !current;
     $('reviewSummaryText').textContent = !list.length
-        ? '✓ No pending ' + (currentReviewTab === 'pieces' ? 'piece' : 'page information') + ' reviews in this session. Select another screenshot on the left or enable “Show completed”.'
+        ? 'No pending ' + currentTask().label.toLowerCase() + ' reviews. Select another image or show completed work.'
         : remaining + ' pending · ' + (all.length - remaining) + ' reviewed' + (editingSections.size ? ' · Editing reviewed work; review it again before saving.' : current && !needsReview(current) ? ' · Read-only. Choose Edit to make a correction.' : '');
     $('currentScreenshot').textContent = current ? current.session + ' / ' + current.id.split('/').pop().replace(/\.json$/, '') : '';
     $('progress').textContent = (all.length - remaining) + '/' + all.length + ' reviewed · screenshot ' + Math.max(0, index + 1) + '/' + list.length;
@@ -430,57 +432,61 @@ $('predictState').onclick = async () => {
     try {
         const result = await api('/api/predict', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Review-Token': token }, body: JSON.stringify({ id: currentId, revision, game_crop: cropValue() }) });
         let count = 0;
-        if (!sectionLocked('screen_kind') && $('screenKind').value === '' && result.screen_state.screen_kind !== null) { $('screenKind').value = result.screen_state.screen_kind; $('screenKindReviewed').checked = false; syncScreenKind(); count++; }
-        if (!$('floor').disabled && $('floor').value === '' && result.floor !== null) { $('floor').value = result.floor; count++; }
-        for (const [key, id] of Object.entries(ammoInputs)) if (!sectionLocked('ammo') && $(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
-        for (const key of combatFields) if (!sectionLocked('combat_stats') && $(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
-        if (!sectionLocked('soul') && !$('soulReviewed').checked && result.screen_state.souls !== null) { renderSoulSlots(result.screen_state.souls); $('soulReviewed').checked = false; count++; }
+        if (currentReviewTab === 'screen_kind' && !sectionLocked('screen_kind') && $('screenKind').value === '' && result.screen_state.screen_kind !== null) { $('screenKind').value = result.screen_state.screen_kind; $('screenKindReviewed').checked = false; syncScreenKind(); count++; }
+        if (currentReviewTab === 'screen_kind' && !$('floor').disabled && $('floor').value === '' && result.floor !== null) { $('floor').value = result.floor; count++; }
+        for (const [key, id] of Object.entries(ammoInputs)) if (currentReviewTab === 'ammo' && !sectionLocked('ammo') && $(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
+        for (const key of combatFields) if (currentReviewTab === 'combat_stats' && !sectionLocked('combat_stats') && $(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
+        if (currentReviewTab === 'soul' && !sectionLocked('soul') && !$('soulReviewed').checked && result.screen_state.souls !== null) { renderSoulSlots(result.screen_state.souls); $('soulReviewed').checked = false; count++; }
         if (count) dirty = true;
         status(count ? 'Filled ' + count + ' fields. Review predictions before saving.' : 'No confident matches. Add reviewed examples with known values first.');
     } catch (error) { status('Prediction failed — ' + error.message, true); }
     finally { syncReviewLocks(); }
 };
 
-function switchReviewTab(name, focus = false) {
-    if (name === 'pieces' && $('piecesTab').disabled) name = 'screen';
-    currentReviewTab = name;
-    const main = document.querySelector('main');
-    main.classList.toggle('page-info-mode', name === 'screen');
-    for (const [tab, panel, key] of [['piecesTab', 'piecesView', 'pieces'], ['screenTab', 'screenView', 'screen']]) {
-        const active = name === key;
-        $(tab).setAttribute('aria-selected', String(active));
-        $(tab).tabIndex = active ? 0 : -1;
-        $(panel).hidden = !active;
-        $(key === 'pieces' ? 'piecesControls' : 'screenControls').hidden = !active;
-        if (active && focus) $(tab).focus();
+function switchReviewTab(name, focus = false, select = true) {
+    if (name === 'screen') name = 'screen_kind';
+    currentReviewTab = reviewTasks.some(task => task.key === name) ? name : 'pieces';
+    const pieces = currentReviewTab === 'pieces';
+    for (const task of reviewTasks) {
+        const active = task.key === currentReviewTab;
+        $(task.tab).setAttribute('aria-selected', String(active));
+        $(task.tab).tabIndex = active ? 0 : -1;
+        if (active && focus) $(task.tab).focus();
     }
-    $('draft').textContent = name === 'pieces' ? 'Save draft' : 'Save progress';
-    $('approve').textContent = name === 'pieces' ? 'Approve pieces ✓' : 'Complete review ✓';
-    $('saveHelp').textContent = name === 'pieces' ? 'Check every piece label before approval.' : 'Complete review to mark this page reviewed and remove it from pending work. Save progress to continue later.';
+    $('piecesView').hidden = !pieces; $('piecesControls').hidden = !pieces;
+    $('screenView').hidden = pieces; $('screenControls').hidden = pieces;
+    $('screenView').setAttribute('aria-labelledby', currentTask().tab);
+    for (const fields of document.querySelectorAll('[data-review-task]')) fields.hidden = fields.dataset.reviewTask !== currentReviewTab;
+    $('taskTitle').textContent = currentTask().label;
+    $('draft').textContent = pieces ? 'Save draft' : 'Save progress';
+    $('approve').textContent = pieces ? 'Approve pieces ✓' : 'Complete ✓';
+    $('saveHelp').textContent = pendingPieceApprovalId ? 'Enter the floor to finish piece approval.' : '';
     if (items.length) {
-        if (!loading && !dirty && !pendingPieceApprovalId && !saving) selectVisible();
+        if (select && !loading && !dirty && !pendingPieceApprovalId && !saving) selectVisible();
         renderOptions(); showReviewStatus();
     }
 }
 function syncScreenKind() {
-    const unavailable = nonGameplay($('screenKind').value || null);
-    $('gameplayFields').hidden = unavailable;
-    $('piecesTab').disabled = unavailable && dirty;
-    if (unavailable && currentReviewTab === 'pieces') switchReviewTab('screen');
-    if (items.length) {
-        renderOptions();
-    }
+    if (items.length) renderOptions();
 }
-for (const [id, name] of [['piecesTab', 'pieces'], ['screenTab', 'screen']]) {
-    $(id).onclick = () => {
-        switchReviewTab(name);
-        history.replaceState(null, '', name === 'screen' ? '#page-info' : '#pieces');
-    };
-    $(id).onkeydown = event => {
-        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) {
-            event.preventDefault();
-            switchReviewTab(event.key === 'Home' ? 'pieces' : event.key === 'End' ? 'screen' : name === 'pieces' ? 'screen' : 'pieces', true);
-        }
+async function chooseTask(key, focus = false) {
+    if (saving || key === currentReviewTab) return;
+    const discard = dirty;
+    if (discard && !confirm('Discard unsaved edits?')) return;
+    dirty = false; editingSections.clear(); pendingPieceApprovalId = null;
+    switchReviewTab(key, focus, false);
+    await selectVisible(discard);
+    history.replaceState(null, '', '#' + key);
+}
+for (const task of reviewTasks) {
+    $(task.tab).onclick = () => chooseTask(task.key);
+    $(task.tab).onkeydown = event => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        const index = reviewTasks.indexOf(task);
+        const next = event.key === 'Home' ? 0 : event.key === 'End' ? reviewTasks.length - 1 : (index + (['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 1) + reviewTasks.length) % reviewTasks.length;
+        chooseTask(reviewTasks[next].key, true);
     };
 }
-switchReviewTab(location.hash === '#page-info' ? 'screen' : 'pieces');
+const initialTask = location.hash.slice(1);
+switchReviewTab(initialTask === 'page-info' ? 'screen_kind' : initialTask || 'pieces');

@@ -70,7 +70,7 @@ class ReviewBrowserTests(unittest.TestCase):
                 self.assertIsNotNone(match, result.stderr[-1500:] + result.stdout[-2000:])
                 report = json.loads(html.unescape(match.group(1)))
                 self.assertTrue(report['ok'], json.dumps(report, indent=2))
-                self.assertEqual(len(report['checks']), 35)
+                self.assertEqual(len(report['checks']), 36)
             finally:
                 server.shutdown()
                 server.server_close()
