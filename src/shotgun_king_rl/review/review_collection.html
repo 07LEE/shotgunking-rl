@@ -80,7 +80,7 @@
                     <label class="toggle exclude-toggle"><input type="checkbox" id="excluded"> Exclude this cell from training</label>
                 </section></aside><aside id="screenControls" hidden><section class="panel controls"><div class="compact-heading"><h2>Screen type</h2><button id="predictState">Auto-fill unknowns</button></div><p id="split" class="badge"></p><div class="review-section"><label>Screen kind<select id="screenKind"><option value="">Unknown</option><option value="gameplay">Gameplay</option><option value="card_selection">Card selection</option><option value="retry">Retry</option><option value="transition">Transition</option></select></label><label class="toggle"><input id="screenKindReviewed" type="checkbox"> Screen kind reviewed</label></div><details><summary>Adjust game crop</summary><label>Left, top, right, bottom<input id="crop" spellcheck="false"></label><button id="preview">Preview crop</button><p class="help">Coordinates refer to the original screenshot. Check alignment before saving.</p></details></section></aside></div>        <section class="panel controls save-panel"><p id="saveHelp" class="help">Check every piece label before approval.</p><div class="button-row"><button id="draft">Save draft</button><button id="approve" class="primary">Approve pieces ✓</button></div><p id="status" role="status" aria-live="polite"></p></section></div>
         </main>
-        <footer>Originals stay intact. Only approved annotations enter the final dataset.</footer>
+        <footer><a id="cardReviewLink" href="/cards">Review card names and effects separately</a><p>Originals stay intact. Only approved annotations enter the final dataset.</p></footer>
     </div>
 </body>
 </html>

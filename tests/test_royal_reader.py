@@ -32,6 +32,15 @@ class RoyalReaderTests(unittest.TestCase):
         self.assertEqual(reader.classify(self.queen), 6)
         self.assertEqual(RoyalTemplates(((8, self.queen),)).classify(self.queen), 6)
 
+    def test_alignment_is_optional_and_preserves_ambiguity(self):
+        shifted = np.zeros_like(self.king)
+        shifted[:, 1:] = self.king[:, :-1]
+        self.assertEqual(self.reader.classify(shifted), 6)
+        self.assertEqual(self.reader.classify(shifted, align=True), 9)
+        conflict = RoyalTemplates(((8, self.king), (9, self.king)))
+        self.assertEqual(conflict.classify(shifted, align=True), 6)
+        self.assertEqual(RoyalTemplates(((9, self.king),)).classify(shifted, align=True), 6)
+
     def test_refinement_preserves_other_cells_and_input(self):
         board = np.zeros((8, 8), dtype=int)
         board[0, :3] = (1, 6, 4)

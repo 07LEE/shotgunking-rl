@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="review-token" content="__TOKEN__">
+    <title>Card review</title>
+    <style>
+        body { font: 16px system-ui; background: #141822; color: #edf0fa; margin: 24px; }
+        a { color: #9ac6ff; } button, select, textarea { font: inherit; padding: 8px; }
+        select, textarea { max-width: 100%; box-sizing: border-box; } textarea { width: 100%; min-height: 70px; }
+        .toolbar { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0; align-items: center; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+        .slot { border: 1px solid #56627c; border-radius: 8px; padding: 12px; display: grid; gap: 8px; }
+        canvas { width: 126px; height: 174px; image-rendering: pixelated; } #screen { max-width: 100%; width: 960px; }
+        #status { white-space: pre-wrap; } .help { color: #b7c3d9; }
+    </style>
+    <script src="/card_review.js" defer></script>
+</head>
+<body>
+    <a href="/">← Piece and page review</a>
+    <h1>Card names and effects</h1>
+    <p class="help">Select the cards you can identify. Empty means no persistent card; unknown means unresolved. Confirmed known slots in training screens become references even while other slots need review. Effect descriptions remain unknown until entered and confirmed.</p>
+    <div class="toolbar"><label>Screenshot <select id="items"></select></label><button id="predict">Auto-fill unknowns</button><label><input id="kindReviewed" type="checkbox"> Screen type is correct</label></div>
+    <p id="split"></p>
+    <details><summary>Full screenshot</summary><img id="screen" alt="Game screenshot"></details>
+    <h2 id="choiceHeading">Card choices</h2><div id="choices" class="cards"></div>
+    <h2>Persistent cards</h2><button id="emptySlots">Set unknown persistent slots to empty</button><div id="persistent" class="cards"></div>
+    <div class="toolbar"><button id="draft">Save card draft</button><button id="confirm">Confirm known card labels</button><a id="next" href="#">Next screenshot →</a></div>
+    <p id="status" role="status"></p>
+</body>
+</html>

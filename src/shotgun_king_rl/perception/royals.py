@@ -48,15 +48,16 @@ class RoyalTemplates:
                         examples.append((ROYAL_IDS[label], signal))
         return cls(examples)
 
-    def classify(self, signal):
+    def classify(self, signal, *, align=False):
         query = signal.astype(np.float32)
         if query.shape != (45, 45) or query.std() < 5:
             return 6
+        search = np.pad(query, 1, mode='edge') if align else query
         scores = {}
         for (kind, template), template_std in zip(self.examples, self._template_stds):
             if template.shape != query.shape or template_std < 5:
                 continue
-            score = float(cv2.matchTemplate(query, template, cv2.TM_CCOEFF_NORMED)[0, 0])
+            score = float(cv2.matchTemplate(search, template, cv2.TM_CCOEFF_NORMED).max())
             scores[kind] = max(scores.get(kind, -1), score)
         # Both kinds must be represented to measure cross-kind ambiguity.
         if set(scores) != set(ROYAL_IDS.values()):
@@ -66,10 +67,10 @@ class RoyalTemplates:
             return 6
         return ranked[0][0]
 
-    def refine(self, image, board, *, board_gray=None):
+    def refine(self, image, board, *, board_gray=None, align=False):
         result = board.copy()
         gray = board_gray if board_gray is not None else cv2.cvtColor(analyzer.crop_chessboard(image), cv2.COLOR_BGR2GRAY)
         for row, col in np.argwhere(board == 6):
             signal = analyzer._extract_signal(gray[row*65:(row+1)*65, col*65:(col+1)*65])
-            result[row, col] = self.classify(signal)
+            result[row, col] = self.classify(signal, align=align)
         return result

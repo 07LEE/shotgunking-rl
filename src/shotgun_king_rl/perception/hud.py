@@ -19,7 +19,7 @@ def _stat_anchor(image):
     return None
 
 
-def stat_patch(image, row_offset=0):
+def stat_patch(image, row_offset=0, padding=0):
     """Locate a stat relative to the first number in the shifting HUD panel.
 
     Keep its title as context so another stat cannot match by its digit alone.
@@ -29,7 +29,10 @@ def stat_patch(image, row_offset=0):
     if anchor is None:
         return None
     y = anchor + row_offset
-    return cv2.cvtColor(image[y - 35:y + 30, 270:354], cv2.COLOR_BGR2GRAY)
+    top, bottom = y - 35 - padding, y + 30 + padding
+    if top < 0 or bottom > image.shape[0]:
+        return None
+    return cv2.cvtColor(image[top:bottom, 270 - padding:354 + padding], cv2.COLOR_BGR2GRAY)
 
 
 def stat_context_patch(image):

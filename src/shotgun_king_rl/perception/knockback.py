@@ -32,10 +32,12 @@ class KnockbackReader:
         self._zero_stds = tuple(context.std() for context, _ in self.zero_examples)
 
     @classmethod
-    def from_collection(cls, collection):
+    def from_collection(cls, collection, *, exclude=None):
         examples = []
         zero_examples = []
         for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
+            if exclude is not None and path.resolve() == Path(exclude).resolve():
+                continue
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}

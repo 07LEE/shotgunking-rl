@@ -35,7 +35,7 @@ class MeleeDamageReader:
         self._zero_stds = tuple(context.std() for context, _ in self.zero_examples)
 
     @classmethod
-    def from_collection(cls, collection, *, title_reference=None):
+    def from_collection(cls, collection, *, title_reference=None, exclude=None):
         """Load reviewed train zeros and optionally verified positive references.
 
         title_reference is the top 30 rows of melee_damage_patch. It must
@@ -47,6 +47,8 @@ class MeleeDamageReader:
         examples = []
         zero_examples = []
         for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
+            if exclude is not None and path.resolve() == Path(exclude).resolve():
+                continue
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}

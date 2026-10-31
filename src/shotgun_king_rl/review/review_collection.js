@@ -153,7 +153,7 @@ async function save(confirmed) {
         const selectedSouls = soulValues();
         if (reviews.soul && selectedSouls.some(piece => !piece)) throw Error('Select a piece for every harvested soul slot.');
         const souls = reviews.soul ? selectedSouls : null;
-        data.screen_state = { screen_kind, ammo, combat_stats, cards, souls, locked_cells: data.screen_state.locked_cells, reviews };
+        data.screen_state = { screen_kind, ammo, combat_stats, cards, card_choices: data.screen_state.card_choices ?? null, card_reviewed_slots: data.screen_state.card_reviewed_slots ?? [], souls, locked_cells: data.screen_state.locked_cells, reviews };
         const completingPieceApproval = currentReviewTab === 'screen' && pendingPieceApprovalId === currentId;
         const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : completingPieceApproval ? true : data.confirmed;
         const pieceReviewed = (currentReviewTab === 'pieces' && confirmed) || completingPieceApproval;
