@@ -237,3 +237,11 @@ select:disabled, input:disabled { opacity: .6; color: var(--muted); cursor: defa
     .review-summary { gap: 8px; }
     .review-section-status { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; flex-wrap: wrap; }
 }
+
+#screenControls .task-fields { padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--border); }
+#screenControls .task-fields h3 { grid-column: 1 / -1; margin: 0; font-size: 13px; font-weight: 600; }
+#screenControls .task-fields[hidden] { display: none; }
+.review-section-status { flex-wrap: wrap; }
+
+.review-summary-heading .button-row { justify-self: end; }
+#screenControls [data-review-task="screen_kind"], #screenControls [data-review-task="ammo"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }

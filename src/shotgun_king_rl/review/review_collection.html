@@ -16,10 +16,7 @@
             <h2 id="reviewTypeHeading">Review type</h2>
                 <div class="review-tabs" role="tablist" aria-label="Review category" aria-orientation="horizontal">
                     <button id="piecesTab" role="tab" aria-selected="true" aria-controls="piecesView piecesControls" tabindex="0">Pieces</button>
-                    <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Screen type</button>
-                    <button id="ammoTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Ammunition</button>
-                    <button id="combatTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Combat stats</button>
-                    <button id="soulTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Harvested souls</button>
+                    <button id="screenTab" role="tab" aria-selected="false" aria-controls="screenView screenControls" tabindex="-1">Screen info</button>
                 </div>
         </section>
         </header>
@@ -73,16 +70,16 @@
                     <label class="toggle"><input type="checkbox" id="locked"> Locked by ability</label>
                     <label class="toggle exclude-toggle"><input type="checkbox" id="excluded"> Exclude this cell from training</label>
                 </section></aside><aside id="screenControls" hidden><section class="panel controls">
-                    <h2 id="taskTitle">Screen type</h2>
-                    <div class="task-fields" data-review-task="screen_kind">
+                    <h2 id="taskTitle">Screen info</h2>
+                    <div class="task-fields" data-review-task="screen_kind"><h3>Screen type</h3>
                         <label>Screen kind<select id="screenKind"><option value="">Unknown</option><option value="gameplay">Gameplay</option><option value="card_selection">Card selection</option><option value="retry">Retry</option><option value="transition">Transition</option></select></label>
                         <label>Floor<input id="floor" type="number" min="1" step="1" placeholder="Unknown"></label>
                     </div>
-                    <div class="task-fields" data-review-task="ammo" hidden>
+                    <div class="task-fields" data-review-task="ammo"><h3>Ammunition</h3>
                         <label>Loaded ammo<input id="ammo_loaded" type="number" min="0" step="1" placeholder="Unknown"></label>
                         <label>Reserve ammo<input id="ammo_reserve" type="number" min="0" step="1" placeholder="Unknown"></label>
                     </div>
-                    <div class="task-fields combat-fields" data-review-task="combat_stats" hidden>
+                    <div class="task-fields combat-fields" data-review-task="combat_stats"><h3>Combat stats</h3>
                         <label>Attack<input id="attack" type="number" min="0" step="1" placeholder="Unknown"></label>
                         <label>Range<span class="range-pair"><input id="range_min" type="number" min="0" step="1" placeholder="Min"><span>–</span><input id="range_max" type="number" min="0" step="1" placeholder="Max"></span></label>
                         <label>Spread (°)<input id="spread_degrees" type="number" min="0" step="1" placeholder="Unknown"></label>
@@ -92,7 +89,7 @@
                         <label>Grenades remaining<input id="grenades_remaining" type="number" min="0" step="1" placeholder="Unknown"></label>
                         <label>Grenade damage<input id="grenade_damage" type="number" min="0" step="1" placeholder="Unknown"></label>
                     </div>
-                    <div class="task-fields" data-review-task="soul" hidden>
+                    <div class="task-fields" data-review-task="soul"><h3>Harvested souls</h3>
                         <div id="soulSlots" class="soul-slots"></div><button id="addSoul" type="button">+ Add soul</button>
                         <p class="help">Leave empty if no souls are shown.</p>
                     </div>
