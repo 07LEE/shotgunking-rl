@@ -61,7 +61,13 @@ def match_floor_shapes(query, examples):
     return ranked[0]
 
 
-def match_numeric(query, context, examples):
+def overlap_score(query, template):
+    """Compare foreground overlap so extra digit strokes remain discriminative."""
+    total = int(query.sum()) + int(template.sum())
+    return float(2 * np.logical_and(query, template).sum() / total) if total else 0.0
+
+
+def match_numeric(query, context, examples, *, scorer=token_score):
     """Require both reviewed row context and an unambiguous numeric shape."""
     if query is None or context is None:
         return None
@@ -70,7 +76,7 @@ def match_numeric(query, context, examples):
         context_score = float(cv2.matchTemplate(context, row, cv2.TM_CCOEFF_NORMED).max())
         if context_score < .90:
             continue
-        scores[value] = max(scores.get(value, -1), token_score(query, token))
+        scores[value] = max(scores.get(value, -1), scorer(query, token))
     ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
     if not ranked or ranked[0][1] < .90:
         return None
@@ -79,7 +85,7 @@ def match_numeric(query, context, examples):
     return ranked[0]
 
 
-def match_numeric_with_title(query, context, examples):
+def match_numeric_with_title(query, context, examples, *, scorer=token_score):
     """Require an independent matching title as well as numeric/row evidence."""
     if query is None or context is None:
         return None
@@ -87,4 +93,4 @@ def match_numeric_with_title(query, context, examples):
     if not titles or max(float(cv2.matchTemplate(context[:46], title, cv2.TM_CCOEFF_NORMED).max())
                          for title in titles) < .90:
         return None
-    return match_numeric(query, context, examples)
+    return match_numeric(query, context, examples, scorer=scorer)

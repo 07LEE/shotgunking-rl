@@ -41,6 +41,30 @@ class NumericHudFallbackTests(unittest.TestCase):
         self.assertEqual(reader.read(dimmed).value, case.value)
         self.assertFalse(reader.read(screen(case, digits='180')).is_accepted)
 
+    def test_dim_attack_overlap_requires_title_and_separates_three_from_eight(self):
+        case = next(case for case in CASES if case.name == 'attack')
+        references = [screen(case, digits=str(value)) for value in (3, 8)]
+        for image in references:
+            region = image[250:280, 270:310]
+            region[region > 140] = 120
+        examples = [(value, numeric_token(image, threshold=110), case.patch(image))
+                    for value, image in zip((3, 8), references)]
+        reader = case.reader(dim_numeric_examples=examples)
+        for value in (3, 8):
+            query = screen(case, digits=str(value))
+            # Preserve title evidence but lower only numeric stroke brightness.
+            region = query[250:280, 270:310]
+            region[region > 140] = 120
+            self.assertGreater(numeric_token(query, threshold=110).sum(), numeric_token(query).sum())
+            self.assertEqual(reader.read(query).value, value)
+        self.assertFalse(reader.read(screen(case, seed=11, digits='3')).is_accepted)
+        self.assertFalse(reader.read(screen(case, digits='9')).is_accepted)
+        conflict = case.reader(dim_numeric_examples=[examples[0], (8, examples[0][1], examples[0][2])])
+        self.assertFalse(conflict.read(references[0]).is_accepted)
+        examples[0][1][:] = 0
+        examples[0][2][:] = 0
+        self.assertEqual(reader.read(references[0]).value, 3)
+
     def test_conflicting_numeric_labels_stay_unknown_and_owned_copies_are_used(self):
         for case in self.cases():
             with self.subTest(field=case.name):
