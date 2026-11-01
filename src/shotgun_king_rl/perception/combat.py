@@ -1,4 +1,4 @@
-"""Compose independent HUD readings without filling missing values."""
+"""Compose HUD readings; only the live grenade reader may retain a known value."""
 
 from dataclasses import dataclass
 
@@ -27,6 +27,15 @@ class CombatStatsReader:
     melee_reader: Reader[float] | None = None
 
     source = "combat-stats:composed-v1"
+
+    def reset_run(self):
+        reset = getattr(self.grenade_damage_reader, 'reset_run', None)
+        if callable(reset):
+            reset()
+
+    def memory_info(self):
+        info = getattr(self.grenade_damage_reader, 'memory_info', None)
+        return info() if callable(info) else None
 
     def read(self, image) -> Prediction[CombatStatsReading]:
         return self.read_prepared(PreparedFrame(image))

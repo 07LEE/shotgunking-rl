@@ -340,6 +340,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "sources": list(result.sources) if result else [],
             "combat_stats": asdict(result.combat_stats) if result and result.combat_stats else None,
             "board_context": asdict(result.board_context) if result and result.board_context else None,
+            "grenade_damage_memory": self.perception_pipeline.memory_info() if result is not None and self.perception_pipeline is not None else None,
             "hover_clear": _result_info(self.last_hover_result, "move"),
         }
 
@@ -567,6 +568,8 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             time.sleep(0.5)
             
         if popup_detected:
+            if self.perception_pipeline is not None:
+                self.perception_pipeline.reset_run()
             print("DQN Penalty: Detected retry popup during reset. Clicking YES button (dynamic coordinates enabled).")
             img = cv2.imread(image_path) if cv2 is not None and os.path.exists(image_path) else None
             tx, ty = self._get_yes_button_coords(img)

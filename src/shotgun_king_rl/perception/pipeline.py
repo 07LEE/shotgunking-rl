@@ -39,6 +39,15 @@ class PerceptionPipeline:
     combat_stats_reader: Reader[CombatStatsReading]
     context_reader: Reader[BoardContextReading] | None = None
 
+    def reset_run(self):
+        reset = getattr(self.combat_stats_reader, 'reset_run', None)
+        if callable(reset):
+            reset()
+
+    def memory_info(self):
+        info = getattr(self.combat_stats_reader, 'memory_info', None)
+        return info() if callable(info) else None
+
     def observe_live(
         self,
         capture: Callable[[], Any],
@@ -85,6 +94,8 @@ class PerceptionPipeline:
             )
 
         if screen.value is not ScreenKind.GAMEPLAY:
+            if screen.value is ScreenKind.RETRY:
+                self.reset_run()
             return FusedPerception(
                 screen_kind=screen.value,
                 board=None,

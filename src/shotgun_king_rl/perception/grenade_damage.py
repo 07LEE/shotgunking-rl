@@ -7,7 +7,8 @@ import cv2
 
 from ..vision.layout import normalize_game_screen
 from .hud import stat_patch
-from .types import Prediction
+from .types import Prediction, PredictionStatus
+from .frame import PreparedFrame, read_frame
 from .named_stats import named_integer_candidates
 from .numeric import numeric_token
 
@@ -79,6 +80,20 @@ class GrenadeDamageReader:
                     integers.append((attack, token))
         return cls(examples, titles=titles, integers=integers)
 
+    def has_visible_title(self, image):
+        """Return None without title evidence; a visible unreadable value is not absence."""
+        if not self.titles:
+            return None
+        for offset in (192, 256, 320):
+            row = stat_patch(image, row_offset=offset, padding=8)
+            if row is None:
+                continue
+            for _, title in self.titles:
+                if title.std() >= 5 and float(cv2.matchTemplate(
+                        row[:46], title, cv2.TM_CCOEFF_NORMED).max()) >= .90:
+                    return True
+        return False
+
     def read(self, image) -> Prediction[int]:
         try:
             image = normalize_game_screen(image)
@@ -111,3 +126,54 @@ class GrenadeDamageReader:
             value, score = numeric
             return Prediction.accepted(value, source=self.source, confidence=score)
         return Prediction.unknown(source=self.source, reason="grenade_damage_no_match")
+
+
+class RetainedGrenadeDamageReader:
+    """Retain an observed damage value within one live game, never a preset.
+
+    Offline readers stay stateless. A visible but unreadable damage row
+    invalidates memory because it may contain a changed value.
+    """
+
+    source = 'grenade-damage:retained-v1'
+
+    def __init__(self, reader):
+        self.reader = reader
+        self.reset_run()
+
+    def reset_run(self):
+        self.value = None
+        self.observed_source = None
+        self.observed_confidence = None
+        self.used_memory = False
+
+    def memory_info(self):
+        return {'value': self.value, 'observed_source': self.observed_source,
+                'observed_confidence': self.observed_confidence, 'used_memory': self.used_memory}
+
+    def read(self, image):
+        return self.read_prepared(PreparedFrame(image))
+
+    def read_prepared(self, frame):
+        self.used_memory = False
+        result = read_frame(self.reader, frame)
+        if result.is_accepted:
+            if type(result.value) is not int or result.value < 0:
+                self.reset_run()
+                return Prediction.rejected(None, source=self.source, reason='invalid_grenade_damage')
+            self.value = result.value
+            self.observed_source, self.observed_confidence = result.source, result.confidence
+            return result
+        if result.status is PredictionStatus.REJECTED or result.reason == 'grenade_damage_ambiguous':
+            self.reset_run()
+            return result
+        if (result.status is not PredictionStatus.UNKNOWN or frame.image is None
+                or result.reason not in ('grenade_damage_not_found', 'grenade_damage_no_match')):
+            return result
+        visible = self.reader.has_visible_title(frame.image)
+        if visible is True:
+            self.reset_run()
+        elif visible is False and self.value is not None:
+            self.used_memory = True
+            return Prediction.accepted(self.value, source=self.source)
+        return result
