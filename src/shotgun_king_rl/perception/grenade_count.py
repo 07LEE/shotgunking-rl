@@ -12,7 +12,8 @@ from .types import Prediction
 
 def grenade_count_patch(image):
     """Return the two calibrated grenade slots beside the reserve ammo HUD."""
-    return cv2.cvtColor(image[78:112, 592:642], cv2.COLOR_BGR2GRAY)
+    # The bottom two rows of the old crop included pixels below the slots.
+    return cv2.cvtColor(image[78:110, 592:642], cv2.COLOR_BGR2GRAY)
 
 
 def grenade_context_patch(image):
@@ -77,12 +78,14 @@ class GrenadeCountReader:
             return Prediction.unknown(source=self.source, reason="invalid_image")
         if query is None or query.std() < 5:
             # A blank crop alone is never a zero. Require the reviewed slots
-            # exactly and visible surrounding HUD from a reviewed train zero.
+            # within one grayscale level and visible surrounding HUD from a
+            # reviewed train zero. Shape changes must still stay unknown.
             context = grenade_context_patch(image)
             scores = [float(cv2.matchTemplate(context, reference, cv2.TM_CCOEFF_NORMED)[0, 0])
                       for (reference, slots), deviation in zip(self.zero_examples, self._zero_stds)
                       if deviation >= 5 and context.shape == reference.shape
-                      and context.std() >= 5 and np.array_equal(query, slots)]
+                      and context.std() >= 5 and query.shape == slots.shape
+                      and np.max(np.abs(query.astype(np.int16) - slots.astype(np.int16))) <= 1]
             if scores and max(scores) >= .97:
                 return Prediction.accepted(0, source=self.source, confidence=max(scores))
             return Prediction.unknown(source=self.source, reason="grenades_remaining_not_found")
