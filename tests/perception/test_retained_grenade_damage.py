@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -24,6 +25,10 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
     def setUp(self):
         self.image = np.zeros((720, 1280, 3), np.uint8)
         self.raw = DamageReader(Prediction.unknown(source='raw:test', reason='grenade_damage_not_found'))
+        self.visibility_patch = patch('shotgun_king_rl.perception.grenade_damage.propose_combat_visibility',
+                                      return_value={'grenade_damage': 'not_displayed'})
+        self.visibility = self.visibility_patch.start()
+        self.addCleanup(self.visibility_patch.stop)
         self.reader = RetainedGrenadeDamageReader(self.raw)
 
     def observe(self, value=2):
@@ -69,6 +74,26 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
             self.assertIsNone(self.reader.read(self.image).value)
             self.assertIsNone(self.hide().value)
 
+    def test_occluded_or_uncertain_panels_never_reuse_memory(self):
+        for status in ('occluded', 'unknown'):
+            with self.subTest(status=status):
+                self.observe()
+                self.visibility.return_value = {'grenade_damage': status}
+                result = self.hide()
+                self.assertFalse(result.is_accepted)
+                self.assertEqual(result.reason, 'grenade_damage_' + status)
+                self.assertFalse(self.reader.memory_info()['used_memory'])
+                self.assertEqual(self.reader.memory_info()['value'], 2)
+                self.visibility.return_value = {'grenade_damage': 'not_displayed'}
+                self.assertEqual(self.hide().value, 2)
+
+    def test_unreadable_classification_invalidates_memory(self):
+        self.observe()
+        self.visibility.return_value = {'grenade_damage': 'unreadable'}
+        self.assertIsNone(self.hide().value)
+        self.visibility.return_value = {'grenade_damage': 'not_displayed'}
+        self.assertIsNone(self.hide().value)
+
     def test_invalid_image_cannot_return_memory(self):
         self.observe()
         self.raw.prediction = Prediction.unknown(source='raw:test', reason='invalid_image')
@@ -93,7 +118,7 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
         self.assertIn('attack:missing', result.reason)
         self.assertNotIn('grenade_damage:', result.reason)
 
-    def test_card_selection_keeps_memory_but_retry_clears_it(self):
+    def test_card_selection_and_retry_clear_memory(self):
         combat = make_reader()
         combat.grenade_damage_reader = self.reader
         board = np.zeros((8, 8), dtype=np.int8)
@@ -104,7 +129,13 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
                                       combat, NormalContextReader(board))
         self.observe()
         pipeline.observe(self.image)
-        self.assertEqual(pipeline.memory_info()['value'], 2)
+        self.assertIsNone(pipeline.memory_info()['value'])
+        self.assertIsNone(self.hide().value)
+        # Returning to gameplay cannot resurrect the pre-card value.
+        screen_reader.prediction = Prediction.accepted(ScreenKind.GAMEPLAY, source='screen:test')
+        self.assertFalse(pipeline.observe(self.image).ready_for_policy)
+        self.observe(3)
+        self.assertEqual(pipeline.observe(self.image).combat_stats.grenade_damage, 3)
         screen_reader.prediction = Prediction.accepted(ScreenKind.RETRY, source='screen:test')
         pipeline.observe(self.image)
         self.assertIsNone(pipeline.memory_info()['value'])
@@ -123,6 +154,37 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
         self.assertIsNone(subject.read(screen(case, digits='8')).value)
         self.assertIsNone(subject.read(hidden).value)
 
+    def test_real_panel_classification_requires_clean_known_rows(self):
+        from tests.perception.test_visibility_proposals import hud
+        from shotgun_king_rl.perception.hud import stat_patch
+
+        self.visibility_patch.stop()
+        image = hud()
+        titles = [(field, stat_patch(image, offset)[:30]) for field, offset in
+                  (('attack', 0), ('range', 64), ('spread_degrees', 128))]
+        # Remove the optional row; all three main titles stay intact.
+        clean = image.copy()
+        clean[380:650, 270:354] = 0
+        reader = RetainedGrenadeDamageReader(self.raw, visibility_titles=titles)
+        self.raw.prediction = Prediction.accepted(2, source='raw:test')
+        reader.read(clean)
+        self.raw.prediction = Prediction.unknown(source='raw:test', reason='grenade_damage_no_match')
+        with patch('shotgun_king_rl.perception.visibility_proposals.check_gameplay_board', return_value=True):
+            self.assertEqual(reader.read(clean).value, 2)
+            # A foreign optional title cannot establish absence.
+            self.assertFalse(reader.read(image).is_accepted)
+            hearts = clean.copy()
+            import cv2
+            for x in (280, 300, 320):
+                cv2.rectangle(hearts, (x, 350), (x+11, 361), (80, 0, 255), -1)
+            self.assertEqual(reader.read(hearts).reason, 'grenade_damage_occluded')
+            self.assertEqual(reader.read(np.zeros_like(clean)).reason, 'grenade_damage_unknown')
+            empty_bank = RetainedGrenadeDamageReader(self.raw)
+            empty_bank.value = 2
+            self.assertFalse(empty_bank.read(clean).is_accepted)
+        with patch('shotgun_king_rl.perception.visibility_proposals.check_gameplay_board', return_value=False):
+            self.assertFalse(reader.read(clean).is_accepted)
+
     def test_live_factory_enables_memory_and_offline_factory_stays_stateless(self):
         with tempfile.TemporaryDirectory() as directory:
             offline, _ = build_combat_reader(directory)
@@ -130,3 +192,4 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
             self.assertIsInstance(offline.grenade_damage_reader, GrenadeDamageReader)
             self.assertIsInstance(pipeline.combat_stats_reader.grenade_damage_reader, RetainedGrenadeDamageReader)
             self.assertEqual(metadata['readers']['grenade_damage_reader']['memory_policy'], 'last_observed_in_current_run')
+            self.assertEqual(metadata['readers']['grenade_damage_reader']['reuse_condition'], 'verified_not_displayed')

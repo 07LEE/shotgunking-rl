@@ -94,7 +94,7 @@ class PerceptionPipeline:
             )
 
         if screen.value is not ScreenKind.GAMEPLAY:
-            if screen.value is ScreenKind.RETRY:
+            if screen.value in (ScreenKind.RETRY, ScreenKind.CARD_SELECTION):
                 self.reset_run()
             return FusedPerception(
                 screen_kind=screen.value,

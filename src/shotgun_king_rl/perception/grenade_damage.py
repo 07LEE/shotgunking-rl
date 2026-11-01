@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 
 from .visibility import visual_combat_stats
+from .visibility_proposals import propose_combat_visibility
 
 from ..vision.layout import normalize_game_screen
 from .hud import stat_patch
@@ -133,14 +134,16 @@ class GrenadeDamageReader:
 class RetainedGrenadeDamageReader:
     """Retain an observed damage value within one live game, never a preset.
 
-    Offline readers stay stateless. A visible but unreadable damage row
-    invalidates memory because it may contain a changed value.
+    Offline readers stay stateless. Reuse requires a recognized clean panel
+    with no damage row. Occluded/unknown panels return unknown without erasing
+    memory; a visible unreadable damage row invalidates the remembered value.
     """
 
-    source = 'grenade-damage:retained-v1'
+    source = 'grenade-damage:retained-v2'
 
-    def __init__(self, reader):
+    def __init__(self, reader, *, visibility_titles=()):
         self.reader = reader
+        self.visibility_titles = tuple((name, title.copy()) for name, title in visibility_titles)
         self.reset_run()
 
     def reset_run(self):
@@ -175,7 +178,11 @@ class RetainedGrenadeDamageReader:
         visible = self.reader.has_visible_title(frame.image)
         if visible is True:
             self.reset_run()
-        elif visible is False and self.value is not None:
+            return result
+        status = propose_combat_visibility(frame.image, {}, self.visibility_titles)['grenade_damage']
+        if status == 'unreadable':
+            self.reset_run()
+        elif status == 'not_displayed' and self.value is not None:
             self.used_memory = True
             return Prediction.accepted(self.value, source=self.source)
-        return result
+        return Prediction.unknown(source=self.source, reason=f'grenade_damage_{status}')
