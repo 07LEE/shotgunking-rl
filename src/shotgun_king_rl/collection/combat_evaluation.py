@@ -63,6 +63,8 @@ def build_combat_reader(collection, title_annotation=None):
     }
     metadata["readers"]["melee_reader"]["zero_references"] = len(melee.zero_examples)
     metadata["readers"]["grenade_count_reader"]["zero_references"] = len(readers["grenade_count_reader"].zero_examples)
+    metadata["readers"]["grenade_damage_reader"]["title_references"] = len(readers["grenade_damage_reader"].titles)
+    metadata["readers"]["grenade_damage_reader"]["integer_references"] = len(readers["grenade_damage_reader"].integers)
     digest = hashlib.sha256()
     for path in sorted((collection / "sessions").glob("*/annotations/*.json")):
         raw = path.read_bytes()
