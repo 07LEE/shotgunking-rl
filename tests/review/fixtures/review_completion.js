@@ -49,6 +49,7 @@
         $('showCompleted').checked = true; await $('showCompleted').onchange(); await idle();
         await pick(id('play', 'a-complete'));
         check($('attack').disabled && $('approve').disabled && $('draft').disabled, 'completed task is read-only');
+        check($('grenade_damage_visibility').value === 'occluded' && $('grenade_damage_visibility').selectedOptions[0].textContent.includes('suggested') && $('grenade_damage_visibility').disabled, 'automatic draft is shown separately from reviewed labels');
         const oldRevision = revision; await save(false);
         check(revision === oldRevision, 'read-only review cannot be saved accidentally');
         await task('pieces');
@@ -60,9 +61,14 @@
         $('ammo_loaded').value = '1'; $('ammo_loaded').oninput(); await save(false);
         let saved = await stored(id('play', 'a-complete'));
         check(saved.confirmed && saved.screen_state.reviews.screen_kind && !saved.screen_state.reviews.ammo && saved.screen_state.ammo.loaded === 1, 'progress save preserves unrelated approvals');
+        check(!Object.hasOwn(saved.screen_state.combat_visibility, 'grenade_damage') && saved.screen_state.reviews.combat_stats, 'saving another section cannot silently approve a visibility draft');
         await $('approve').onclick(); await idle();
         saved = await stored(id('play', 'a-complete'));
         check(saved.screen_state.reviews.ammo, 'complete action restores the edited approval');
+        await pick(id('play', 'a-complete'));
+        document.querySelector('[aria-label="Edit reviewed combat stats"]').click();
+        await save(true); await idle(); saved = await stored(id('play', 'a-complete'));
+        check(saved.screen_state.combat_visibility.grenade_damage === 'occluded' && saved.screen_state.reviews.combat_stats, 'explicit combat review promotes the automatic draft');
         $('showCompleted').checked = false; await $('showCompleted').onchange(); await idle();
         check(!row(id('play', 'a-complete')) && !queueFor('finished'), 'completed work is absent from the pending queue');
         check(document.querySelector('.queue-item[aria-current="true"]').dataset.id === currentId, 'sidebar marks the selected image');

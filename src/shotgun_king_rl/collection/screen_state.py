@@ -13,6 +13,7 @@ from .loaded_ammo import loaded_shell_count, match_loaded
 from .reserve_ammo import reserve_shell_count, match_reserve
 from .named_stats import match_named_integer
 from ..perception.visibility import visual_combat_stats
+from ..perception.visibility_proposals import propose_combat_visibility
 from .optional_combat import propose_optional_combat
 from .card_recognition import propose_cards
 
@@ -150,6 +151,13 @@ def propose(screen, collection, exclude=None):
                         if key == 'attack':
                             integer_examples.append((value, token))
                     used = True
+        if reviews['screen_kind'] and reviews['combat_stats'] and state.get('screen_kind') == 'gameplay':
+            stats = visual_combat_stats(state)
+            for field in ('penetration_percent', 'knockback_percent', 'melee_damage'):
+                if type(stats.get(field)) is int and stats[field] > 0:
+                    row = stat_patch(image, 192)
+                    if row is not None:
+                        optional_titles.append((field, row[:30]))
         reviewed_souls = state.get('souls')
         if reviews['soul'] and reviewed_souls is not None and len(reviewed_souls) <= 1:
             souls.append(((reviewed_souls or ['none'])[0], patch(image, SOUL_REGION)))
@@ -241,7 +249,11 @@ def propose(screen, collection, exclude=None):
         if card_result['cards'][side] is not None:
             state['cards'][side] = card_result['cards'][side]
     state['card_choices'] = card_result['card_choices']
-    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v9', 'card_recognition': card_result, 'optional_combat': optional_evidence, 'floor_method': floor_method, 'loaded_method': loaded_method, 'reserve_method': reserve_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
+    visibility_titles = list(optional_titles)
+    for field, examples in stat_examples.items():
+        visibility_titles.extend((field, row[:30]) for _, row in examples)
+    state['combat_visibility'] = {field: status for field, status in propose_combat_visibility(screen, state['combat_stats'], visibility_titles).items() if status != 'unknown'}
+    return {'floor': floor_result[0] if floor_result else None, 'screen_state': state, 'prediction': {'method': 'reviewed-region-template-v9', 'combat_visibility': state['combat_visibility'], 'card_recognition': card_result, 'optional_combat': optional_evidence, 'floor_method': floor_method, 'loaded_method': loaded_method, 'reserve_method': reserve_method, 'numeric_fields': numeric_fields, 'confidence': confidence, 'references': references, 'human_review_required': True}}
 
 
 def _reviews(state):

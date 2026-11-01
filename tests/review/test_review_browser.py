@@ -38,6 +38,8 @@ class ReviewBrowserTests(unittest.TestCase):
                     reviews = {key: True for key in reviews}
                     data['floor'] = None
                 data['screen_state'] = {'screen_kind': 'gameplay', 'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4}, 'souls': [], 'reviews': reviews}
+                if name == 'a-complete':
+                    data['prediction'] = {'combat_visibility': {'grenade_damage': 'occluded'}}
                 if name in ('card-screen', 'finish-card'):
                     data['screen_state']['screen_kind'] = 'card_selection'
                     data['confirmed'] = False
@@ -70,7 +72,7 @@ class ReviewBrowserTests(unittest.TestCase):
                 self.assertIsNotNone(match, result.stderr[-1500:] + result.stdout[-2000:])
                 report = json.loads(html.unescape(match.group(1)))
                 self.assertTrue(report['ok'], json.dumps(report, indent=2))
-                self.assertEqual(len(report['checks']), 36)
+                self.assertEqual(len(report['checks']), 39)
             finally:
                 server.shutdown()
                 server.server_close()

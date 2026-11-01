@@ -204,7 +204,16 @@ async function load() {
         const item = savedItem(); item.confirmed = data.confirmed; item.screen_kind = data.screen_state.screen_kind; item.reviews = { ...data.screen_state.reviews };
         $('screenKind').value = data.screen_state.screen_kind ?? '';
         for (const [key, input] of Object.entries(ammoInputs)) $(input).value = data.screen_state.ammo?.[key] ?? '';
-        for (const key of combatFields) { $(key).value = data.screen_state.combat_stats?.[key] ?? ''; $(key + '_visibility').value = data.screen_state.combat_visibility?.[key] ?? ''; }
+        for (const key of combatFields) {
+            $(key).value = data.screen_state.combat_stats?.[key] ?? '';
+            const canonical = data.screen_state.combat_visibility?.[key];
+            const draft = data.prediction?.combat_visibility?.[key];
+            const select = $(key + '_visibility'); select.value = canonical ?? draft ?? '';
+            for (const option of select.options) {
+                const base = visibilityOptions.find(([value]) => value === option.value)[1];
+                option.textContent = (key === 'range_min' ? 'Min: ' : key === 'range_max' ? 'Max: ' : '') + base + (canonical === undefined && draft === option.value ? ' (suggested)' : '');
+            }
+        }
         for (const [section, input] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(input).checked = data.screen_state.reviews[section] === true;
         renderSoulSlots(data.screen_state.souls);
         $('fullImage').src = '/api/screen?id=' + encodeURIComponent(id); $('fullLink').href = $('fullImage').src; $('openOriginal').href = $('fullImage').src;
@@ -261,7 +270,7 @@ async function save(confirmed) {
         }
         $('floor').setCustomValidity('');
         const ammo = Object.fromEntries(Object.entries(ammoInputs).map(([key, id]) => [key, $(id).value === '' ? null : Number($(id).value)]));
-        const combat_visibility = Object.fromEntries(combatFields.filter(key => $(key + '_visibility').value).map(key => [key, $(key + '_visibility').value]));
+        const combat_visibility = sectionLocked('combat_stats') ? { ...data.screen_state.combat_visibility } : Object.fromEntries(combatFields.filter(key => $(key + '_visibility').value).map(key => [key, $(key + '_visibility').value]));
         const combat_stats = Object.fromEntries(combatFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
         if ([...Object.values(ammo), ...Object.values(combat_stats)].some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Numeric values must be nonnegative integers.');
         const screen_kind = $('screenKind').value || null;
@@ -446,6 +455,7 @@ $('predictState').onclick = async () => {
         if (currentReviewTab === 'screen_kind' && !$('floor').disabled && $('floor').value === '' && result.floor !== null) { $('floor').value = result.floor; count++; }
         for (const [key, id] of Object.entries(ammoInputs)) if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('ammo') && $(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
         for (const key of combatFields) if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('combat_stats') && ['', 'visible'].includes($(key + '_visibility').value) && $(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
+        for (const key of combatFields) if (currentReviewTab === 'screen_kind' && !sectionLocked('combat_stats') && !$(key + '_visibility').value && result.screen_state.combat_visibility?.[key] && result.screen_state.combat_visibility[key] !== 'unknown') { $(key + '_visibility').value = result.screen_state.combat_visibility[key]; count++; $('combatReviewed').checked = false; }
         if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('soul') && !$('soulReviewed').checked && result.screen_state.souls !== null) { renderSoulSlots(result.screen_state.souls); $('soulReviewed').checked = false; count++; }
         if (count) dirty = true;
         status(count ? 'Filled ' + count + ' fields. Review predictions before saving.' : 'No confident matches. Add reviewed examples with known values first.');
