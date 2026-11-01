@@ -118,7 +118,7 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
         self.assertIn('attack:missing', result.reason)
         self.assertNotIn('grenade_damage:', result.reason)
 
-    def test_card_selection_keeps_memory_but_retry_clears_it(self):
+    def test_card_selection_and_retry_clear_memory(self):
         combat = make_reader()
         combat.grenade_damage_reader = self.reader
         board = np.zeros((8, 8), dtype=np.int8)
@@ -129,7 +129,13 @@ class RetainedGrenadeDamageTests(unittest.TestCase):
                                       combat, NormalContextReader(board))
         self.observe()
         pipeline.observe(self.image)
-        self.assertEqual(pipeline.memory_info()['value'], 2)
+        self.assertIsNone(pipeline.memory_info()['value'])
+        self.assertIsNone(self.hide().value)
+        # Returning to gameplay cannot resurrect the pre-card value.
+        screen_reader.prediction = Prediction.accepted(ScreenKind.GAMEPLAY, source='screen:test')
+        self.assertFalse(pipeline.observe(self.image).ready_for_policy)
+        self.observe(3)
+        self.assertEqual(pipeline.observe(self.image).combat_stats.grenade_damage, 3)
         screen_reader.prediction = Prediction.accepted(ScreenKind.RETRY, source='screen:test')
         pipeline.observe(self.image)
         self.assertIsNone(pipeline.memory_info()['value'])
