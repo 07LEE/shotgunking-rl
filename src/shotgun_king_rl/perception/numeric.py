@@ -73,3 +73,14 @@ def match_numeric(query, context, examples):
     if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .08:
         return None
     return ranked[0]
+
+
+def match_numeric_with_title(query, context, examples):
+    """Require an independent matching title as well as numeric/row evidence."""
+    if query is None or context is None:
+        return None
+    titles = [row[:30] for _, _, row in examples if row[:30].std() >= 5]
+    if not titles or max(float(cv2.matchTemplate(context[:46], title, cv2.TM_CCOEFF_NORMED).max())
+                         for title in titles) < .90:
+        return None
+    return match_numeric(query, context, examples)

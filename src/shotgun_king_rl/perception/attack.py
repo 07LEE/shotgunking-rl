@@ -8,6 +8,7 @@ import cv2
 from .visibility import visual_combat_stats
 
 from ..vision.layout import normalize_game_screen
+from .numeric import numeric_token, match_numeric_with_title
 from .hud import stat_patch
 from .types import Prediction
 
@@ -19,19 +20,21 @@ def attack_patch(image):
 class AttackReader:
     """Return only attack; other combat fields remain unavailable to policy.
 
-    This recognizes reviewed whole HUD values, not arbitrary unseen numbers.
+    Match reviewed whole rows or complete numeric shapes with matching row context.
     References must come from train; val and test are evaluation inputs only.
     """
 
-    source = "attack-reviewed-templates:v1"
+    source = "attack-reviewed-templates:v2"
 
-    def __init__(self, examples=()):
+    def __init__(self, examples=(), *, numeric_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
         self._template_stds = tuple(template.std() for _, template in self.examples)
+        self.numeric_examples = tuple((value, token.copy(), row.copy()) for value, token, row in numeric_examples)
 
     @classmethod
     def from_collection(cls, collection):
         examples = []
+        numeric_examples = []
         for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
@@ -55,7 +58,10 @@ class AttackReader:
             template = attack_patch(image)
             if template is not None:
                 examples.append((value, template))
-        return cls(examples)
+                token = numeric_token(image, 0)
+                if token is not None:
+                    numeric_examples.append((examples[-1][0], token, template))
+        return cls(examples, numeric_examples=numeric_examples)
 
     def read(self, image) -> Prediction[int]:
         try:
@@ -73,6 +79,10 @@ class AttackReader:
             scores[value] = max(scores.get(value, -1), score)
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .97:
+            numeric = match_numeric_with_title(numeric_token(image, 0), stat_patch(image, 0, padding=8), self.numeric_examples)
+            if numeric is not None:
+                value, score = numeric
+                return Prediction.accepted(value, source=self.source, confidence=score)
             return Prediction.unknown(source=self.source, reason="attack_no_match")
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .04:
             return Prediction.unknown(source=self.source, reason="attack_ambiguous")

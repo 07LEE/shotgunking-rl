@@ -30,6 +30,9 @@ def build_combat_reader(collection, title_annotation=None):
         name: {"source": reader.source, "references": len(reader.examples)} if reader is not None else None
         for name, reader in readers.items()
     }
+    for name, reader in readers.items():
+        if hasattr(reader, 'numeric_examples'):
+            metadata['readers'][name]['numeric_references'] = len(reader.numeric_examples)
     metadata["readers"]["melee_reader"]["zero_references"] = len(melee.zero_examples)
     metadata["readers"]["grenade_count_reader"]["zero_references"] = len(readers["grenade_count_reader"].zero_examples)
     metadata["readers"]["grenade_damage_reader"]["title_references"] = len(readers["grenade_damage_reader"].titles)

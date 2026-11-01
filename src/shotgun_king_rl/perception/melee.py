@@ -8,6 +8,7 @@ import cv2
 from .visibility import visual_combat_stats
 
 from ..vision.layout import normalize_game_screen
+from .numeric import numeric_token, match_numeric_with_title
 from .hud import reviewed_zero_score, stat_context_patch, stat_patch
 from .types import Prediction
 
@@ -20,19 +21,20 @@ def melee_damage_patch(image):
 class MeleeDamageReader:
     """Return visible melee damage as an integer; other combat fields remain unavailable to policy.
 
-    This recognizes reviewed whole HUD values, not arbitrary unseen numbers.
+    Match reviewed whole rows or complete numeric shapes with matching row context.
     References must come from train; val and test are evaluation inputs only.
     Positive references require a verified matching title. Zero means melee is
     unavailable and requires a reviewed matching panel and exact optional row.
     A missing or unreadable row alone never proves that melee is unavailable.
     """
 
-    source = "melee-damage-reviewed-templates:v2"
+    source = "melee-damage-reviewed-templates:v3"
 
-    def __init__(self, examples=(), zero_examples=()):
+    def __init__(self, examples=(), zero_examples=(), *, numeric_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples
                               if type(value) is int and value > 0)
         self._template_stds = tuple(template.std() for _, template in self.examples)
+        self.numeric_examples = tuple((value, token.copy(), row.copy()) for value, token, row in numeric_examples)
         self.zero_examples = tuple((context.copy(), row.copy()) for context, row in zero_examples)
         self._zero_stds = tuple(context.std() for context, _ in self.zero_examples)
 
@@ -47,6 +49,7 @@ class MeleeDamageReader:
                 title_reference.shape != (30, 84) or title_reference.std() < 5):
             raise ValueError("A visible melee title reference is required")
         examples = []
+        numeric_examples = []
         zero_examples = []
         for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
             if exclude is not None and path.resolve() == Path(exclude).resolve():
@@ -82,7 +85,10 @@ class MeleeDamageReader:
                 )[0, 0])
                 if title_score >= .97:
                     examples.append((value, template))
-        return cls(examples, zero_examples)
+                    token = numeric_token(image, 192)
+                    if token is not None:
+                        numeric_examples.append((examples[-1][0], token, template))
+        return cls(examples, zero_examples, numeric_examples=numeric_examples)
 
     def read(self, image) -> Prediction[int]:
         try:
@@ -106,6 +112,10 @@ class MeleeDamageReader:
             return Prediction.unknown(source=self.source, reason="melee_damage_not_found")
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .97:
+            numeric = match_numeric_with_title(numeric_token(image, 192), stat_patch(image, 192, padding=8), self.numeric_examples)
+            if numeric is not None:
+                value, score = numeric
+                return Prediction.accepted(value, source=self.source, confidence=score)
             return Prediction.unknown(source=self.source, reason="melee_damage_no_match")
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .04:
             return Prediction.unknown(source=self.source, reason="melee_damage_ambiguous")
