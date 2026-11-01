@@ -6,15 +6,19 @@ import numpy as np
 from .hud import _stat_anchor
 
 
-def numeric_token(image, offset=0):
-    """Normalize a complete value, retaining separators and relative spacing."""
+def numeric_token(image, offset=0, *, threshold=140):
+    """Normalize a complete value, retaining separators and relative spacing.
+
+    Dim strokes may need a lower extraction threshold; matching confidence
+    and ambiguity thresholds remain independent.
+    """
     anchor = _stat_anchor(image)
     if anchor is None:
         return None
     top, bottom = anchor + offset - 3, anchor + offset + 30
     if top < 0 or bottom > image.shape[0]:
         return None
-    mask = (image[top:bottom, 270:354].max(axis=2) > 140).astype(np.uint8)
+    mask = (image[top:bottom, 270:354].max(axis=2) > threshold).astype(np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 2), np.uint8))
     ys, xs = np.where(mask)
     if len(xs) < 10:

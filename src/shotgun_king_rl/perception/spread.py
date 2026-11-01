@@ -25,7 +25,7 @@ class SpreadReader:
     References must come from train; val and test are evaluation inputs only.
     """
 
-    source = "spread-reviewed-templates:v2"
+    source = "spread-reviewed-templates:v3"
 
     def __init__(self, examples=(), *, numeric_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
@@ -59,7 +59,7 @@ class SpreadReader:
             template = spread_patch(image)
             if template is not None:
                 examples.append((value, template))
-                token = numeric_token(image, 128)
+                token = numeric_token(image, 128, threshold=120)
                 if token is not None:
                     numeric_examples.append((examples[-1][0], token, template))
         return cls(examples, numeric_examples=numeric_examples)
@@ -80,7 +80,7 @@ class SpreadReader:
             scores[value] = max(scores.get(value, -1), score)
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .97:
-            numeric = match_numeric_with_title(numeric_token(image, 128), stat_patch(image, 128, padding=8), self.numeric_examples)
+            numeric = match_numeric_with_title(numeric_token(image, 128, threshold=120), stat_patch(image, 128, padding=8), self.numeric_examples)
             if numeric is not None:
                 value, score = numeric
                 return Prediction.accepted(value, source=self.source, confidence=score)

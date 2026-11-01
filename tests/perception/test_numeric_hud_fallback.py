@@ -29,6 +29,18 @@ class NumericHudFallbackTests(unittest.TestCase):
                 self.assertFalse(reader.read(self.shifted(screen(case, seed=11))).is_accepted)
                 self.assertFalse(reader.read(self.shifted(screen(case, digits=case.unseen or '8'))).is_accepted)
 
+    def test_spread_keeps_dim_strokes_without_changing_other_fields(self):
+        case = next(case for case in CASES if case.name == 'spread')
+        reference = screen(case)
+        dimmed = reference.copy()
+        region = dimmed[350:420]
+        region[region > 140] = 130
+        self.assertIsNone(numeric_token(dimmed, case.offset))
+        token = numeric_token(reference, case.offset, threshold=120)
+        reader = case.reader(numeric_examples=[(case.value, token, case.patch(reference))])
+        self.assertEqual(reader.read(dimmed).value, case.value)
+        self.assertFalse(reader.read(screen(case, digits='180')).is_accepted)
+
     def test_conflicting_numeric_labels_stay_unknown_and_owned_copies_are_used(self):
         for case in self.cases():
             with self.subTest(field=case.name):
