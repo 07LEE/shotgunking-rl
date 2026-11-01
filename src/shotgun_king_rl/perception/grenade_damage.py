@@ -5,6 +5,8 @@ from pathlib import Path
 
 import cv2
 
+from .visibility import visual_combat_stats
+
 from ..vision.layout import normalize_game_screen
 from .hud import stat_patch
 from .types import Prediction, PredictionStatus
@@ -45,8 +47,8 @@ class GrenadeDamageReader:
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}
-            value = (state.get("combat_stats") or {}).get("grenade_damage")
-            attack = (state.get("combat_stats") or {}).get("attack")
+            value = visual_combat_stats(state).get("grenade_damage")
+            attack = visual_combat_stats(state).get("attack")
             valid_damage = type(value) is int and value >= 0
             valid_attack = type(attack) is int and attack >= 0
             if (

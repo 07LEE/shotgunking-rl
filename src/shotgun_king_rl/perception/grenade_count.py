@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 import cv2
+
+from .visibility import visual_combat_stats
 import numpy as np
 
 from ..vision.layout import normalize_game_screen
@@ -45,7 +47,7 @@ class GrenadeCountReader:
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}
-            value = (state.get("combat_stats") or {}).get("grenades_remaining")
+            value = visual_combat_stats(state).get("grenades_remaining")
             if (
                 data.get("split") != "train"
                 or state.get("screen_kind") != "gameplay"

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import cv2
 
+from .visibility import visual_combat_stats
+
 from ..vision.layout import normalize_game_screen
 from .hud import stat_patch
 from .types import Prediction, RangeReading
@@ -35,7 +37,7 @@ class RangeReader:
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}
-            stats = state.get("combat_stats") or {}
+            stats = visual_combat_stats(state)
             minimum, maximum = stats.get("range_min"), stats.get("range_max")
             if (
                 data.get("split") != "train"

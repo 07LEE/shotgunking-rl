@@ -12,6 +12,7 @@ from .numeric import numeric_token, match_numeric, match_floor_shapes
 from .loaded_ammo import loaded_shell_count, match_loaded
 from .reserve_ammo import reserve_shell_count, match_reserve
 from .named_stats import match_named_integer
+from ..perception.visibility import visual_combat_stats
 from .optional_combat import propose_optional_combat
 from .card_recognition import propose_cards
 
@@ -114,7 +115,7 @@ def propose(screen, collection, exclude=None):
             section = 'ammo' if key in ('loaded', 'reserve') else 'combat_stats'
             if not reviews[section]:
                 continue
-            value = _section(state, section).get(key)
+            value = (visual_combat_stats(state) if section == 'combat_stats' else _section(state, section)).get(key)
             if type(value) is int and value >= 0:
                 examples[key].append((value, patch(image, box)))
                 if key == 'loaded' and loaded_shell_count(image) == value:
@@ -123,7 +124,7 @@ def propose(screen, collection, exclude=None):
                     reserve_examples.append((value, patch(image, box)))
                 used = True
         if reviews['combat_stats']:
-            stats = _section(state, 'combat_stats')
+            stats = visual_combat_stats(state)
             damage = stats.get('grenade_damage')
             if type(damage) is int and damage >= 0:
                 template = stat_patch(image, row_offset=256)

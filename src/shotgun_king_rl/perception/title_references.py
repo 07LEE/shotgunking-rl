@@ -6,6 +6,8 @@ from pathlib import Path
 
 import cv2
 
+from .visibility import visual_combat_stats
+
 from ..vision.layout import normalize_game_screen
 from .melee import melee_damage_patch
 
@@ -44,7 +46,7 @@ def load_melee_title_reference(collection, title_annotation=None, *, exclude=Non
     data = json.loads(raw)
     state = data.get('screen_state') or {}
     reviews = state.get('reviews') or {}
-    value = (state.get('combat_stats') or {}).get('melee_damage')
+    value = visual_combat_stats(state).get('melee_damage')
     if (data.get('split') != 'train' or state.get('screen_kind') != 'gameplay'
             or reviews.get('screen_kind') is not True or reviews.get('combat_stats') is not True
             or type(value) is not int or value <= 0):

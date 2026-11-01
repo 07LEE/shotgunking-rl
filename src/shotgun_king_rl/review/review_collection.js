@@ -1,5 +1,12 @@
 const ammoInputs = { loaded: 'ammo_loaded', reserve: 'ammo_reserve' };
 const combatFields = ['attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage'];
+const visibilityOptions = [['', 'Not assessed'], ['visible', 'Visible'], ['occluded', 'Occluded'], ['not_displayed', 'Not displayed'], ['unreadable', 'Unreadable'], ['unknown', 'Unknown']];
+for (const field of combatFields) {
+    const select = document.createElement('select'); select.id = field + '_visibility';
+    select.setAttribute('aria-label', field + ' visibility');
+    for (const [value, label] of visibilityOptions) select.add(new Option((field === 'range_min' ? 'Min: ' : field === 'range_max' ? 'Max: ' : '') + label, value));
+    document.getElementById(field).closest('label').append(select);
+}
 const reviewInputs = { screen_kind: 'screenKindReviewed', ammo: 'ammoReviewed', combat_stats: 'combatReviewed' };
 const independentReviewInputs = { soul: 'soulReviewed' };
 const soulPieces = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'white_king', 'special_knight'];
@@ -43,7 +50,7 @@ function syncReviewLocks() {
     if (!unavailable) $('pieceSide').disabled = piecesLocked || ['empty', 'player_king'].includes(data.board[selected[0]][selected[1]]);
     setDisabled(['screenKind', 'screenKindReviewed'], unavailable || sectionLocked('screen_kind'));
     setDisabled([...Object.values(ammoInputs), 'ammoReviewed'], unavailable || sectionLocked('ammo'));
-    setDisabled([...combatFields, 'combatReviewed'], unavailable || sectionLocked('combat_stats'));
+    setDisabled([...combatFields, ...combatFields.map(key => key + '_visibility'), 'combatReviewed'], unavailable || sectionLocked('combat_stats'));
     const soulLocked = unavailable || sectionLocked('soul');
     setDisabled(['soulReviewed', 'addSoul'], soulLocked);
     for (const control of $('soulSlots').querySelectorAll('select, button')) control.disabled = soulLocked;
@@ -189,6 +196,7 @@ async function load() {
         const a = await api('/api/item?id=' + encodeURIComponent(id));
         if (id !== currentId) return;
         data = a.data; loadedId = id; editingSections.clear();
+        if (!Object.hasOwn(data.screen_state ?? {}, 'combat_visibility')) throw Error('Restart the review server to use combat visibility labels.');
         if (!Number.isInteger(data.moat_row)) throw Error('Restart the review server to use moat card controls.');
         revision = a.revision;
         $('moatActive').value = data.moat_active === true ? 'true' : data.moat_active === false ? 'false' : '';
@@ -196,7 +204,7 @@ async function load() {
         const item = savedItem(); item.confirmed = data.confirmed; item.screen_kind = data.screen_state.screen_kind; item.reviews = { ...data.screen_state.reviews };
         $('screenKind').value = data.screen_state.screen_kind ?? '';
         for (const [key, input] of Object.entries(ammoInputs)) $(input).value = data.screen_state.ammo?.[key] ?? '';
-        for (const key of combatFields) $(key).value = data.screen_state.combat_stats?.[key] ?? '';
+        for (const key of combatFields) { $(key).value = data.screen_state.combat_stats?.[key] ?? ''; $(key + '_visibility').value = data.screen_state.combat_visibility?.[key] ?? ''; }
         for (const [section, input] of Object.entries({ ...reviewInputs, ...independentReviewInputs })) $(input).checked = data.screen_state.reviews[section] === true;
         renderSoulSlots(data.screen_state.souls);
         $('fullImage').src = '/api/screen?id=' + encodeURIComponent(id); $('fullLink').href = $('fullImage').src; $('openOriginal').href = $('fullImage').src;
@@ -220,7 +228,7 @@ $('showCompleted').onchange = async () => {
     await selectVisible(true); remember();
 };
 $('locked').onchange = () => { const [r, c] = selected; data.screen_state.locked_cells = data.screen_state.locked_cells.filter(x => x[0] !== r || x[1] !== c); if ($('locked').checked) data.screen_state.locked_cells.push([r, c]); dirty = true; draw() };
-for (const id of [...Object.values(ammoInputs), ...combatFields, 'screenKind', ...Object.values(reviewInputs), ...Object.values(independentReviewInputs)]) $(id).oninput = () => { dirty = true };
+for (const id of [...Object.values(ammoInputs), ...combatFields, ...combatFields.map(key => key + '_visibility'), 'screenKind', ...Object.values(reviewInputs), ...Object.values(independentReviewInputs)]) $(id).oninput = () => { dirty = true };
 $('addSoul').onclick = () => { const souls = soulValues(); souls.push(''); renderSoulSlots(souls); $('soulReviewed').checked = true; dirty = true; $('soulSlots').lastElementChild.querySelector('select').focus(); };
 $('screenKind').addEventListener('change', syncScreenKind);
 $('label').onchange = () => { const [r, c] = selected; data.board[r][c] = $('label').value; data.piece_sides[r][c] = data.board[r][c] === 'empty' ? null : data.board[r][c] === 'player_king' ? 'ally' : data.piece_sides[r][c] ?? 'enemy'; dirty = true; draw() };
@@ -253,6 +261,7 @@ async function save(confirmed) {
         }
         $('floor').setCustomValidity('');
         const ammo = Object.fromEntries(Object.entries(ammoInputs).map(([key, id]) => [key, $(id).value === '' ? null : Number($(id).value)]));
+        const combat_visibility = Object.fromEntries(combatFields.filter(key => $(key + '_visibility').value).map(key => [key, $(key + '_visibility').value]));
         const combat_stats = Object.fromEntries(combatFields.map(key => [key, $(key).value === '' ? null : Number($(key).value)]));
         if ([...Object.values(ammo), ...Object.values(combat_stats)].some(value => value !== null && (!Number.isInteger(value) || value < 0))) throw Error('Numeric values must be nonnegative integers.');
         const screen_kind = $('screenKind').value || null;
@@ -266,7 +275,7 @@ async function save(confirmed) {
         const selectedSouls = soulValues();
         if (reviews.soul && selectedSouls.some(piece => !piece)) throw Error('Select a piece for every harvested soul slot.');
         const souls = reviews.soul ? selectedSouls : null;
-        data.screen_state = { screen_kind, ammo, combat_stats, cards, card_choices: data.screen_state.card_choices ?? null, card_reviewed_slots: data.screen_state.card_reviewed_slots ?? [], souls, locked_cells: data.screen_state.locked_cells, reviews };
+        data.screen_state = { screen_kind, ammo, combat_stats, combat_visibility, cards, card_choices: data.screen_state.card_choices ?? null, card_reviewed_slots: data.screen_state.card_reviewed_slots ?? [], souls, locked_cells: data.screen_state.locked_cells, reviews };
         const boardConfirmed = currentReviewTab === 'pieces' ? confirmed : completingPieceApproval ? true : data.confirmed;
         const pieceReviewed = (currentReviewTab === 'pieces' && confirmed) || completingPieceApproval;
         if (boardConfirmed && screen_kind === 'gameplay') {
@@ -284,11 +293,13 @@ async function save(confirmed) {
         const result = await api('/api/save', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Review-Token': token },
-            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, piece_sides: data.piece_sides, terrain: data.terrain, moat_active: data.moat_active, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, piece_reviewed: pieceReviewed })
+            body: JSON.stringify({ id: currentId, revision, screen_state: data.screen_state, board: data.board, piece_sides: data.piece_sides, terrain: data.terrain, moat_active: data.moat_active, exclude_cells: data.exclude_cells, game_crop: cropValue(), floor, split: data.split, confirmed: boardConfirmed, combat_reviewed: Boolean(confirmed && currentReviewTab === 'screen_kind' && screen_kind === 'gameplay' && !sectionLocked('combat_stats')), piece_reviewed: pieceReviewed })
         });
         revision = result.revision;
         data.confirmed = result.confirmed;
         data.piece_review = result.piece_review;
+        Object.assign(reviews, result.reviews);
+        data.screen_state.reviews = { ...reviews };
         dirty = false;
         const item = items.find(candidate => candidate.id === currentId);
         item.confirmed = result.confirmed;
@@ -434,7 +445,7 @@ $('predictState').onclick = async () => {
         if (currentReviewTab === 'screen_kind' && !sectionLocked('screen_kind') && $('screenKind').value === '' && result.screen_state.screen_kind !== null) { $('screenKind').value = result.screen_state.screen_kind; $('screenKindReviewed').checked = false; syncScreenKind(); count++; }
         if (currentReviewTab === 'screen_kind' && !$('floor').disabled && $('floor').value === '' && result.floor !== null) { $('floor').value = result.floor; count++; }
         for (const [key, id] of Object.entries(ammoInputs)) if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('ammo') && $(id).value === '' && result.screen_state.ammo[key] !== null) { $(id).value = result.screen_state.ammo[key]; count++; $('ammoReviewed').checked = false; }
-        for (const key of combatFields) if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('combat_stats') && $(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
+        for (const key of combatFields) if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('combat_stats') && ['', 'visible'].includes($(key + '_visibility').value) && $(key).value === '' && result.screen_state.combat_stats[key] !== null) { $(key).value = result.screen_state.combat_stats[key]; count++; $('combatReviewed').checked = false; }
         if (currentReviewTab === 'screen_kind' && $('screenKind').value === 'gameplay' && !sectionLocked('soul') && !$('soulReviewed').checked && result.screen_state.souls !== null) { renderSoulSlots(result.screen_state.souls); $('soulReviewed').checked = false; count++; }
         if (count) dirty = true;
         status(count ? 'Filled ' + count + ' fields. Review predictions before saving.' : 'No confident matches. Add reviewed examples with known values first.');

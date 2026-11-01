@@ -29,7 +29,8 @@ def fill_unknowns(data, proposal):
             continue
         values = state.setdefault(section, {})
         for field, value in predicted.get(section, {}).items():
-            if values.get(field) is None and value is not None:
+            if (values.get(field) is None and value is not None
+                    and (section != 'combat_stats' or state.get('combat_visibility', {}).get(field) in (None, 'visible'))):
                 values[field] = value
                 changed[f'{section}.{field}'] = value
     if not reviews.get('soul') and state.get('souls') is None and predicted.get('souls') is not None:
