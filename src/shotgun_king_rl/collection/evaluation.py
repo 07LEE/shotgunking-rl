@@ -462,7 +462,7 @@ def main():
     parser.add_argument("--sessions", type=Path, default=ROOT / "data/collection/sessions")
     parser.add_argument("--output", type=Path, help="Write the JSON report to a new file")
     parser.add_argument("--combat-stats", action="store_true", help="Include composed combat readings (defaults to train/val only)")
-    parser.add_argument("--melee-title-annotation", type=Path, help="Verified visible melee title in reviewed train data; requires --combat-stats")
+    parser.add_argument("--melee-title-annotation", type=Path, help="Override the collection melee title manifest with reviewed train data; requires --combat-stats")
     parser.add_argument("--splits", nargs="+", choices=SPLITS)
     args = parser.parse_args()
     if args.melee_title_annotation and not args.combat_stats:

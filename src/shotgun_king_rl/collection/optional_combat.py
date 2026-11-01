@@ -1,48 +1,15 @@
 """Use conservative optional-stat readers for collection proposals."""
 
-import json
-from pathlib import Path
-
-import cv2
-
 from ..perception.knockback import KnockbackReader
 from ..perception.penetration import PenetrationReader
-from ..perception.melee import MeleeDamageReader, melee_damage_patch
-from .images import normalize
+from ..perception.melee import MeleeDamageReader
+from ..perception.title_references import load_melee_title_reference
 
 
 def melee_title_reference(collection, exclude=None):
-    """Load an explicitly selected, reviewed training title, never infer one."""
-    root = Path(collection).resolve()
-    manifest = root / 'title_references.json'
-    if not manifest.exists():
-        return None
-    relative = json.loads(manifest.read_text()).get('melee_damage')
-    if relative is None:
-        return None
-    path = (root / relative).resolve()
-    if root not in path.parents or path.suffix != '.json':
-        raise ValueError('Invalid melee title reference path')
-    if exclude is not None and path == Path(exclude).resolve():
-        return None
-    data = json.loads(path.read_text())
-    state = data.get('screen_state') or {}
-    reviews = state.get('reviews') or {}
-    value = (state.get('combat_stats') or {}).get('melee_damage')
-    if (data.get('split') != 'train' or state.get('screen_kind') != 'gameplay'
-            or not reviews.get('screen_kind') or not reviews.get('combat_stats')
-            or type(value) is not int or value <= 0):
-        raise ValueError('Melee title requires a reviewed positive train reference')
-    image_path = (path.parent / data['image']).resolve()
-    if image_path.parent != (path.parent.parent / 'originals').resolve():
-        raise ValueError('Invalid melee title image path')
-    image = cv2.imread(str(image_path))
-    if image is None:
-        raise ValueError('Unreadable melee title image')
-    row = melee_damage_patch(normalize(image, data['game_crop']))
-    if row is None or row[:30].std() < 5:
-        raise ValueError('Melee title is not visible')
-    return row[:30]
+    """Use the same selected and validated title as the runtime factory."""
+    reference, _ = load_melee_title_reference(collection, exclude=exclude)
+    return reference
 
 
 def propose_optional_combat(screen, collection, exclude=None):
