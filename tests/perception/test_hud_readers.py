@@ -63,7 +63,7 @@ class HudReaderTests(unittest.TestCase):
 
     def test_melee_requires_visible_title_reference_and_filters_other_titles(self):
         case = next(case for case in CASES if case.name == 'melee_damage')
-        self.assertEqual(MeleeDamageReader.source, 'melee-damage-reviewed-templates:v2')
+        self.assertEqual(MeleeDamageReader.source, 'melee-damage-reviewed-templates:v3')
         for value in (0, -1, True, None):
             self.assertFalse(MeleeDamageReader([(value, case.patch(screen(case)))]).read(screen(case)).is_accepted)
         with tempfile.TemporaryDirectory() as directory:

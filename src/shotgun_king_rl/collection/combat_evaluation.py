@@ -4,48 +4,17 @@ import hashlib
 import json
 from pathlib import Path
 
-import cv2
-
 from ..perception import (
     AttackReader, CombatStatsReader, GrenadeCountReader, GrenadeDamageReader,
     KnockbackReader, MeleeDamageReader, PenetrationReader, RangeReader, SpreadReader,
 )
-from ..perception.melee import melee_damage_patch
-from ..vision.layout import normalize_game_screen
+from ..perception.title_references import load_melee_title_reference
 
 
 def build_combat_reader(collection, title_annotation=None):
     collection = Path(collection).resolve()
-    metadata = {"melee_title": None}
-    title_reference = None
-    if title_annotation is not None:
-        path = Path(title_annotation).resolve()
-        if not path.is_relative_to(collection / "sessions"):
-            raise ValueError("Title reference must belong to the collection")
-        raw = path.read_bytes()
-        data = json.loads(raw)
-        state = data.get("screen_state") or {}
-        reviews = state.get("reviews") or {}
-        value = (state.get("combat_stats") or {}).get("melee_damage")
-        if (data.get("split") != "train" or state.get("screen_kind") != "gameplay"
-                or reviews.get("screen_kind") is not True or reviews.get("combat_stats") is not True
-                or type(value) is not int or value <= 0):
-            raise ValueError("Title reference must be reviewed positive gameplay train data")
-        image_path = (path.parent / data.get("image", "")).resolve()
-        if image_path.parent != (path.parent.parent / "originals").resolve():
-            raise ValueError("Invalid title reference image path")
-        image = cv2.imread(str(image_path))
-        if image is None:
-            raise ValueError("Unreadable title reference image")
-        patch = melee_damage_patch(normalize_game_screen(image, data.get("game_crop")))
-        if patch is None:
-            raise ValueError("A visible melee title reference is required")
-        title_reference = patch[:30]
-        metadata["melee_title"] = {
-            "annotation": path.relative_to(collection).as_posix(),
-            "annotation_sha256": hashlib.sha256(raw).hexdigest(),
-            "image_sha256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
-        }
+    title_reference, title_metadata = load_melee_title_reference(collection, title_annotation)
+    metadata = {"melee_title": title_metadata}
     melee = MeleeDamageReader.from_collection(collection, title_reference=title_reference)
     readers = {
         "attack_reader": AttackReader.from_collection(collection),
@@ -61,8 +30,13 @@ def build_combat_reader(collection, title_annotation=None):
         name: {"source": reader.source, "references": len(reader.examples)} if reader is not None else None
         for name, reader in readers.items()
     }
+    for name, reader in readers.items():
+        if hasattr(reader, 'numeric_examples'):
+            metadata['readers'][name]['numeric_references'] = len(reader.numeric_examples)
     metadata["readers"]["melee_reader"]["zero_references"] = len(melee.zero_examples)
     metadata["readers"]["grenade_count_reader"]["zero_references"] = len(readers["grenade_count_reader"].zero_examples)
+    metadata["readers"]["grenade_damage_reader"]["title_references"] = len(readers["grenade_damage_reader"].titles)
+    metadata["readers"]["grenade_damage_reader"]["integer_references"] = len(readers["grenade_damage_reader"].integers)
     digest = hashlib.sha256()
     for path in sorted((collection / "sessions").glob("*/annotations/*.json")):
         raw = path.read_bytes()

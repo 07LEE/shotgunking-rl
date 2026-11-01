@@ -5,7 +5,10 @@ from pathlib import Path
 
 import cv2
 
+from .visibility import visual_combat_stats
+
 from ..vision.layout import normalize_game_screen
+from .numeric import numeric_token, match_numeric_with_title
 from .hud import stat_patch
 from .types import Prediction, RangeReading
 
@@ -18,24 +21,26 @@ def range_patch(image):
 class RangeReader:
     """Return only range; other combat fields remain unavailable to policy.
 
-    This recognizes reviewed whole HUD values, not arbitrary unseen numbers.
+    Match reviewed whole rows or complete numeric shapes with matching row context.
     References must come from train; val and test are evaluation inputs only.
     """
 
-    source = "range-reviewed-templates:v1"
+    source = "range-reviewed-templates:v2"
 
-    def __init__(self, examples=()):
+    def __init__(self, examples=(), *, numeric_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
         self._template_stds = tuple(template.std() for _, template in self.examples)
+        self.numeric_examples = tuple((value, token.copy(), row.copy()) for value, token, row in numeric_examples)
 
     @classmethod
     def from_collection(cls, collection):
         examples = []
+        numeric_examples = []
         for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}
-            stats = state.get("combat_stats") or {}
+            stats = visual_combat_stats(state)
             minimum, maximum = stats.get("range_min"), stats.get("range_max")
             if (
                 data.get("split") != "train"
@@ -56,7 +61,10 @@ class RangeReader:
             template = range_patch(image)
             if template is not None:
                 examples.append((RangeReading(minimum, maximum), template))
-        return cls(examples)
+                token = numeric_token(image, 64)
+                if token is not None:
+                    numeric_examples.append((examples[-1][0], token, template))
+        return cls(examples, numeric_examples=numeric_examples)
 
     def read(self, image) -> Prediction[RangeReading]:
         try:
@@ -74,6 +82,10 @@ class RangeReader:
             scores[value] = max(scores.get(value, -1), score)
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .97:
+            numeric = match_numeric_with_title(numeric_token(image, 64), stat_patch(image, 64, padding=8), self.numeric_examples)
+            if numeric is not None:
+                value, score = numeric
+                return Prediction.accepted(value, source=self.source, confidence=score)
             return Prediction.unknown(source=self.source, reason="range_no_match")
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .04:
             return Prediction.unknown(source=self.source, reason="range_ambiguous")

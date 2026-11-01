@@ -19,6 +19,7 @@ from ..collection.board_metadata import board_metadata, terrain_source, MOAT_ROW
 from ..collection.images import normalize
 from ..collection.prepare import prepare_session
 from ..collection.screen_state import propose
+from ..perception.visibility import combat_visibility
 from ..collection.card_catalog import load_catalog, slot_box
 from .cards import save_card_review
 from ..vision import analyzer
@@ -180,6 +181,7 @@ def validate_screen_state(value):
 
     return {
         'screen_kind': screen_kind,
+        'combat_visibility': combat_visibility(value),
         'ammo': {key: ammo.get(key) for key in AMMO_FIELDS},
         'combat_stats': {key: combat.get(key) for key in COMBAT_FIELDS},
         'cards': {side: cards.get(side) for side in ('left', 'right')},
@@ -218,6 +220,11 @@ def save_item(collection, payload):
         raise ValueError('Invalid piece review action')
     previous_piece_review = validate_piece_review(current)
     screen_state = validate_screen_state(payload.get('screen_state', current.get('screen_state', {})))
+    if 'combat_reviewed' in payload and type(payload['combat_reviewed']) is not bool:
+        raise ValueError('Invalid combat review action')
+    if (combat_visibility(current.get('screen_state', {})) != screen_state['combat_visibility']
+            and not payload.get('combat_reviewed', False)):
+        screen_state['reviews']['combat_stats'] = False
     piece_applicable = not (screen_state['reviews']['screen_kind'] and screen_state['screen_kind'] != 'gameplay')
     confirmed = payload['confirmed'] if piece_applicable else False
     old_sides, old_terrain = board_metadata(current)
@@ -250,7 +257,7 @@ def save_item(collection, payload):
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(current, indent=2) + '\n')
     temporary.replace(path)
-    return {'revision': hashlib.sha256(path.read_bytes()).hexdigest(), 'confirmed': current['confirmed'], 'piece_review': piece_review}
+    return {'revision': hashlib.sha256(path.read_bytes()).hexdigest(), 'confirmed': current['confirmed'], 'piece_review': piece_review, 'reviews': screen_state['reviews']}
 
 
 def make_server(collection, port=0):

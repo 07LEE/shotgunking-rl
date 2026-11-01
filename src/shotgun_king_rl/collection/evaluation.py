@@ -12,6 +12,7 @@ import numpy as np
 
 from .audit import SPLITS, COMBAT_FIELDS
 from .images import normalize
+from ..perception.visibility import combat_visibility, visual_combat_stats
 from ..perception import OverlayScreenReader, RedPixelAmmoReader, ScreenKind, TemplatePieceReader
 from ..perception.frame import PreparedFrame, read_frame
 from ..perception.types import CombatStatsReading
@@ -239,7 +240,7 @@ class CombatMetrics:
         self.statuses = Counter()
         self.reasons = Counter()
 
-    def add(self, annotation, expected, prediction, labels):
+    def add(self, annotation, expected, prediction, labels, visibility=None):
         valid = prediction.is_accepted and valid_combat_stats(prediction.value)
         self.statuses[prediction.status.value] += 1
         if prediction.reason:
@@ -248,6 +249,7 @@ class CombatMetrics:
             self.reasons["invalid_values"] += 1
         self.samples.append({
             "annotation": annotation, "expected": labels,
+            "visibility": {field: (visibility or {}).get(field, 'unknown') for field in COMBAT_FIELDS},
             "missing_labels": [field for field in COMBAT_FIELDS if labels.get(field) is None],
             "complete_valid_label": expected is not None,
             "accepted": valid,
@@ -388,10 +390,10 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
         if (combat_reader is not None and expected_kind == "gameplay"
                 and reviews.get("screen_kind") is True and reviews.get("combat_stats") is True):
             combat_prediction = read_frame(combat_reader, frame)
-            labels = state.get("combat_stats") or {}
+            labels = visual_combat_stats(state)
             combat_expected = _expected_combat(labels)
             for bucket in selected:
-                bucket.combat.add(relative, combat_expected, combat_prediction, labels)
+                bucket.combat.add(relative, combat_expected, combat_prediction, labels, combat_visibility(state))
 
         if (screen_prediction is not None and piece_prediction is not None and ammo_prediction is not None
                 and (combat_reader is None or combat_prediction is not None)):
@@ -462,7 +464,7 @@ def main():
     parser.add_argument("--sessions", type=Path, default=ROOT / "data/collection/sessions")
     parser.add_argument("--output", type=Path, help="Write the JSON report to a new file")
     parser.add_argument("--combat-stats", action="store_true", help="Include composed combat readings (defaults to train/val only)")
-    parser.add_argument("--melee-title-annotation", type=Path, help="Verified visible melee title in reviewed train data; requires --combat-stats")
+    parser.add_argument("--melee-title-annotation", type=Path, help="Override the collection melee title manifest with reviewed train data; requires --combat-stats")
     parser.add_argument("--splits", nargs="+", choices=SPLITS)
     args = parser.parse_args()
     if args.melee_title_annotation and not args.combat_stats:

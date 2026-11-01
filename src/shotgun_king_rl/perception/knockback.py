@@ -5,6 +5,8 @@ from pathlib import Path
 
 import cv2
 
+from .visibility import visual_combat_stats
+
 from ..vision.layout import normalize_game_screen
 from .hud import reviewed_zero_score, stat_context_patch, stat_patch
 from .types import Prediction
@@ -41,7 +43,7 @@ class KnockbackReader:
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}
-            value = (state.get("combat_stats") or {}).get("knockback_percent")
+            value = visual_combat_stats(state).get("knockback_percent")
             if (
                 data.get("split") != "train"
                 or state.get("screen_kind") != "gameplay"

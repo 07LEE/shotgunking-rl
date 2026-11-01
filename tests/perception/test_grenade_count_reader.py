@@ -94,6 +94,23 @@ class GrenadeCountReaderTests(unittest.TestCase):
             self.assertEqual(len(reader.zero_examples), 1)
             self.assertEqual(reader.read(image).value, 0)
 
+    def test_zero_ignores_pixels_below_slots_and_single_level_rounding(self):
+        image = np.zeros((720, 1280, 3), dtype=np.uint8)
+        image[40:60, 390:410] = (0, 0, 255)
+        reader = GrenadeCountReader(zero_examples=[
+            (grenade_context_patch(image), grenade_count_patch(image)),
+        ])
+        changed = image.copy()
+        changed[110:112, 602:608] = 100
+        changed[78:110, 592:642] = 1
+        self.assertEqual(reader.read(changed).value, 0)
+        changed[85:90, 600:605] = 10
+        self.assertFalse(reader.read(changed).is_accepted)
+        # Matching blank slots are insufficient when the visible HUD differs.
+        changed = image.copy()
+        changed[34:78, 382:706] = 0
+        self.assertFalse(reader.read(changed).is_accepted)
+
     def test_loads_only_reviewed_gameplay_train_counts(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
