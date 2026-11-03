@@ -67,30 +67,46 @@ def overlap_score(query, template):
     return float(2 * np.logical_and(query, template).sum() / total) if total else 0.0
 
 
-def match_numeric(query, context, examples, *, scorer=token_score):
-    """Require both reviewed row context and an unambiguous numeric shape."""
+def rank_numeric(query, context, examples, *, scorer=token_score):
+    """Rank numeric shapes whose reviewed row context matches the query row."""
     if query is None or context is None:
-        return None
+        return []
     scores = {}
     for value, token, row in examples:
         context_score = float(cv2.matchTemplate(context, row, cv2.TM_CCOEFF_NORMED).max())
         if context_score < .90:
             continue
         scores[value] = max(scores.get(value, -1), scorer(query, token))
-    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    if not ranked or ranked[0][1] < .90:
-        return None
-    if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .08:
+    return sorted(scores.items(), key=lambda item: item[1], reverse=True)
+
+
+def numeric_ambiguous(ranked):
+    """Report confident shapes that conflict, as distinct from no match."""
+    return len(ranked) > 1 and ranked[0][1] >= .90 and ranked[0][1] - ranked[1][1] < .08
+
+
+def accept_numeric(ranked):
+    if not ranked or ranked[0][1] < .90 or numeric_ambiguous(ranked):
         return None
     return ranked[0]
 
 
-def match_numeric_with_title(query, context, examples, *, scorer=token_score):
-    """Require an independent matching title as well as numeric/row evidence."""
+def match_numeric(query, context, examples, *, scorer=token_score):
+    """Require both reviewed row context and an unambiguous numeric shape."""
+    return accept_numeric(rank_numeric(query, context, examples, scorer=scorer))
+
+
+def rank_numeric_with_title(query, context, examples, *, scorer=token_score):
+    """Rank only when an independent reviewed title also matches the row."""
     if query is None or context is None:
-        return None
+        return []
     titles = [row[:30] for _, _, row in examples if row[:30].std() >= 5]
     if not titles or max(float(cv2.matchTemplate(context[:46], title, cv2.TM_CCOEFF_NORMED).max())
                          for title in titles) < .90:
-        return None
-    return match_numeric(query, context, examples, scorer=scorer)
+        return []
+    return rank_numeric(query, context, examples, scorer=scorer)
+
+
+def match_numeric_with_title(query, context, examples, *, scorer=token_score):
+    """Require an independent matching title as well as numeric/row evidence."""
+    return accept_numeric(rank_numeric_with_title(query, context, examples, scorer=scorer))

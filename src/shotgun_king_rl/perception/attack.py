@@ -8,7 +8,10 @@ import cv2
 from .visibility import visual_combat_stats
 
 from ..vision.layout import normalize_game_screen
-from .numeric import numeric_token, match_numeric_with_title, overlap_score
+from .numeric import (
+    accept_numeric, match_numeric_with_title, numeric_ambiguous, numeric_token, overlap_score,
+    rank_numeric_with_title,
+)
 from .hud import stat_patch
 from .types import Prediction
 
@@ -24,7 +27,7 @@ class AttackReader:
     References must come from train; val and test are evaluation inputs only.
     """
 
-    source = "attack-reviewed-templates:v3"
+    source = "attack-reviewed-templates:v4"
 
     def __init__(self, examples=(), *, numeric_examples=(), dim_numeric_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
@@ -85,10 +88,15 @@ class AttackReader:
             scores[value] = max(scores.get(value, -1), score)
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .97:
-            numeric = match_numeric_with_title(numeric_token(image, 0), stat_patch(image, 0, padding=8), self.numeric_examples)
+            context = stat_patch(image, 0, padding=8)
+            bright = rank_numeric_with_title(numeric_token(image, 0), context, self.numeric_examples)
+            # Dim strokes may recover a missing value, never overrule conflicting bright evidence.
+            if numeric_ambiguous(bright):
+                return Prediction.unknown(source=self.source, reason="attack_ambiguous")
+            numeric = accept_numeric(bright)
             if numeric is None:
                 numeric = match_numeric_with_title(
-                    numeric_token(image, 0, threshold=110), stat_patch(image, 0, padding=8),
+                    numeric_token(image, 0, threshold=110), context,
                     self.dim_numeric_examples, scorer=overlap_score)
             if numeric is not None:
                 value, score = numeric

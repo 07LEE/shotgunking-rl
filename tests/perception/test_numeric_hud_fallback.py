@@ -65,6 +65,18 @@ class NumericHudFallbackTests(unittest.TestCase):
         examples[0][2][:] = 0
         self.assertEqual(reader.read(references[0]).value, 3)
 
+    def test_dim_attack_never_overrules_ambiguous_bright_shapes(self):
+        case = next(case for case in CASES if case.name == 'attack')
+        query = screen(case, digits='3')
+        token, row = numeric_token(query), case.patch(query)
+        dim = [(3, numeric_token(query, threshold=110), row)]
+        rescued = case.reader(dim_numeric_examples=dim)
+        self.assertEqual(rescued.read(query).value, 3)
+        conflict = case.reader(numeric_examples=[(3, token, row), (8, token, row)], dim_numeric_examples=dim)
+        result = conflict.read(query)
+        self.assertFalse(result.is_accepted)
+        self.assertEqual(result.reason, 'attack_ambiguous')
+
     def test_conflicting_numeric_labels_stay_unknown_and_owned_copies_are_used(self):
         for case in self.cases():
             with self.subTest(field=case.name):
