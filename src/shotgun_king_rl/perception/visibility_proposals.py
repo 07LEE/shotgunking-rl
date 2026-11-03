@@ -64,6 +64,22 @@ def propose_combat_visibility(image, values, titles):
     return labels
 
 
+def combat_field_readers(combat):
+    """Map each titled HUD row to the composed combat reader that owns it."""
+    return {
+        'attack': combat.attack_reader, 'range': combat.range_reader,
+        'spread_degrees': combat.spread_reader, 'penetration_percent': combat.penetration_reader,
+        'knockback_percent': combat.knockback_reader, 'melee_damage': combat.melee_reader,
+        'grenade_damage': combat.grenade_damage_reader,
+    }
+
+
+def combat_visibility_titles(readers):
+    """Share one reviewed title bank between live memory and offline proposals."""
+    return [(field, row[:30]) for field, reader in readers.items()
+            for value, row in reader.examples if field == 'range' or value > 0]
+
+
 class CombatVisibilityClassifier:
     """Reuse one reviewed reference bank when classifying an existing collection."""
 
@@ -75,14 +91,8 @@ class CombatVisibilityClassifier:
 
         combat, metadata = build_combat_reader(collection)
         result = cls()
-        result.readers = {
-            'attack': combat.attack_reader, 'range': combat.range_reader,
-            'spread_degrees': combat.spread_reader, 'penetration_percent': combat.penetration_reader,
-            'knockback_percent': combat.knockback_reader, 'melee_damage': combat.melee_reader,
-            'grenade_damage': combat.grenade_damage_reader,
-        }
-        result.titles = [(field, row[:30]) for field, reader in result.readers.items()
-                         for value, row in reader.examples if field == 'range' or value > 0]
+        result.readers = combat_field_readers(combat)
+        result.titles = combat_visibility_titles(result.readers)
         result.metadata = metadata
         return result
 

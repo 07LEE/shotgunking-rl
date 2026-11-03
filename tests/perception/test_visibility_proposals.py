@@ -1,13 +1,16 @@
 """Visibility proposals distinguish known titles, blank rows and tooltip hearts."""
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import cv2
 import numpy as np
 
 from shotgun_king_rl.perception.hud import stat_patch
-from shotgun_king_rl.perception.visibility_proposals import propose_combat_visibility, tooltip_over_stats
+from shotgun_king_rl.perception.visibility_proposals import (
+    combat_field_readers, combat_visibility_titles, propose_combat_visibility, tooltip_over_stats,
+)
 
 
 def hud():
@@ -51,3 +54,25 @@ class VisibilityProposalTests(unittest.TestCase):
         self.assertEqual(labels['grenades_remaining'], 'unknown')
         image[350:362, 320:332] = 0
         self.assertFalse(tooltip_over_stats(image))
+
+
+class VisibilityTitleBankTests(unittest.TestCase):
+    def test_title_bank_keeps_range_and_nonzero_rows_as_title_slices(self):
+        def row(fill):
+            return np.full((40, 84), fill, np.uint8)
+
+        def reader(*examples):
+            return SimpleNamespace(examples=examples)
+
+        combat = SimpleNamespace(
+            attack_reader=reader((0, row(1)), (3, row(2))),
+            range_reader=reader((SimpleNamespace(range_min=0, range_max=0), row(3))),
+            spread_reader=reader(), penetration_reader=reader(), knockback_reader=reader(),
+            melee_reader=reader(), grenade_damage_reader=reader((0, row(4)), (2, row(5))),
+        )
+        readers = combat_field_readers(combat)
+        self.assertIs(readers['grenade_damage'], combat.grenade_damage_reader)
+        titles = combat_visibility_titles(readers)
+        self.assertEqual([(field, int(title[0, 0])) for field, title in titles],
+                         [('attack', 2), ('range', 3), ('grenade_damage', 5)])
+        self.assertTrue(all(title.shape == (30, 84) for _, title in titles))
