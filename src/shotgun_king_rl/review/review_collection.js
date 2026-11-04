@@ -389,7 +389,8 @@ function renderQueue() {
             const filename = item.id.split('/').pop().replace(/\.json$/, '');
             title.textContent = filename.replace(/^Screenshot From /, ''); button.title = filename;
             const state = document.createElement('span'); state.className = 'queue-item-state';
-            state.textContent = (active && editingSections.size ? 'Editing · review again' : needsReview(item) ? '○ Needs review' : '✓ Reviewed · read-only') + (item.floor ? ' · Floor ' + item.floor : '');
+            state.textContent = (active && editingSections.size ? 'Editing · review again' : needsReview(item) ? '○ Needs review' : '✓ Reviewed · read-only') + (item.floor ? ' · Floor ' + item.floor : '')
+                + (item.capture_reasons?.length ? ' · ' + item.capture_reasons.length + ' gap' + (item.capture_reasons.length === 1 ? '' : 's') : '');
             button.append(title, state); button.onclick = () => selectReview(item);
             entry.append(button); entries.append(entry);
         }
@@ -419,6 +420,8 @@ function renderOptions() {
         ? 'No pending ' + currentTask().label.toLowerCase() + ' reviews. Select another image or show completed work.'
         : remaining + ' pending · ' + (all.length - remaining) + ' reviewed' + (editingSections.size ? ' · Editing reviewed work; review it again before saving.' : current && !needsReview(current) ? ' · Read-only. Choose Edit to make a correction.' : '');
     $('currentScreenshot').textContent = current ? current.session + ' / ' + current.id.split('/').pop().replace(/\.json$/, '') : '';
+    const reasons = current?.capture_reasons ?? [];
+    $('captureReasons').textContent = reasons.length ? 'Auto-captured for: ' + reasons.join(' · ') : '';
     $('progress').textContent = (all.length - remaining) + '/' + all.length + ' reviewed · screenshot ' + Math.max(0, index + 1) + '/' + list.length;
     syncReviewLocks();
 }

@@ -77,6 +77,14 @@ def load_item(collection, relative):
     return path, data, image, hashlib.sha256(raw).hexdigest()
 
 
+def capture_reasons(data):
+    """Expose why automatic capture kept a screen; malformed reasons are hidden."""
+    reasons = (data.get('auto_capture') or {}).get('reasons')
+    if not isinstance(reasons, list):
+        return []
+    return [reason for reason in reasons if isinstance(reason, str)]
+
+
 AMMO_FIELDS = ('loaded', 'reserve')
 COMBAT_FIELDS = ('attack', 'range_min', 'range_max', 'spread_degrees', 'penetration_percent', 'knockback_percent', 'grenades_remaining', 'grenade_damage', 'melee_damage')
 REVIEW_SECTIONS = ('screen_kind', 'ammo', 'combat_stats', 'cards', 'soul')
@@ -303,7 +311,7 @@ def make_server(collection, port=0):
                     for path in annotation_paths(collection):
                         a = json.loads(path.read_text())
                         state = validate_screen_state(a.get('screen_state', {}))
-                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'piece_review': validate_piece_review(a), 'screen_kind': state['screen_kind'], 'reviews': state['reviews']})
+                        items.append({'id': path.relative_to(collection).as_posix(), 'session': a['session_id'], 'floor': a.get('floor'), 'confirmed': a.get('confirmed', False), 'piece_review': validate_piece_review(a), 'screen_kind': state['screen_kind'], 'reviews': state['reviews'], 'capture_reasons': capture_reasons(a)})
                     return self.reply(json.dumps(items).encode())
                 query = parse_qs(request.query)
                 path, data, image, revision = load_item(collection, query['id'][0])
