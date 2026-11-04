@@ -91,7 +91,7 @@ class DraftRecorder:
             if image is not None:
                 self.seen.add(image_digest(image))
 
-    def save(self, image):
+    def save(self, image, reasons=None):
         digest = image_digest(image)
         if digest in self.seen:
             return None
@@ -105,6 +105,8 @@ class DraftRecorder:
         data.setdefault('prediction', {})['human_review_required'] = True
         data['auto_capture'] = {'method': 'settled-screen-change-v1', 'pixel_sha256': digest,
                                 'captured_at': datetime.now(timezone.utc).isoformat()}
+        if reasons is not None:
+            data['auto_capture']['reasons'] = list(reasons)
         encoded_ok, encoded = cv2.imencode('.png', image)
         if not encoded_ok:
             raise OSError('Could not encode capture')
@@ -129,15 +131,19 @@ class DraftRecorder:
 
 
 def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
-            change_threshold=1.0, stability_threshold=0.3, stable_samples=2,
+            change_threshold=1.0, stability_threshold=0.3, stable_samples=2, selector=None,
             clock=time.monotonic, sleep=time.sleep, report=print):
-    """Poll via an injected capture function; never click, train or approve."""
+    """Poll via an injected capture function; never click, train or approve.
+
+    A selector returns reasons for keeping a settled screen; without reasons
+    the screen becomes the new baseline but is not written.
+    """
     if not math.isfinite(interval) or interval <= 0 or not math.isfinite(duration) or duration <= 0:
         raise ValueError('Interval and duration must be finite and positive')
     if type(max_images) is not int or max_images < 1:
         raise ValueError('max_images must be positive')
     detector = ChangeDetector(change_threshold, stability_threshold, stable_samples)
-    counts = dict(polls=0, saved=0, duplicates=0, capture_failures=0, unreadable_screens=0)
+    counts = dict(polls=0, saved=0, duplicates=0, skipped=0, capture_failures=0, unreadable_screens=0)
     start = clock()
     while clock() - start < duration and counts['saved'] < max_images:
         image = capture()
@@ -155,13 +161,17 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
             else:
                 if detector.consider(screen):
                     # Persist only after both stability and change checks pass.
-                    annotation = recorder.save(image)
+                    reasons = selector(screen) if selector is not None else None
+                    annotation = recorder.save(image, reasons) if reasons is None or reasons else False
                     detector.mark_saved(screen)
-                    if annotation is None:
+                    if annotation is False:
+                        counts['skipped'] += 1
+                    elif annotation is None:
                         counts['duplicates'] += 1
                     else:
                         counts['saved'] += 1
-                        report(f'Draft saved: {annotation}')
+                        detail = f' ({", ".join(reasons)})' if reasons else ''
+                        report(f'Draft saved: {annotation}{detail}')
         if counts['saved'] < max_images:
             sleep(interval)
     return counts
@@ -214,6 +224,12 @@ def main():
     parser.add_argument('--stability-threshold', type=float, default=0.3)
     parser.add_argument('--stable-samples', type=int, default=2)
     parser.add_argument('--crop', type=int, nargs=4, metavar=('LEFT', 'TOP', 'RIGHT', 'BOTTOM'))
+    parser.add_argument('--save-all', action='store_true',
+                        help='Save every settled change instead of only recognition gaps')
+    parser.add_argument('--min-examples', type=int, default=3,
+                        help='Values with fewer reviewed train examples count as rare')
+    parser.add_argument('--max-per-reason', type=int, default=5,
+                        help='Stop selecting a reason once this many drafts await review')
     args = parser.parse_args()
     if not args.window_title.strip():
         parser.error('A nonempty game window title is required')
@@ -225,11 +241,19 @@ def main():
                 and math.isfinite(args.duration) and args.duration > 0 and args.max_images > 0):
             raise ValueError('Interval, duration and max-images must be positive and finite')
         recorder = DraftRecorder(args.collection, args.session, args.crop)
-        print(f'Monitoring with {backend}; split={recorder.split}; Ctrl+C stops capture. Drafts require review.', flush=True)
+        selector = None
+        if not args.save_all:
+            from .selection import GapSelector
+            selector = GapSelector.from_collection(args.collection, min_examples=args.min_examples,
+                                                   max_per_reason=args.max_per_reason)
+        mode = 'all settled changes' if selector is None else 'recognition gaps only'
+        print(f'Monitoring with {backend}; split={recorder.split}; saving {mode}; '
+              'Ctrl+C stops capture. Drafts require review.', flush=True)
         with capture_source(backend, args.window_title, args.portal_python) as capture:
             counts = monitor(capture, recorder, interval=args.interval, duration=args.duration,
                              max_images=args.max_images, change_threshold=args.change_threshold,
-                             stability_threshold=args.stability_threshold, stable_samples=args.stable_samples)
+                             stability_threshold=args.stability_threshold, stable_samples=args.stable_samples,
+                             selector=selector)
         print(json.dumps(counts))
     except KeyboardInterrupt:
         print('\nMonitoring stopped; saved drafts remain unapproved.')
