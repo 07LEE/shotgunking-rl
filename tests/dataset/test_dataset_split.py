@@ -9,10 +9,10 @@ from shotgun_king_rl.collection.dataset import choose_session_split
 
 
 def add_annotations(collection, session_id, split, count=1):
-    annotations = collection / "sessions" / session_id / "annotations"
-    annotations.mkdir(parents=True)
+    annotations = collection / "annotations"
+    annotations.mkdir(parents=True, exist_ok=True)
     for index in range(count):
-        (annotations / f"{index}.json").write_text(json.dumps({
+        (annotations / f"{session_id}__{index}.json").write_text(json.dumps({
             "session_id": session_id,
             "split": split,
         }))
@@ -46,7 +46,7 @@ class DatasetSplitTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             add_annotations(collection, "run-01", "train")
-            annotation = collection / "sessions" / "run-01" / "annotations" / "other.json"
+            annotation = collection / "annotations" / "run-01__other.json"
             annotation.write_text(json.dumps({"session_id": "run-01", "split": "test"}))
             with self.assertRaisesRegex(ValueError, "one session cannot span splits"):
                 choose_session_split(collection, "run-02")

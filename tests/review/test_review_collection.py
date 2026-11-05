@@ -31,7 +31,7 @@ class ReviewCollectionTests(unittest.TestCase):
             (collection / 'inbox').mkdir()
             cv2.imwrite(str(collection / 'inbox/screen.png'), game_screen())
             prepare_session(collection, 'session')
-            relative = 'sessions/session/annotations/screen.png.json'
+            relative = 'annotations/session__screen.png.json'
             _, data, _, revision = load_item(collection, relative)
             data['board'][0][0] = 'ambiguous_royal'
             payload = dict(data, id=relative, revision=revision, floor=1, confirmed=False)
@@ -54,7 +54,7 @@ class ReviewCollectionTests(unittest.TestCase):
             result = prepare_session(collection, 'test-session')
             self.assertEqual(result['created'], 1)
             self.assertEqual(result['errors'], [])
-            relative = 'sessions/test-session/annotations/screen.png.json'
+            relative = 'annotations/test-session__screen.png.json'
             path, data, _, revision = load_item(collection, relative)
             payload = dict(data, id=relative, revision=revision, floor=1, confirmed=True)
             payload['board'][0][6] = 'special_knight'
@@ -100,7 +100,7 @@ class ReviewCollectionTests(unittest.TestCase):
             image = game_screen()
             cv2.imwrite(str(collection / 'inbox/screen.png'), image)
             prepare_session(collection, 'test-session')
-            relative = 'sessions/test-session/annotations/screen.png.json'
+            relative = 'annotations/test-session__screen.png.json'
             _, data, _, revision = load_item(collection, relative)
             with self.assertRaisesRegex(ValueError, 'floor'):
                 save_item(collection, dict(data, id=relative, revision=revision, confirmed=True))
@@ -112,7 +112,7 @@ class ReviewCollectionTests(unittest.TestCase):
             image = game_screen()
             cv2.imwrite(str(collection / 'inbox/screen.png'), image)
             prepare_session(collection, 'test-session')
-            relative = 'sessions/test-session/annotations/screen.png.json'
+            relative = 'annotations/test-session__screen.png.json'
             path, data, _, revision = load_item(collection, relative)
             data['screen_state']['screen_kind'] = 'card_selection'
             data['screen_state']['reviews']['screen_kind'] = True
@@ -175,12 +175,12 @@ class CaptureReasonTests(unittest.TestCase):
         self.assertEqual(capture_reasons({'auto_capture': {'reasons': 'attack=8:rare'}}), [])
         self.assertEqual(capture_reasons({'auto_capture': {'reasons': ['attack=8:rare', 3]}}), ['attack=8:rare'])
         with tempfile.TemporaryDirectory() as directory:
-            annotations = Path(directory) / 'sessions' / 'play' / 'annotations'
+            annotations = Path(directory) / 'annotations'
             annotations.mkdir(parents=True)
             for name, extra in (('auto', {'auto_capture': {'reasons': ['spread_degrees:unreadable']}}), ('manual', {})):
                 data = piece_annotation()
                 data.update(session_id='play', **extra)
-                (annotations / (name + '.json')).write_text(json.dumps(data))
+                (annotations / ('play__' + name + '.json')).write_text(json.dumps(data))
             try:
                 server = make_server(Path(directory), 0)
             except PermissionError:
@@ -193,4 +193,4 @@ class CaptureReasonTests(unittest.TestCase):
             finally:
                 server.shutdown()
                 server.server_close()
-            self.assertEqual(items, {'auto': ['spread_degrees:unreadable'], 'manual': []})
+            self.assertEqual(items, {'play__auto': ['spread_degrees:unreadable'], 'play__manual': []})

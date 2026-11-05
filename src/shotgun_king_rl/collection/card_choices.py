@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 
+from ..collection_layout import annotation_paths, session_of
 from .images import normalize
 from ..vision.screens import check_card_selection_screen
 
@@ -21,13 +22,13 @@ CHOICE_BOXES = (
 )
 
 
-def extract_card_choices(sessions, output, include_unreviewed=False, allow_unverified_layout=False):
-    sessions, output = Path(sessions), Path(output)
+def extract_card_choices(collection, output, include_unreviewed=False, allow_unverified_layout=False):
+    collection, output = Path(collection), Path(output)
     if output.exists():
         raise ValueError(f'Output exists: {output}; choose a new directory')
     sources = []
     splits = {}
-    for path in sorted(sessions.glob('*/annotations/*.json')):
+    for path in annotation_paths(collection):
         raw = path.read_bytes()
         data = json.loads(raw)
         state = data.get('screen_state') or {}
@@ -36,7 +37,7 @@ def extract_card_choices(sessions, output, include_unreviewed=False, allow_unver
         reviewed = (state.get('reviews') or {}).get('screen_kind') is True
         if not reviewed and not include_unreviewed:
             continue
-        session = path.parent.parent.name
+        session = session_of(path)
         split = data.get('split')
         if data.get('session_id') != session or split not in ('train', 'val', 'test'):
             raise ValueError(f'{path}: invalid session or split')
@@ -69,7 +70,7 @@ def extract_card_choices(sessions, output, include_unreviewed=False, allow_unver
                 raise OSError(f'Failed to write {relative}')
             records.append({
                 'image': relative.as_posix(), 'session_id': data['session_id'], 'split': data['split'],
-                'source_annotation': path.relative_to(sessions).as_posix(),
+                'source_annotation': path.relative_to(collection).as_posix(),
                 'source_image': data['image'], 'source_image_sha256': image_hash,
                 'source_annotation_sha256': annotation_hash, 'game_crop': data.get('game_crop'),
                 'normalized_box': list(box), 'choice': choice, 'side': side,
@@ -90,12 +91,12 @@ def extract_card_choices(sessions, output, include_unreviewed=False, allow_unver
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--sessions', type=Path, default=ROOT / 'data/collection/sessions')
+    parser.add_argument('--collection', type=Path, default=ROOT / 'data/collection')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--include-unreviewed', action='store_true')
     parser.add_argument('--allow-unverified-layout', action='store_true', help='Export visually checked layouts rejected by the automatic border check; retain an unverified flag')
     args = parser.parse_args()
     try:
-        print(json.dumps(extract_card_choices(args.sessions, args.output, args.include_unreviewed, args.allow_unverified_layout), indent=2))
+        print(json.dumps(extract_card_choices(args.collection, args.output, args.include_unreviewed, args.allow_unverified_layout), indent=2))
     except (ValueError, OSError) as exc:
         parser.exit(1, f'Card extraction failed: {exc}\n')

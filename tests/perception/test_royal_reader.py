@@ -97,7 +97,7 @@ class RoyalReaderTests(unittest.TestCase):
     def test_collection_excludes_nontraining_and_unconfirmed_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            annotations = collection / "sessions/run/annotations"
+            annotations = collection / "annotations"
             annotations.mkdir(parents=True)
             for i, (split, confirmed, reviewed) in enumerate((
                 ("val", True, True), ("test", True, True),
@@ -105,7 +105,7 @@ class RoyalReaderTests(unittest.TestCase):
             )):
                 data = {"split": split, "confirmed": confirmed,
                         "screen_state": {"screen_kind": "gameplay", "reviews": {"screen_kind": reviewed}}}
-                (annotations / f"{i}.json").write_text(json.dumps(data))
+                (annotations / f"run__{i}.json").write_text(json.dumps(data))
             with patch("shotgun_king_rl.perception.royals.cv2.imread") as read:
                 self.assertEqual(RoyalTemplates.from_collection(collection).examples, ())
                 read.assert_not_called()
@@ -113,12 +113,12 @@ class RoyalReaderTests(unittest.TestCase):
     def test_collection_uses_confirmed_labels_and_skips_excluded_cells(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            annotations = collection / "sessions/run/annotations"
+            annotations = collection / "annotations"
             annotations.mkdir(parents=True)
-            data = {"split": "train", "confirmed": True, "image": "../originals/screen.png",
+            data = {"split": "train", "confirmed": True, "image": "../originals/run__screen.png",
                     "board": [["queen", "white_king", "queen"]], "exclude_cells": [[0, 2]],
                     "screen_state": {"screen_kind": "gameplay", "reviews": {"screen_kind": True}}}
-            (annotations / "screen.json").write_text(json.dumps(data))
+            (annotations / "run__screen.json").write_text(json.dumps(data))
             image = np.full((720, 1280, 3), 220, dtype=np.uint8)
             with patch("shotgun_king_rl.perception.royals.cv2.imread", return_value=image), patch(
                 "shotgun_king_rl.perception.royals.analyzer._extract_signal",

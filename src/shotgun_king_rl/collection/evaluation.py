@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from ..collection_layout import annotation_paths
 from .audit import SPLITS, COMBAT_FIELDS
 from .images import normalize
 from ..perception.visibility import combat_visibility, visual_combat_stats
@@ -299,18 +300,18 @@ class EvaluationBucket:
         return report
 
 
-def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_reader=None, *, combat_reader=None, splits=None):
+def evaluate_readers(collection, piece_reader=None, ammo_reader=None, screen_reader=None, *, combat_reader=None, splits=None):
     """Return deterministic metrics for reviewed labels without changing data."""
     selected_splits = tuple(SPLITS if splits is None else splits)
     if not selected_splits or len(set(selected_splits)) != len(selected_splits) or any(split not in SPLITS for split in selected_splits):
         raise ValueError("Select unique valid splits")
-    sessions_dir = Path(sessions_dir)
-    piece_reader = piece_reader or TemplatePieceReader.from_collection(Path(sessions_dir).parent)
+    collection = Path(collection)
+    piece_reader = piece_reader or TemplatePieceReader.from_collection(collection)
     ammo_reader = ammo_reader or RedPixelAmmoReader()
     screen_reader = screen_reader or OverlayScreenReader()
     buckets = {name: EvaluationBucket(combat_reader is not None) for name in ("overall", *SPLITS)}
     digest = hashlib.sha256()
-    paths = sorted(sessions_dir.glob("*/annotations/*.json"))
+    paths = annotation_paths(collection)
 
     for path in paths:
         raw = path.read_bytes()
@@ -320,7 +321,7 @@ def evaluate_readers(sessions_dir, piece_reader=None, ammo_reader=None, screen_r
             raise ValueError(f"{path}: invalid split")
         if split not in selected_splits:
             continue
-        relative = path.relative_to(sessions_dir).as_posix()
+        relative = path.relative_to(collection).as_posix()
         digest.update(relative.encode())
         digest.update(b"\0")
         digest.update(raw)
@@ -461,7 +462,7 @@ def _piece_prediction_matches(expected, predicted, excluded):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--sessions", type=Path, default=ROOT / "data/collection/sessions")
+    parser.add_argument("--collection", type=Path, default=ROOT / "data/collection")
     parser.add_argument("--output", type=Path, help="Write the JSON report to a new file")
     parser.add_argument("--combat-stats", action="store_true", help="Include composed combat readings (defaults to train/val only)")
     parser.add_argument("--melee-title-annotation", type=Path, help="Override the collection melee title manifest with reviewed train data; requires --combat-stats")
@@ -474,8 +475,8 @@ def main():
         metadata = None
         if args.combat_stats:
             from .combat_evaluation import build_combat_reader
-            combat_reader, metadata = build_combat_reader(args.sessions.parent, args.melee_title_annotation)
-        report = evaluate_readers(args.sessions, combat_reader=combat_reader,
+            combat_reader, metadata = build_combat_reader(args.collection, args.melee_title_annotation)
+        report = evaluate_readers(args.collection, combat_reader=combat_reader,
                                   splits=args.splits or (("train", "val") if args.combat_stats else None))
         if metadata is not None:
             report["combat_reference_metadata"] = metadata

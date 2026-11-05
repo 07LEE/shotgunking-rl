@@ -16,7 +16,7 @@ class CollectionImportTests(unittest.TestCase):
             (inbox / "a.png").write_bytes(b"saved image")
             (inbox / "notes.txt").write_text("retain")
             self.assertEqual(import_images(collection, "session-01"), 1)
-            target = collection / "sessions/session-01/originals/a.png"
+            target = collection / "originals/session-01__a.png"
             self.assertEqual(target.read_bytes(), b"saved image")
             self.assertTrue((inbox / "notes.txt").exists())
             self.assertFalse((collection / "datasets").exists())

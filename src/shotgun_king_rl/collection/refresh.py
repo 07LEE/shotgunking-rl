@@ -4,10 +4,10 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import re
 
 import cv2
 
+from ..collection_layout import annotation_paths, validate_session_id
 from .images import normalize
 from .screen_state import propose
 
@@ -60,9 +60,7 @@ def fill_unknowns(data, proposal):
 
 def refresh_session(collection, session, output, apply=False):
     root, output = Path(collection), Path(output)
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', session):
-        raise ValueError('Invalid session ID')
-    paths = sorted((root / 'sessions' / session / 'annotations').glob('*.json'))
+    paths = annotation_paths(root, [validate_session_id(session)])
     if not paths:
         raise ValueError('No prepared annotations for this session')
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -13,6 +13,7 @@ from time import perf_counter
 import cv2
 import numpy as np
 
+from ..collection_layout import annotation_paths, originals_dir, session_of
 from .evaluation import ROOT, evaluate_readers
 from .images import normalize
 from .. import perception
@@ -74,9 +75,9 @@ def _benchmark(collection, repeats, include_hud):
     if include_hud:
         for name in ("Attack", "Range", "Spread", "Knockback", "Penetration", "GrenadeDamage", "GrenadeCount"):
             readers[name] = getattr(perception, name + "Reader").from_collection(collection)
-    evaluation = evaluate_readers(collection / "sessions", piece_reader=readers["pieces"])
+    evaluation = evaluate_readers(collection, piece_reader=readers["pieces"])
     samples = []
-    for path in sorted((collection / "sessions").glob("*/annotations/*.json")):
+    for path in annotation_paths(collection):
         data = json.loads(path.read_text())
         state = data.get("screen_state") or {}
         if (state.get("reviews") or {}).get("screen_kind") is not True:
@@ -87,7 +88,7 @@ def _benchmark(collection, repeats, include_hud):
         image = cv2.imread(str(image_path))
         if image is None:
             raise ValueError(f"{path}: unreadable image")
-        samples.append((path.relative_to(collection / "sessions").as_posix(),
+        samples.append((path.relative_to(collection).as_posix(),
                         normalize(image, data.get("game_crop"))))
     if not samples:
         raise ValueError("No screen-reviewed train/val samples")
@@ -150,19 +151,20 @@ def benchmark_readers(collection, repeats=3, include_hud=False):
     collection = Path(collection)
     with tempfile.TemporaryDirectory(prefix="shotgun-reader-benchmark-") as directory:
         view = Path(directory)
-        (view / "sessions").mkdir()
-        for session in sorted((collection / "sessions").iterdir()):
-            if not session.is_dir():
-                continue
-            paths = sorted((session / "annotations").glob("*.json"))
+        # Linked originals resolve to the real folder, so annotation image checks still hold.
+        (view / "originals").symlink_to(originals_dir(collection).resolve(), target_is_directory=True)
+        (view / "annotations").mkdir()
+        sessions = {}
+        for path in annotation_paths(collection):
+            sessions.setdefault(session_of(path), []).append(path)
+        for session, paths in sorted(sessions.items(), key=lambda item: str(item[0])):
             splits = {json.loads(path.read_text()).get("split") for path in paths}
-            if not splits:
-                continue
             if len(splits) != 1 or not splits <= {"train", "val", "test"}:
-                raise ValueError(f"{session.name}: invalid or mixed session splits")
+                raise ValueError(f"{session}: invalid or mixed session splits")
             if splits == {"test"}:
                 continue
-            (view / "sessions" / session.name).symlink_to(session.resolve(), target_is_directory=True)
+            for path in paths:
+                (view / "annotations" / path.name).symlink_to(path.resolve())
         return _benchmark(view, repeats, include_hud)
 
 

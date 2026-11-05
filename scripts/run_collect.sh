@@ -38,19 +38,20 @@ fi
 
 if [[ -z "$SESSION_ID" ]]; then
     # Run numbers continue across days, matching existing session names.
-    LAST_RUN="$(find "$COLLECTION/sessions" -mindepth 1 -maxdepth 1 -type d -name '*-run-*' -printf '%f\n' 2>/dev/null \
-        | sed -n 's/.*-run-\([0-9][0-9]*\)$/\1/p' | sort -n | tail -1)"
+    # Each annotation name starts with its session ID and "__".
+    LAST_RUN="$(find "$COLLECTION/annotations" -maxdepth 1 -type f -name '*__*.json' -printf '%f\n' 2>/dev/null \
+        | sed 's/__.*//' | sed -n 's/.*-run-\([0-9][0-9]*\)$/\1/p' | sort -n | tail -1)"
     SESSION_ID="$(date +%F)-run-$(printf '%02d' $((10#${LAST_RUN:-0} + 1)))"
 fi
-if [[ ! "$SESSION_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
-    echo "Invalid session ID: use only letters, digits, '-' and '_'." >&2
+if [[ ! "$SESSION_ID" =~ ^[A-Za-z0-9]+([-_][A-Za-z0-9]+)*$ ]]; then
+    echo "Invalid session ID: join letters and digits with single '-' or '_'." >&2
     exit 2
 fi
 
 count_drafts() {
-    local annotations="$COLLECTION/sessions/$SESSION_ID/annotations"
+    local annotations="$COLLECTION/annotations"
     if [[ -d "$annotations" ]]; then
-        find "$annotations" -maxdepth 1 -name '*.json' -printf '.' | wc -c
+        find "$annotations" -maxdepth 1 -type f -name "${SESSION_ID}__*.json" -printf '.' | wc -c
     else
         echo 0
     fi

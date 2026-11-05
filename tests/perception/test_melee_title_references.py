@@ -20,14 +20,13 @@ MELEE = next(case for case in CASES if case.name == 'melee_damage')
 
 
 def create_reference(root, name='known', *, seed=7, value=2):
-    session = root / 'sessions' / name
-    (session / 'annotations').mkdir(parents=True)
-    (session / 'originals').mkdir()
+    (root / 'annotations').mkdir(parents=True, exist_ok=True)
+    (root / 'originals').mkdir(parents=True, exist_ok=True)
     image = screen(MELEE, seed=seed, digits=str(value))
-    cv2.imwrite(str(session / 'originals/screen.png'), image)
-    path = session / 'annotations/screen.json'
+    cv2.imwrite(str(root / f'originals/{name}__screen.png'), image)
+    path = root / f'annotations/{name}__screen.json'
     path.write_text(json.dumps({
-        'split': 'train', 'image': '../originals/screen.png',
+        'split': 'train', 'image': f'../originals/{name}__screen.png',
         'game_crop': [0, 0, 1280, 720], 'screen_state': {
             'screen_kind': 'gameplay', 'combat_stats': {'melee_damage': value},
             'reviews': {'screen_kind': True, 'combat_stats': True},
@@ -119,6 +118,6 @@ class MeleeTitleReferenceTests(unittest.TestCase):
                         load_melee_title_reference(root)
             path, _ = create_reference(root)
             select(root, path)
-            cv2.imwrite(str(path.parent.parent / 'originals/screen.png'), np.zeros((720, 1280, 3), np.uint8))
+            cv2.imwrite(str(path.parent.parent / 'originals/known__screen.png'), np.zeros((720, 1280, 3), np.uint8))
             with self.assertRaisesRegex(ValueError, 'title is not visible'):
                 load_melee_title_reference(root)

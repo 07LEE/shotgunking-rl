@@ -8,7 +8,6 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import tempfile
 import time
 from uuid import uuid4
@@ -18,6 +17,7 @@ import numpy as np
 
 from .dataset import choose_session_split
 from .images import normalize
+from ..collection_layout import annotations_dir, originals_dir, session_images, stored_name, validate_session_id
 from .prepare import COLLECTION, draft_annotation
 
 
@@ -76,17 +76,13 @@ class DraftRecorder:
     """Append images and drafts to one session without touching the inbox."""
 
     def __init__(self, collection, session_id, crop=None):
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', session_id):
-            raise ValueError('Invalid session ID')
+        validate_session_id(session_id)
         self.collection = Path(collection)
         self.session_id = session_id
         self.crop = crop
-        self.session = self.collection / 'sessions' / session_id
         self.split = choose_session_split(self.collection, session_id, 1)
         self.seen = set()
-        for path in (self.session / 'originals').glob('*'):
-            if path.suffix.lower() not in ('.png', '.jpg', '.jpeg'):
-                continue
+        for path in session_images(self.collection, session_id):
             image = cv2.imread(str(path))
             if image is not None:
                 self.seen.add(image_digest(image))
@@ -95,7 +91,7 @@ class DraftRecorder:
         digest = image_digest(image)
         if digest in self.seen:
             return None
-        name = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ_') + uuid4().hex[:8] + '.png'
+        name = stored_name(self.session_id, datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ_') + uuid4().hex[:8] + '.png')
         data = draft_annotation(image, name, self.collection, self.session_id, self.split, self.crop)
         # Automatic suggestions never carry human approvals, including future proposers.
         data['confirmed'] = False
@@ -110,10 +106,10 @@ class DraftRecorder:
         encoded_ok, encoded = cv2.imencode('.png', image)
         if not encoded_ok:
             raise OSError('Could not encode capture')
-        for directory in ('originals', 'annotations', 'review'):
-            (self.session / directory).mkdir(parents=True, exist_ok=True)
-        original = self.session / 'originals' / name
-        annotation = self.session / 'annotations' / (name + '.json')
+        for directory in (originals_dir(self.collection), annotations_dir(self.collection)):
+            directory.mkdir(parents=True, exist_ok=True)
+        original = originals_dir(self.collection) / name
+        annotation = annotations_dir(self.collection) / (name + '.json')
         with original.open('xb') as output:
             output.write(encoded.tobytes())
         annotation_created = False

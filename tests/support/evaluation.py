@@ -7,19 +7,18 @@ import numpy as np
 
 
 def create_reviewed_screen(collection, split="train"):
-    session = collection / "sessions" / "run-01"
-    originals = session / "originals"
-    annotations = session / "annotations"
+    originals = collection / "originals"
+    annotations = collection / "annotations"
     originals.mkdir(parents=True)
     annotations.mkdir()
     image = np.zeros((720, 1280, 3), dtype=np.uint8)
-    cv2.imwrite(str(originals / "screen.png"), image)
+    cv2.imwrite(str(originals / "run-01__screen.png"), image)
     board = [["empty" for _ in range(8)] for _ in range(8)]
     board[0][0] = "queen"
     board[7][4] = "player_king"
     annotation = {
         "schema": "piece-cells-v1",
-        "image": "../originals/screen.png",
+        "image": "../originals/run-01__screen.png",
         "session_id": "run-01",
         "split": split,
         "game_crop": [0, 0, 1280, 720],
@@ -32,4 +31,4 @@ def create_reviewed_screen(collection, split="train"):
             "reviews": {"screen_kind": True, "ammo": True},
         },
     }
-    (annotations / "screen.json").write_text(json.dumps(annotation))
+    (annotations / "run-01__screen.json").write_text(json.dumps(annotation))

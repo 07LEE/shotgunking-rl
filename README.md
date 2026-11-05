@@ -20,7 +20,7 @@ Put screenshots from one play session in `data/collection/inbox/`, process them,
 ./scripts/run_review.sh
 ```
 
-Processing classifies the current inbox and creates annotation drafts, then exits. Reuse the session ID for the same play session and review the predictions before using them as labels.
+Processing classifies the current inbox and creates annotation drafts, then exits. Reuse the session ID for the same play session and review the predictions before using them as labels. Images go to `data/collection/originals/` and drafts to `data/collection/annotations/`, each file name prefixed with `SESSION_ID__`; a session keeps one train/val/test split.
 
 To collect while you play, start automatic capture with the game window open:
 

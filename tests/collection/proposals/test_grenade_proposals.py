@@ -24,12 +24,11 @@ class GrenadeProposalTests(unittest.TestCase):
     def test_shifted_grenade_slots_and_damage_row(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            session = root / 'sessions/ref'
-            (session / 'originals').mkdir(parents=True)
-            (session / 'annotations').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), self.image())
-            path = session / 'annotations/screen.json'
-            data = {'split': 'train', 'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'combat_stats': {'grenades_remaining': 1, 'grenade_damage': 2}, 'reviews': {'combat_stats': True}}}
+            (root / 'originals').mkdir(parents=True, exist_ok=True)
+            (root / 'annotations').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(root / 'originals/ref__screen.png'), self.image())
+            path = root / 'annotations/ref__screen.json'
+            data = {'split': 'train', 'image': '../originals/ref__screen.png', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'combat_stats': {'grenades_remaining': 1, 'grenade_damage': 2}, 'reviews': {'combat_stats': True}}}
             path.write_text(json.dumps(data))
             result = propose(self.image(damage_offset=192, slot_shift=3), root)
             self.assertEqual(result['screen_state']['combat_stats']['grenades_remaining'], 1)

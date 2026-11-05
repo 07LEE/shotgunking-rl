@@ -134,22 +134,21 @@ class PercentageReaderTests(unittest.TestCase):
                         ('overflow', 'train', True, 'gameplay', 101),
                         ('boolean', 'train', True, 'gameplay', True),
                     ):
-                        session = collection / 'sessions' / name
-                        (session / 'originals').mkdir(parents=True)
-                        (session / 'annotations').mkdir()
+                        (collection / 'originals').mkdir(parents=True, exist_ok=True)
+                        (collection / 'annotations').mkdir(parents=True, exist_ok=True)
                         sample = make_screen()
                         if type(value) is int and value == 0:
                             sample[400:600, 270:354] = 0
-                        cv2.imwrite(str(session / 'originals/screen.png'), sample)
+                        cv2.imwrite(str(collection / f'originals/{name}__screen.png'), sample)
                         data = {
-                            'split': split, 'image': '../originals/screen.png',
+                            'split': split, 'image': f'../originals/{name}__screen.png',
                             'game_crop': [0, 0, 1280, 720],
                             'screen_state': {
                                 'screen_kind': kind, 'combat_stats': {f'{field}_percent': value},
                                 'reviews': {'screen_kind': True, 'combat_stats': reviewed},
                             },
                         }
-                        (session / 'annotations/screen.json').write_text(json.dumps(data))
+                        (collection / f'annotations/{name}__screen.json').write_text(json.dumps(data))
                     reader = reader_cls.from_collection(collection)
                     self.assertEqual(len(reader.examples), 1)
                     self.assertEqual(len(reader.zero_examples), 1)

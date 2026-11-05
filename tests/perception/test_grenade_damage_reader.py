@@ -79,15 +79,14 @@ class GrenadeDamageLayoutTests(unittest.TestCase):
                 ('draft', 'train', False, 'gameplay'),
                 ('card', 'train', True, 'card_selection'),
             ):
-                session = collection / 'sessions' / name
-                (session / 'annotations').mkdir(parents=True)
-                (session / 'originals').mkdir()
+                (collection / 'annotations').mkdir(parents=True, exist_ok=True)
+                (collection / 'originals').mkdir(parents=True, exist_ok=True)
                 if name == 'known':
-                    cv2.imwrite(str(session / 'originals/screen.png'), hud())
+                    cv2.imwrite(str(collection / f'originals/{name}__screen.png'), hud())
                 # Forbidden sources deliberately have no readable image.
-                path = session / 'annotations/screen.json'
+                path = collection / f'annotations/{name}__screen.json'
                 path.write_text(json.dumps({
-                    'split': split, 'image': '../originals/screen.png',
+                    'split': split, 'image': f'../originals/{name}__screen.png',
                     'game_crop': [0, 0, 1280, 720], 'screen_state': {
                         'screen_kind': kind, 'combat_stats': {'attack': 3, 'grenade_damage': 2},
                         'reviews': {'screen_kind': True, 'combat_stats': reviewed},

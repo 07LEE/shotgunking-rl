@@ -19,8 +19,8 @@ fi
 SESSION_ID="$1"
 shift
 
-if [[ ! "$SESSION_ID" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
-    echo "Invalid session ID: use only letters, digits, '-' and '_'." >&2
+if [[ ! "$SESSION_ID" =~ ^[A-Za-z0-9]+([-_][A-Za-z0-9]+)*$ ]]; then
+    echo "Invalid session ID: join letters and digits with single '-' or '_'." >&2
     exit 2
 fi
 
@@ -31,10 +31,10 @@ fi
 
 mkdir -p "$COLLECTION/inbox"
 INBOX_COUNT="$(find "$COLLECTION/inbox" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -printf '.' | wc -c)"
-ORIGINALS="$COLLECTION/sessions/$SESSION_ID/originals"
+ORIGINALS="$COLLECTION/originals"
 ORIGINAL_COUNT=0
 if [[ -d "$ORIGINALS" ]]; then
-    ORIGINAL_COUNT="$(find "$ORIGINALS" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' \) -printf '.' | wc -c)"
+    ORIGINAL_COUNT="$(find "$ORIGINALS" -maxdepth 1 -type f \( -iname "${SESSION_ID}__*.png" -o -iname "${SESSION_ID}__*.jpg" -o -iname "${SESSION_ID}__*.jpeg" \) -printf '.' | wc -c)"
 fi
 
 if [[ "$INBOX_COUNT" -eq 0 && "$ORIGINAL_COUNT" -eq 0 ]]; then

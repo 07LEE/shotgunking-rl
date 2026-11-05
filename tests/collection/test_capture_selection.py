@@ -87,7 +87,7 @@ class GapSelectorTests(unittest.TestCase):
 
 class CoverageTests(unittest.TestCase):
     def write(self, root, name, data):
-        path = Path(root) / 'sessions' / 's' / 'annotations' / name
+        path = Path(root) / 'annotations' / ('s__' + name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data))
 
@@ -126,10 +126,10 @@ class SelectiveMonitorTests(unittest.TestCase):
                              selector=selector, clock=lambda: ticks[0], sleep=sleep, report=lambda _: None)
             self.assertEqual((result['saved'], result['skipped']), (1, 1))
             self.assertEqual(selector.call_count, 2)
-            data = json.loads(next((recorder.session / 'annotations').glob('*.json')).read_text())
+            data = json.loads(next((recorder.collection / 'annotations').glob('*.json')).read_text())
             self.assertEqual(data['auto_capture']['reasons'], ['attack=8:rare'])
             self.assertFalse(data['confirmed'])
             self.assertFalse(any(data['screen_state']['reviews'].values()))
-            self.assertEqual(len(list((recorder.session / 'originals').glob('*.png'))), 1)
-            self.assertEqual(Path(data['image']).name, next((recorder.session / 'originals').glob('*.png')).name)
+            self.assertEqual(len(list((recorder.collection / 'originals').glob('*.png'))), 1)
+            self.assertEqual(Path(data['image']).name, next((recorder.collection / 'originals').glob('*.png')).name)
             self.assertTrue(np.array_equal(selector.call_args_list[1].args[0].shape, (720, 1280, 3)))

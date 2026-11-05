@@ -11,6 +11,7 @@ import cv2
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
+from shotgun_king_rl.collection_layout import annotation_paths, annotations_dir
 from shotgun_king_rl.perception import MeleeDamageReader
 from shotgun_king_rl.vision.layout import normalize_game_screen
 from shotgun_king_rl.perception.melee import melee_damage_patch
@@ -19,7 +20,7 @@ from shotgun_king_rl.perception.melee import melee_damage_patch
 def evaluate(collection, title_annotation):
     collection = Path(collection)
     title_annotation = Path(title_annotation).resolve()
-    if not title_annotation.is_relative_to((collection / 'sessions').resolve()):
+    if title_annotation.parent != annotations_dir(collection).resolve():
         raise ValueError('Title reference must belong to the collection')
     reference = json.loads(title_annotation.read_text())
     state = reference.get('screen_state') or {}
@@ -38,7 +39,7 @@ def evaluate(collection, title_annotation):
     title_image_sha256 = hashlib.sha256(image_path.read_bytes()).hexdigest()
     samples = []
     digest = hashlib.sha256()
-    for path in sorted((collection / 'sessions').glob('*/annotations/*.json')):
+    for path in annotation_paths(collection):
         raw = path.read_bytes()
         data = json.loads(raw)
         if data.get('split') == 'test':

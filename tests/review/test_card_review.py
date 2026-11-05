@@ -17,13 +17,13 @@ from shotgun_king_rl.collection.card_recognition import propose_cards, match_slo
 
 class CardReviewTests(unittest.TestCase):
     def fixture(self, root, split='train'):
-        path = root / 'sessions/ref/annotations/screen.json'
+        path = root / 'annotations/ref__screen.json'
         path.parent.mkdir(parents=True)
-        (path.parent.parent / 'originals').mkdir()
+        (root / 'originals').mkdir()
         image = np.zeros((720, 1280, 3), np.uint8)
         image[216:332, 540:624] = np.random.default_rng(44).integers(0, 255, (116, 84, 3), dtype=np.uint8)
-        cv2.imwrite(str(path.parent.parent / 'originals/screen.png'), image)
-        data = {'schema': 'piece-cells-v1', 'session_id': 'ref', 'split': split, 'confirmed': False, 'board': [['empty'] * 8 for _ in range(8)], 'floor': 1, 'exclude_cells': [], 'game_crop': [0, 0, 1280, 720], 'image': '../originals/screen.png', 'screen_state': {'screen_kind': 'card_selection', 'ammo': {'loaded': 2}, 'reviews': {'ammo': True}}}
+        cv2.imwrite(str(root / 'originals/ref__screen.png'), image)
+        data = {'schema': 'piece-cells-v1', 'session_id': 'ref', 'split': split, 'confirmed': False, 'board': [['empty'] * 8 for _ in range(8)], 'floor': 1, 'exclude_cells': [], 'game_crop': [0, 0, 1280, 720], 'image': '../originals/ref__screen.png', 'screen_state': {'screen_kind': 'card_selection', 'ammo': {'loaded': 2}, 'reviews': {'ammo': True}}}
         path.write_text(json.dumps(data))
         catalog = {'schema': 'card-catalog-v1', 'revision': 1, 'empty_references': [], 'entries': [{'key': key, 'side': side, 'names': {'en': key}, 'effects': None, 'references': []} for key, side in (('black', 'black'), ('white', 'white'))]}
         (root / 'card_catalog.json').write_text(json.dumps(catalog))

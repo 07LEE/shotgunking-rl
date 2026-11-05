@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 
+from ..collection_layout import annotation_paths, session_images, session_of
 from ..vision.analyzer import crop_chessboard
 from .board_metadata import board_metadata, terrain_source
 from ..perception.visibility import combat_visual_targets
@@ -28,10 +29,9 @@ def choose_session_split(collection, session_id, new_screen_count=None):
     """Choose one persistent split for a newly collected session."""
     session_splits = {}
     screen_counts = Counter()
-    annotations = collection / "sessions"
-    for path in sorted(annotations.glob("*/annotations/*.json")):
+    for path in annotation_paths(collection):
         data = json.loads(path.read_text())
-        group = data.get("session_id") or path.parents[1].name
+        group = data.get("session_id") or session_of(path)
         split = data.get("split", group_split(group))
         if split not in SPLITS:
             raise ValueError(f"{path}: invalid split")
@@ -48,11 +48,7 @@ def choose_session_split(collection, session_id, new_screen_count=None):
             return split
 
     if new_screen_count is None:
-        originals = collection / "sessions" / session_id / "originals"
-        new_screen_count = sum(
-            path.suffix.lower() in (".png", ".jpg", ".jpeg")
-            for path in originals.glob("*")
-        )
+        new_screen_count = len(session_images(collection, session_id))
     new_screen_count = max(1, new_screen_count)
     total_after = sum(screen_counts.values()) + new_screen_count
     deficits = {
@@ -71,8 +67,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
     image_groups = {}
     skipped = 0
     skipped_non_gameplay = 0
-    paths = list(annotation_dir.glob("*.json")) + list(annotation_dir.glob("*/annotations/*.json"))
-    for path in sorted(paths):
+    for path in sorted(annotation_dir.glob("*.json")):
         data = json.loads(path.read_text())
         if data.get("schema") != "piece-cells-v1":
             raise ValueError(f"{path}: expected piece-cells-v1 schema")
@@ -150,7 +145,7 @@ def build_dataset(annotation_dir, output, allow_provisional=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--annotations", type=Path, default=ROOT / "data/collection/sessions", help="An annotation directory or a sessions directory")
+    parser.add_argument("--annotations", type=Path, default=ROOT / "data/collection/annotations", help="Annotation directory")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-provisional", action="store_true", help="Include unconfirmed labels for inspection only")
     args = parser.parse_args()

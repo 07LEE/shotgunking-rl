@@ -5,6 +5,7 @@ from pathlib import Path
 
 import cv2
 
+from ..collection_layout import annotation_paths
 from .visibility import visual_combat_stats
 
 from ..vision.layout import normalize_game_screen
@@ -36,7 +37,7 @@ class RangeReader:
     def from_collection(cls, collection):
         examples = []
         numeric_examples = []
-        for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
+        for path in annotation_paths(collection):
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}

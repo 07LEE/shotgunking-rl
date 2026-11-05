@@ -80,15 +80,14 @@ class GrenadeCountReaderTests(unittest.TestCase):
             cases = (("train", True, 0), ("val", True, 0), ("test", True, 0),
                      ("train", False, 0), ("train", True, 1))
             for index, (split, reviewed, value) in enumerate(cases):
-                session = root / "sessions" / str(index)
-                (session / "annotations").mkdir(parents=True)
-                (session / "originals").mkdir()
-                cv2.imwrite(str(session / "originals/screen.png"), image)
-                data = {"split": split, "image": "../originals/screen.png",
+                (root / "annotations").mkdir(parents=True, exist_ok=True)
+                (root / "originals").mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(root / f"originals/{index}__screen.png"), image)
+                data = {"split": split, "image": f"../originals/{index}__screen.png",
                         "game_crop": [0, 0, 1280, 720], "screen_state": {
                             "screen_kind": "gameplay", "reviews": {"screen_kind": True, "combat_stats": reviewed},
                             "combat_stats": {"grenades_remaining": value}}}
-                (session / "annotations/screen.json").write_text(json.dumps(data))
+                (root / f"annotations/{index}__screen.json").write_text(json.dumps(data))
             reader = GrenadeCountReader.from_collection(root)
             self.assertEqual(len(reader.examples), 0)
             self.assertEqual(len(reader.zero_examples), 1)
@@ -124,12 +123,11 @@ class GrenadeCountReaderTests(unittest.TestCase):
                 ('negative', 'train', True, 'gameplay', -1),
                 ('boolean', 'train', True, 'gameplay', True),
             ):
-                session = collection / 'sessions' / name
-                (session / 'originals').mkdir(parents=True)
-                (session / 'annotations').mkdir()
-                cv2.imwrite(str(session / 'originals/screen.png'), screen(2))
+                (collection / 'originals').mkdir(parents=True, exist_ok=True)
+                (collection / 'annotations').mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(collection / f'originals/{name}__screen.png'), screen(2))
                 data = {
-                    'split': split, 'image': '../originals/screen.png',
+                    'split': split, 'image': f'../originals/{name}__screen.png',
                     'game_crop': [0, 0, 1280, 720],
                     'screen_state': {
                         'screen_kind': kind,
@@ -137,7 +135,7 @@ class GrenadeCountReaderTests(unittest.TestCase):
                         'combat_stats': {'grenades_remaining': value, 'grenade_damage': 99},
                     },
                 }
-                (session / 'annotations/screen.json').write_text(json.dumps(data))
+                (collection / f'annotations/{name}__screen.json').write_text(json.dumps(data))
             reader = GrenadeCountReader.from_collection(collection)
             self.assertEqual(len(reader.examples), 1)
             self.assertEqual(reader.read(screen(2)).value, 2)

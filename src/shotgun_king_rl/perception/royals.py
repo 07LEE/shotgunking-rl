@@ -6,6 +6,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from ..collection_layout import annotation_paths
 from ..vision import analyzer
 from ..vision.layout import normalize_game_screen
 
@@ -24,7 +25,7 @@ class RoyalTemplates:
     @classmethod
     def from_collection(cls, collection):
         examples = []
-        for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
+        for path in annotation_paths(collection):
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             if (data.get("split") != "train" or data.get("confirmed") is not True

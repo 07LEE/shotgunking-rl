@@ -5,6 +5,7 @@ import json
 import cv2
 import numpy as np
 
+from ..collection_layout import annotation_paths
 from .images import normalize
 from ..vision import analyzer, screens
 from ..perception.hud import stat_patch
@@ -91,7 +92,7 @@ def propose(screen, collection, exclude=None):
     floor_examples = []
     souls = []
     references = []
-    for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
+    for path in annotation_paths(collection):
         if exclude is not None and path.resolve() == Path(exclude).resolve():
             continue
         data = json.loads(path.read_text())

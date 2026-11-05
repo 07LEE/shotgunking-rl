@@ -9,6 +9,7 @@ import cv2
 from .dataset import choose_session_split
 from .images import detect_crop, normalize
 from .importer import import_images
+from ..collection_layout import annotation_paths, annotations_dir, session_images
 from .locking import serialized
 from .screen_state import propose
 from ..vision import analyzer
@@ -40,20 +41,16 @@ def draft_annotation(image, image_name, collection, session_id, split, crop=None
 @serialized
 def prepare_session(collection, session_id, crop=None, image_names=None, original_names=None):
     moved = import_images(collection, session_id, image_names)
-    session = collection / 'sessions' / session_id
-    image_paths = [
-        path for path in sorted((session / 'originals').iterdir())
-        if path.suffix.lower() in ('.png', '.jpg', '.jpeg')
-    ]
+    image_paths = session_images(collection, session_id)
     split = choose_session_split(collection, session_id, len(image_paths))
     created = 0
     errors = []
     for image_path in image_paths:
         if original_names is not None and image_path.name not in original_names:
             continue
-        annotation = session / 'annotations' / (image_path.name + '.json')
+        annotation = annotations_dir(collection) / (image_path.name + '.json')
         # Preserve earlier annotations, including names used before this tool.
-        existing = [json.loads(p.read_text()) for p in (session / 'annotations').glob('*.json')]
+        existing = [json.loads(p.read_text()) for p in annotation_paths(collection, [session_id])]
         if any(Path(a.get('image', '')).name == image_path.name for a in existing):
             continue
         try:

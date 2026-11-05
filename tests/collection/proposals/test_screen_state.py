@@ -21,12 +21,11 @@ class ScreenStateRecognitionTests(unittest.TestCase):
         shifted[314:431, 930:1015] = pattern
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            session = root / 'sessions/ref'
-            (session / 'originals').mkdir(parents=True)
-            (session / 'annotations').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), screen)
-            annotation = session / 'annotations/screen.json'
-            annotation.write_text(json.dumps({'image': '../originals/screen.png', 'split': 'train', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'souls': [], 'reviews': {'soul': True}}}))
+            (root / 'originals').mkdir(parents=True, exist_ok=True)
+            (root / 'annotations').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(root / 'originals/ref__screen.png'), screen)
+            annotation = root / 'annotations/ref__screen.json'
+            annotation.write_text(json.dumps({'image': '../originals/ref__screen.png', 'split': 'train', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'souls': [], 'reviews': {'soul': True}}}))
             self.assertEqual(propose(shifted, root)['screen_state']['souls'], [])
             self.assertIsNone(propose(np.zeros_like(screen), root)['screen_state']['souls'])
             self.assertIsNone(propose(shifted, root, exclude=annotation)['screen_state']['souls'])
@@ -41,12 +40,11 @@ class ScreenStateRecognitionTests(unittest.TestCase):
         shifted[40:, 3:] = screen[:-40, :-3]
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            session = collection / 'sessions/run-shift'
-            (session / 'originals').mkdir(parents=True)
-            (session / 'annotations').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), screen)
-            annotation = session / 'annotations/screen.json'
-            annotation.write_text(json.dumps({'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'spread_degrees': 65}, 'reviews': {'combat_stats': True}}}))
+            (collection / 'originals').mkdir(parents=True, exist_ok=True)
+            (collection / 'annotations').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(collection / 'originals/run-shift__screen.png'), screen)
+            annotation = collection / 'annotations/run-shift__screen.json'
+            annotation.write_text(json.dumps({'image': '../originals/run-shift__screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'combat_stats': {'attack': 4, 'range_min': 3, 'range_max': 5, 'spread_degrees': 65}, 'reviews': {'combat_stats': True}}}))
             stats = propose(shifted, collection)['screen_state']['combat_stats']
             for key, value in {'attack': 4, 'range_min': 3, 'range_max': 5, 'spread_degrees': 65}.items():
                 self.assertEqual(stats[key], value)
@@ -90,12 +88,11 @@ class ScreenStateRecognitionTests(unittest.TestCase):
         screen = np.random.default_rng(30).integers(0, 255, (720, 1280, 3), dtype=np.uint8)
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            session = collection / 'sessions/run-01'
-            (session / 'originals').mkdir(parents=True)
-            (session / 'annotations').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), screen)
-            annotation = session / 'annotations/screen.json'
-            data = {'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4}, 'cards': {'left': ['known_card']}, 'souls': ['knight'], 'reviews': {'ammo': True, 'combat_stats': True, 'cards': True, 'soul': True}}}
+            (collection / 'originals').mkdir(parents=True, exist_ok=True)
+            (collection / 'annotations').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(collection / 'originals/run-01__screen.png'), screen)
+            annotation = collection / 'annotations/run-01__screen.json'
+            data = {'image': '../originals/run-01__screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'screen_state': {'ammo': {'loaded': 2, 'reserve': 6}, 'combat_stats': {'attack': 4}, 'cards': {'left': ['known_card']}, 'souls': ['knight'], 'reviews': {'ammo': True, 'combat_stats': True, 'cards': True, 'soul': True}}}
             annotation.write_text(json.dumps(data))
             result = propose(screen, collection)
             self.assertEqual(result['screen_state']['ammo']['loaded'], 2)
@@ -117,12 +114,11 @@ class ScreenStateRecognitionTests(unittest.TestCase):
         cv2.putText(screen, '3', (685, 60), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA)
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            session = collection / 'sessions/run-floor'
-            (session / 'originals').mkdir(parents=True)
-            (session / 'annotations').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), screen)
-            annotation = session / 'annotations/screen.json'
-            annotation.write_text(json.dumps({'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'confirmed': True, 'floor': 3, 'screen_state': {}}))
+            (collection / 'originals').mkdir(parents=True, exist_ok=True)
+            (collection / 'annotations').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(collection / 'originals/run-floor__screen.png'), screen)
+            annotation = collection / 'annotations/run-floor__screen.json'
+            annotation.write_text(json.dumps({'image': '../originals/run-floor__screen.png', 'game_crop': [0, 0, 1280, 720], 'split': 'train', 'confirmed': True, 'floor': 3, 'screen_state': {}}))
 
             result = propose(screen, collection)
 

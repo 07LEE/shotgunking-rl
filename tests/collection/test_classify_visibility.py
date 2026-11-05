@@ -24,12 +24,11 @@ class ClassifyVisibilityTests(unittest.TestCase):
             root = Path(directory)
             paths = []
             for split in ('train', 'val', 'test'):
-                session = root / 'sessions' / split
-                (session / 'annotations').mkdir(parents=True)
-                (session / 'originals').mkdir()
-                cv2.imwrite(str(session / 'originals/screen.png'), game_screen())
-                path = session / 'annotations/screen.json'
-                path.write_text(json.dumps({'split': split, 'image': '../originals/screen.png',
+                (root / 'annotations').mkdir(parents=True, exist_ok=True)
+                (root / 'originals').mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(root / f'originals/{split}__screen.png'), game_screen())
+                path = root / f'annotations/{split}__screen.json'
+                path.write_text(json.dumps({'split': split, 'image': f'../originals/{split}__screen.png',
                                             'game_crop': [0, 0, 1280, 720], 'screen_state': {
                                                 'screen_kind': 'gameplay', 'combat_stats': {'grenade_damage': 2},
                                                 'combat_visibility': {'attack': 'unreadable'},

@@ -14,6 +14,7 @@ import webbrowser
 
 import cv2
 
+from ..collection_layout import annotation_paths
 from ..collection.dataset import CLASSES, group_split
 from ..collection.board_metadata import board_metadata, terrain_source, MOAT_ROW
 from ..collection.images import normalize
@@ -57,10 +58,6 @@ def open_review(url):
         print(f'Could not open a browser automatically. Open {url}', flush=True)
 
 
-def annotation_paths(collection):
-    return sorted((collection / 'sessions').glob('*/annotations/*.json'))
-
-
 def load_item(collection, relative):
     path = (collection / relative).resolve()
     if path not in [p.resolve() for p in annotation_paths(collection)]:
@@ -70,7 +67,7 @@ def load_item(collection, relative):
     image_path = (path.parent / data['image']).resolve()
     originals = (path.parent.parent / 'originals').resolve()
     if image_path.parent != originals:
-        raise ValueError('Image must be a session original')
+        raise ValueError('Image must be a collection original')
     image = cv2.imread(str(image_path))
     if image is None:
         raise ValueError('Original image cannot be read')
@@ -247,7 +244,7 @@ def save_item(collection, payload):
     if confirmed and any(label == 'ambiguous_royal' and [r, c] not in excluded
                          for r, row in enumerate(board) for c, label in enumerate(row)):
         raise ValueError('Resolve or exclude ambiguous royal cells before approval')
-    siblings = list(path.parent.glob('*.json'))
+    siblings = annotation_paths(path.parent.parent, [current['session_id']])
     for sibling in siblings:
         other = json.loads(sibling.read_text())
         if sibling != path and other.get('split', group_split(current['session_id'])) != split:

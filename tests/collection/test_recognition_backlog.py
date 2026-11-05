@@ -14,14 +14,14 @@ from shotgun_king_rl.collection.backlog import build_backlog
 
 class RecognitionBacklogTests(unittest.TestCase):
     def source(self, root, name, split, kind):
-        path = root / f'sessions/{name}/annotations/screen.json'
-        path.parent.mkdir(parents=True)
-        (path.parent.parent / 'originals').mkdir()
+        path = root / f'annotations/{name}__screen.json'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        (root / 'originals').mkdir(exist_ok=True)
         image = np.random.default_rng(32).integers(0, 255, (720, 1280, 3), dtype=np.uint8)
-        cv2.imwrite(str(path.parent.parent / 'originals/screen.png'), image)
+        cv2.imwrite(str(root / f'originals/{name}__screen.png'), image)
         board = [['empty'] * 8 for _ in range(8)]
         board[0][0] = 'ambiguous_royal'
-        path.write_text(json.dumps({'split': split, 'confirmed': False, 'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'board': board, 'screen_state': {'screen_kind': kind, 'reviews': {}}}))
+        path.write_text(json.dumps({'split': split, 'confirmed': False, 'image': f'../originals/{name}__screen.png', 'game_crop': [0, 0, 1280, 720], 'board': board, 'screen_state': {'screen_kind': kind, 'reviews': {}}}))
         return path
 
     def test_export_preserves_annotations_and_refuses_existing_output(self):
@@ -46,5 +46,5 @@ class RecognitionBacklogTests(unittest.TestCase):
             self.assertEqual(result['summary']['card_choices_needing_review'], 8)
             self.assertEqual({group['split'] for group in result['visual_groups']}, {'train', 'test'})
             for group in result['visual_groups']:
-                sessions = {item['annotation'].split('/')[1] for item in group['occurrences']}
+                sessions = {item['annotation'].split('/')[1].split('__')[0] for item in group['occurrences']}
                 self.assertEqual(len(sessions), 1)

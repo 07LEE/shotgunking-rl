@@ -4,6 +4,7 @@ from collections import Counter
 import json
 from pathlib import Path
 
+from ..collection_layout import annotation_paths
 from ..perception.frame import PreparedFrame, read_frame
 from ..perception.readers import OverlayScreenReader
 from ..perception.types import ScreenKind
@@ -25,7 +26,7 @@ def _value_key(field, value):
 def reviewed_coverage(collection):
     """Count reviewed train values; only train annotations become references."""
     coverage = Counter()
-    for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
+    for path in annotation_paths(collection):
         data = json.loads(path.read_text())
         state = data.get('screen_state') or {}
         if (data.get('split') != 'train' or state.get('screen_kind') != 'gameplay'
@@ -40,7 +41,7 @@ def reviewed_coverage(collection):
 def pending_reasons(collection):
     """Count reasons already waiting in unreviewed automatic drafts."""
     pending = Counter()
-    for path in sorted((Path(collection) / 'sessions').glob('*/annotations/*.json')):
+    for path in annotation_paths(collection):
         data = json.loads(path.read_text())
         reviews = (data.get('screen_state') or {}).get('reviews') or {}
         if any(reviews.values()):

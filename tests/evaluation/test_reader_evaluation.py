@@ -34,7 +34,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             board = np.zeros((8, 8), dtype=int)
             board[0, 0], board[7, 4] = 8, 1
             report = evaluate_readers(
-                collection / "sessions",
+                collection,
                 piece_reader=FakeReader(Prediction.accepted(
                     board, source="pieces:test"
                 ), "pieces:test"),
@@ -48,14 +48,14 @@ class ReaderEvaluationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection)
-            path = collection / "sessions/run-01/annotations/screen.json"
+            path = collection / "annotations/run-01__screen.json"
             annotation = json.loads(path.read_text())
             annotation["board"][0][0] = "special_knight"
             path.write_text(json.dumps(annotation))
             board = np.zeros((8, 8), dtype=int)
             board[0, 0], board[7, 4] = 7, 1
             report = evaluate_readers(
-                collection / "sessions",
+                collection,
                 piece_reader=FakeReader(Prediction.rejected(
                     board, source="pieces:test", reason="unsupported_runtime_piece:special_knight"
                 ), "pieces:test"),
@@ -75,7 +75,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             predicted_board[0][0] = 8
             predicted_board[7][4] = 1
             report = evaluate_readers(
-                collection / "sessions",
+                collection,
                 piece_reader=FakeReader(Prediction.accepted(predicted_board, source="pieces:test"), "pieces:test"),
                 ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source="ammo:test"), "ammo:test"),
                 screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:test"), "screen:test"),
@@ -98,7 +98,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             board = np.zeros((8, 8), dtype=int)
             board[0, 0], board[7, 4] = 9, 1  # Label is queen; prediction is white king.
             report = evaluate_readers(
-                collection / 'sessions',
+                collection,
                 piece_reader=FakeReader(Prediction.accepted(board, source='pieces:test'), 'pieces:test'),
                 ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source='ammo:test'), 'ammo:test'),
                 screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source='screen:test'), 'screen:test'),
@@ -117,7 +117,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             predicted_board[0][0] = 8
             predicted_board[7][4] = 1
             report = evaluate_readers(
-                collection / "sessions",
+                collection,
                 piece_reader=FakeReader(Prediction.accepted(predicted_board, source="pieces:test"), "pieces:test"),
                 ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source="ammo:test"), "ammo:test"),
                 screen_reader=FakeReader(Prediction.unknown(source="screen:test", reason="unverified"), "screen:test"),
@@ -142,7 +142,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             with self.subTest(labels=labels, status=prediction.status), tempfile.TemporaryDirectory() as directory:
                 collection = Path(directory)
                 create_reviewed_screen(collection)
-                path = collection / "sessions/run-01/annotations/screen.json"
+                path = collection / "annotations/run-01__screen.json"
                 data = json.loads(path.read_text())
                 data["screen_state"]["reviews"]["combat_stats"] = True
                 data["screen_state"]["combat_stats"] = labels
@@ -150,7 +150,7 @@ class ReaderEvaluationTests(unittest.TestCase):
                 board = np.zeros((8, 8), dtype=int)
                 board[0, 0], board[7, 4] = 8, 1
                 report = evaluate_readers(
-                    collection / "sessions",
+                    collection,
                     piece_reader=FakeReader(Prediction.accepted(board, source="pieces:test"), "pieces:test"),
                     ammo_reader=FakeReader(Prediction.accepted(AmmoReading(2, 6), source="ammo:test"), "ammo:test"),
                     screen_reader=FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source="screen:test"), "screen:test"),
@@ -172,7 +172,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             collection = Path(directory)
             create_reviewed_screen(collection)
             combat = FakeReader(Prediction.unknown(source="combat:test", reason="missing"), "combat:test")
-            report = evaluate_readers(collection / "sessions", combat_reader=combat)
+            report = evaluate_readers(collection, combat_reader=combat)
             self.assertEqual(report["overall"]["combat_stats"]["screens"], 0)
             self.assertEqual(report["overall"]["combined"]["eligible_gameplay_screens"], 0)
 
@@ -180,25 +180,25 @@ class ReaderEvaluationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection, split="test")
-            image = collection / "sessions/run-01/originals/screen.png"
+            image = collection / "originals/run-01__screen.png"
             image.unlink()
-            report = evaluate_readers(collection / "sessions", splits=("train", "val"))
-            path = collection / "sessions/run-01/annotations/screen.json"
+            report = evaluate_readers(collection, splits=("train", "val"))
+            path = collection / "annotations/run-01__screen.json"
             data = json.loads(path.read_text())
             data["board"] = "changed excluded test data"
             path.write_text(json.dumps(data))
-            again = evaluate_readers(collection / "sessions", splits=("train", "val"))
+            again = evaluate_readers(collection, splits=("train", "val"))
             self.assertEqual(report["dataset_sha256"], again["dataset_sha256"])
             self.assertEqual(report["overall"]["annotations"], 0)
             for splits in ((), ("train", "train"), ("other",)):
                 with self.assertRaisesRegex(ValueError, "unique valid splits"):
-                    evaluate_readers(collection / "sessions", splits=splits)
+                    evaluate_readers(collection, splits=splits)
 
     def test_combat_factory_refuses_unreviewed_or_nontrain_melee_title(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection)
-            path = collection / "sessions/run-01/annotations/screen.json"
+            path = collection / "annotations/run-01__screen.json"
             original = json.loads(path.read_text())
             for split, reviewed, value in (("test", True, 2), ("val", True, 2), ("train", False, 2), ("train", True, 0)):
                 data = json.loads(json.dumps(original))
@@ -232,7 +232,7 @@ class ReaderEvaluationTests(unittest.TestCase):
             collection = Path(directory)
             create_reviewed_screen(collection, split="other")
             with self.assertRaisesRegex(ValueError, "invalid split"):
-                evaluate_readers(collection / "sessions")
+                evaluate_readers(collection)
 
 
 if __name__ == "__main__":
