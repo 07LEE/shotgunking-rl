@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from ..collection_layout import annotation_paths, session_of
 from ..perception.types import CombatStatsReading
 from ..perception.validation import valid_combat_stats
 
@@ -27,9 +28,10 @@ COMBAT_FIELDS = (
 )
 
 
-def audit_collection(sessions_dir: Path) -> dict:
+def audit_collection(collection: Path) -> dict:
     """Return review coverage and split-integrity findings without mutation."""
-    paths = sorted(sessions_dir.glob("*/annotations/*.json"))
+    collection = Path(collection)
+    paths = annotation_paths(collection)
     split_screens = Counter()
     split_sessions = {split: set() for split in SPLITS}
     review_counts = Counter()
@@ -51,7 +53,7 @@ def audit_collection(sessions_dir: Path) -> dict:
 
     for path in paths:
         data = json.loads(path.read_text())
-        session_id = data.get("session_id") or path.parent.parent.name
+        session_id = data.get("session_id") or session_of(path)
         split = data.get("split")
         session = sessions.setdefault(
             session_id,
@@ -71,7 +73,7 @@ def audit_collection(sessions_dir: Path) -> dict:
             split_screens[split] += 1
             split_sessions[split].add(session_id)
         else:
-            issues.append(f"invalid_split:{path.relative_to(sessions_dir)}")
+            issues.append(f"invalid_split:{path.relative_to(collection)}")
 
         state = data.get("screen_state") or {}
         reviews = state.get("reviews") or {}
@@ -129,7 +131,7 @@ def audit_collection(sessions_dir: Path) -> dict:
         image = (path.parent / data.get("image", "")).resolve()
         originals = (path.parent.parent / "originals").resolve()
         if image.parent != originals or not image.is_file():
-            issues.append(f"invalid_image:{path.relative_to(sessions_dir)}")
+            issues.append(f"invalid_image:{path.relative_to(collection)}")
         else:
             digest = hashlib.sha256(image.read_bytes()).hexdigest()
             image_digests.setdefault(digest, []).append(path)
@@ -198,10 +200,10 @@ def audit_collection(sessions_dir: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--sessions",
+        "--collection",
         type=Path,
-        default=ROOT / "data/collection/sessions",
-        help="Collection sessions directory",
+        default=ROOT / "data/collection",
+        help="Collection directory",
     )
     parser.add_argument(
         "--require-ready",
@@ -210,7 +212,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     try:
-        report = audit_collection(args.sessions)
+        report = audit_collection(args.collection)
     except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
         parser.exit(1, f"Collection audit failed: {exc}\n")
     print(json.dumps(report, indent=2))

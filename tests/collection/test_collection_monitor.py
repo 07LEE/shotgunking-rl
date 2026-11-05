@@ -71,7 +71,7 @@ class CollectionMonitorTests(unittest.TestCase):
             result = self.run_monitor(frames, recorder)
             self.assertEqual(result['saved'], 2)
             self.assertEqual(result['duplicates'], 1)
-            annotations = list((recorder.session / 'annotations').glob('*.json'))
+            annotations = list((recorder.collection / 'annotations').glob('*.json'))
             self.assertEqual(len(annotations), 2)
             for path in annotations:
                 data = json.loads(path.read_text())
@@ -81,7 +81,7 @@ class CollectionMonitorTests(unittest.TestCase):
                 self.assertEqual(data['split'], recorder.split)
                 self.assertTrue((path.parent / data['image']).exists())
             with self.assertRaisesRegex(ValueError, 'No usable annotations'):
-                build_dataset(recorder.collection / 'sessions', Path(directory) / 'export')
+                build_dataset(recorder.collection / 'annotations', Path(directory) / 'export')
 
     def test_capture_failure_resets_stability_without_writing(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -90,7 +90,7 @@ class CollectionMonitorTests(unittest.TestCase):
             result = self.run_monitor([a, None, a], recorder)
             self.assertEqual(result['saved'], 0)
             self.assertEqual(result['capture_failures'], 1)
-            self.assertFalse(recorder.session.exists())
+            self.assertFalse((recorder.collection / 'originals').exists())
 
     def test_resume_preserves_annotations_split_and_inbox(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -130,7 +130,7 @@ class CollectionMonitorTests(unittest.TestCase):
             recorder = DraftRecorder(directory, 'session', crop=[20, 10, 1300, 730])
             result = self.run_monitor([image, image], recorder)
             self.assertEqual(result['saved'], 1)
-            data = json.loads(next((recorder.session / 'annotations').glob('*.json')).read_text())
+            data = json.loads(next((recorder.collection / 'annotations').glob('*.json')).read_text())
             self.assertEqual(data['game_crop'], [20, 10, 1300, 730])
 
     def test_annotation_failure_does_not_leave_an_original(self):
@@ -139,11 +139,11 @@ class CollectionMonitorTests(unittest.TestCase):
             with patch('shotgun_king_rl.collection.monitor.draft_annotation', side_effect=ValueError('failed')):
                 with self.assertRaises(ValueError):
                     recorder.save(game_screen())
-            self.assertFalse(recorder.session.exists())
+            self.assertFalse((recorder.collection / 'originals').exists())
 
     def test_invalid_session_or_loop_limits(self):
         with tempfile.TemporaryDirectory() as directory:
-            for session in ('../escape', '', '/absolute'):
+            for session in ('../escape', '', '/absolute', 'a__b', 'trailing_'):
                 with self.assertRaises(ValueError):
                     DraftRecorder(directory, session)
             recorder = DraftRecorder(directory, 'session')

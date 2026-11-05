@@ -8,6 +8,7 @@ from pathlib import Path
 
 import cv2
 
+from ..collection_layout import annotation_paths
 from ..perception.visibility_proposals import CombatVisibilityClassifier
 from ..perception.visibility import combat_visibility
 from .images import normalize
@@ -17,7 +18,7 @@ def classify_visibility(collection, *, apply=False, classifier=None):
     root = Path(collection).resolve()
     classifier = classifier or CombatVisibilityClassifier.from_collection(root)
     report = {'applied': apply, 'results': [], 'counts': Counter(), 'errors': [], 'test_skipped': 0}
-    for path in sorted((root / 'sessions').glob('*/annotations/*.json')):
+    for path in annotation_paths(root):
         try:
             raw = path.read_bytes()
             data = json.loads(raw)

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import cv2
 
+from ..collection_layout import annotation_paths
 from .visibility import visual_combat_stats
 
 from ..vision.layout import normalize_game_screen
@@ -37,7 +38,7 @@ class PenetrationReader:
     def from_collection(cls, collection, *, exclude=None):
         examples = []
         zero_examples = []
-        for path in sorted((Path(collection) / "sessions").glob("*/annotations/*.json")):
+        for path in annotation_paths(collection):
             if exclude is not None and path.resolve() == Path(exclude).resolve():
                 continue
             data = json.loads(path.read_text())

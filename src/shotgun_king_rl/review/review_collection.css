@@ -164,6 +164,8 @@ select:disabled, input:disabled { opacity: .6; color: var(--muted); cursor: defa
 .review-summary-heading .button-row button { padding: 5px 10px; }
 .current-screenshot { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; margin-top: 8px; }
 .current-screenshot:empty { display: none; }
+.capture-reasons { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; margin-top: 6px; }
+.capture-reasons:empty { display: none; }
 
 @media (max-width: 1200px) {
     .review-workspace { grid-template-columns: 240px minmax(0, 1fr); gap: 16px; }
@@ -224,6 +226,7 @@ select:disabled, input:disabled { opacity: .6; color: var(--muted); cursor: defa
 .review-summary-heading .button-row { grid-column: 2; grid-row: 1; }
 .current-screenshot { grid-column: 1; grid-row: 1; margin: 0; font-size: 12px; }
 .review-section-status { grid-column: 2; grid-row: 2; margin: 0; justify-content: flex-end; }
+.capture-reasons { grid-column: 1 / -1; grid-row: 3; margin: 0; }
 .review-workspace { gap: 18px; }
 .panel, .review-sidebar { border-radius: 10px; box-shadow: none; }
 .panel-heading h2, .controls h2, .review-sidebar h2 { font-size: 16px; }
@@ -236,6 +239,7 @@ select:disabled, input:disabled { opacity: .6; color: var(--muted); cursor: defa
     .review-type { align-items: flex-start; flex-direction: column; gap: 8px; }
     .review-summary { gap: 8px; }
     .review-section-status { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; flex-wrap: wrap; }
+    .capture-reasons { grid-row: 4; }
 }
 
 #screenControls .task-fields { padding-top: 16px; margin-top: 16px; border-top: 1px solid var(--border); }

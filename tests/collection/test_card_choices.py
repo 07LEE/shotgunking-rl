@@ -13,33 +13,32 @@ from shotgun_king_rl.collection.card_choices import CHOICE_BOXES, extract_card_c
 
 
 def source(root, reviewed=True, split='test', layout=True):
-    session = root / 'sessions/run-01'
-    (session / 'originals').mkdir(parents=True)
-    (session / 'annotations').mkdir()
+    (root / 'originals').mkdir(parents=True, exist_ok=True)
+    (root / 'annotations').mkdir(parents=True, exist_ok=True)
     image = np.zeros((720, 1280, 3), dtype=np.uint8)
     if layout:
         for i, (_, _, (left, top, right, bottom)) in enumerate(CHOICE_BOXES):
             image[top:bottom, left:right] = 230 + i * 5
-    cv2.imwrite(str(session / 'originals/screen.png'), image)
+    cv2.imwrite(str(root / 'originals/run-01__screen.png'), image)
     data = {
         'session_id': 'run-01', 'split': split,
-        'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720],
+        'image': '../originals/run-01__screen.png', 'game_crop': [0, 0, 1280, 720],
         'screen_state': {'screen_kind': 'card_selection', 'reviews': {'screen_kind': reviewed}},
     }
-    annotation = session / 'annotations/screen.json'
+    annotation = root / 'annotations/run-01__screen.json'
     annotation.write_text(json.dumps(data))
-    return session, annotation
+    return annotation
 
 
 class CardChoiceExtractionTests(unittest.TestCase):
     def test_extracts_four_slots_with_provenance_without_altering_sources(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            session, annotation = source(root)
-            original = session / 'originals/screen.png'
+            annotation = source(root)
+            original = root / 'originals/run-01__screen.png'
             before = (original.read_bytes(), annotation.read_bytes())
             output = root / 'cards'
-            summary = extract_card_choices(root / 'sessions', output)
+            summary = extract_card_choices(root, output)
             rows = [json.loads(line) for line in (output / 'manifest.jsonl').read_text().splitlines()]
             self.assertEqual(summary['card_images'], 4)
             for index, row in enumerate(rows):
@@ -58,8 +57,8 @@ class CardChoiceExtractionTests(unittest.TestCase):
             root = Path(directory)
             source(root, reviewed=False)
             with self.assertRaisesRegex(ValueError, 'No eligible'):
-                extract_card_choices(root / 'sessions', root / 'cards')
-            result = extract_card_choices(root / 'sessions', root / 'cards', include_unreviewed=True)
+                extract_card_choices(root, root / 'cards')
+            result = extract_card_choices(root, root / 'cards', include_unreviewed=True)
             self.assertEqual(result['unreviewed_screens'], 1)
 
     def test_invalid_layout_is_rejected_before_writing(self):
@@ -67,7 +66,7 @@ class CardChoiceExtractionTests(unittest.TestCase):
             root = Path(directory)
             source(root, layout=False)
             with self.assertRaisesRegex(ValueError, 'layout not verified'):
-                extract_card_choices(root / 'sessions', root / 'cards')
+                extract_card_choices(root, root / 'cards')
             self.assertFalse((root / 'cards').exists())
 
     def test_existing_output_is_never_overwritten(self):
@@ -79,7 +78,7 @@ class CardChoiceExtractionTests(unittest.TestCase):
             marker = output / 'keep.txt'
             marker.write_text('keep')
             with self.assertRaisesRegex(ValueError, 'Output exists'):
-                extract_card_choices(root / 'sessions', output)
+                extract_card_choices(root, output)
             self.assertEqual(marker.read_text(), 'keep')
 
     def test_explicit_layout_override_retains_unverified_provenance(self):
@@ -87,7 +86,7 @@ class CardChoiceExtractionTests(unittest.TestCase):
             root = Path(directory)
             source(root, layout=False)
             output = root / 'cards'
-            result = extract_card_choices(root / 'sessions', output, allow_unverified_layout=True)
+            result = extract_card_choices(root, output, allow_unverified_layout=True)
             self.assertEqual(result['unverified_layout_screens'], 1)
             rows = [json.loads(line) for line in (output / 'manifest.jsonl').read_text().splitlines()]
             self.assertTrue(all(not row['automatic_layout_verified'] for row in rows))
@@ -96,12 +95,12 @@ class CardChoiceExtractionTests(unittest.TestCase):
     def test_one_session_cannot_span_splits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            _, annotation = source(root)
+            annotation = source(root)
             data = json.loads(annotation.read_text())
             data['split'] = 'train'
-            annotation.with_name('other.json').write_text(json.dumps(data))
+            annotation.with_name('run-01__other.json').write_text(json.dumps(data))
             with self.assertRaisesRegex(ValueError, 'multiple splits'):
-                extract_card_choices(root / 'sessions', root / 'cards')
+                extract_card_choices(root, root / 'cards')
             self.assertFalse((root / 'cards').exists())
 
 

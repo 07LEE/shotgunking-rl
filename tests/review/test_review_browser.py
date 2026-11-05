@@ -25,12 +25,12 @@ class ReviewBrowserTests(unittest.TestCase):
             root = Path(temporary)
             cases = [('play', 'a-complete', True), ('play', 'b-partial', False), ('play', 'c-pending', False), ('finished', 'done', True), ('missing-floor', 'no-floor', False), ('cards', 'card-screen', True), ('finish-page', 'finish-page', False), ('finish-card', 'finish-card', False), ('finish-unknown', 'finish-unknown', False)]
             for session, name, complete in cases:
-                directory = root / 'sessions' / session
-                (directory / 'originals').mkdir(parents=True, exist_ok=True)
-                (directory / 'annotations').mkdir(exist_ok=True)
-                cv2.imwrite(str(directory / 'originals' / (name + '.png')), game_screen())
+                stored = session + '__' + name
+                (root / 'originals').mkdir(parents=True, exist_ok=True)
+                (root / 'annotations').mkdir(exist_ok=True)
+                cv2.imwrite(str(root / 'originals' / (stored + '.png')), game_screen())
                 data = piece_annotation()
-                data.update(image='../originals/' + name + '.png', session_id=session, floor=1, confirmed=complete, moat_active=False)
+                data.update(image='../originals/' + stored + '.png', session_id=session, floor=1, confirmed=complete, moat_active=False)
                 reviews = {key: complete for key in ('screen_kind', 'ammo', 'combat_stats', 'soul')}
                 if name == 'b-partial':
                     reviews.update(screen_kind=True, ammo=True)
@@ -45,7 +45,7 @@ class ReviewBrowserTests(unittest.TestCase):
                     data['confirmed'] = False
                 if name == 'finish-unknown':
                     data['screen_state']['screen_kind'] = None
-                (directory / 'annotations' / (name + '.png.json')).write_text(json.dumps(data))
+                (root / 'annotations' / (stored + '.png.json')).write_text(json.dumps(data))
             try:
                 server = make_server(root, 0)
             except PermissionError:

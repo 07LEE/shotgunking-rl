@@ -8,6 +8,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from ..collection_layout import annotation_paths
 from .card_catalog import load_catalog, slot_box, slot_side
 from .images import normalize
 from ..perception.royals import RoyalTemplates
@@ -16,9 +17,7 @@ from ..vision import analyzer
 
 def build_backlog(collection, output, sessions=()):
     root, output = Path(collection), Path(output)
-    paths = sorted((root / 'sessions').glob('*/annotations/*.json'))
-    if sessions:
-        paths = [path for path in paths if path.parent.parent.name in sessions]
+    paths = annotation_paths(root, sessions or None)
     if not paths:
         raise ValueError('No matching collection annotations')
     output.mkdir(parents=True, exist_ok=False)

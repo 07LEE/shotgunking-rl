@@ -8,7 +8,6 @@ import json
 import math
 import os
 from pathlib import Path
-import re
 import tempfile
 import time
 from uuid import uuid4
@@ -18,6 +17,7 @@ import numpy as np
 
 from .dataset import choose_session_split
 from .images import normalize
+from ..collection_layout import annotations_dir, originals_dir, session_images, stored_name, validate_session_id
 from .prepare import COLLECTION, draft_annotation
 
 
@@ -76,26 +76,22 @@ class DraftRecorder:
     """Append images and drafts to one session without touching the inbox."""
 
     def __init__(self, collection, session_id, crop=None):
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', session_id):
-            raise ValueError('Invalid session ID')
+        validate_session_id(session_id)
         self.collection = Path(collection)
         self.session_id = session_id
         self.crop = crop
-        self.session = self.collection / 'sessions' / session_id
         self.split = choose_session_split(self.collection, session_id, 1)
         self.seen = set()
-        for path in (self.session / 'originals').glob('*'):
-            if path.suffix.lower() not in ('.png', '.jpg', '.jpeg'):
-                continue
+        for path in session_images(self.collection, session_id):
             image = cv2.imread(str(path))
             if image is not None:
                 self.seen.add(image_digest(image))
 
-    def save(self, image):
+    def save(self, image, reasons=None):
         digest = image_digest(image)
         if digest in self.seen:
             return None
-        name = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ_') + uuid4().hex[:8] + '.png'
+        name = stored_name(self.session_id, datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ_') + uuid4().hex[:8] + '.png')
         data = draft_annotation(image, name, self.collection, self.session_id, self.split, self.crop)
         # Automatic suggestions never carry human approvals, including future proposers.
         data['confirmed'] = False
@@ -105,13 +101,15 @@ class DraftRecorder:
         data.setdefault('prediction', {})['human_review_required'] = True
         data['auto_capture'] = {'method': 'settled-screen-change-v1', 'pixel_sha256': digest,
                                 'captured_at': datetime.now(timezone.utc).isoformat()}
+        if reasons is not None:
+            data['auto_capture']['reasons'] = list(reasons)
         encoded_ok, encoded = cv2.imencode('.png', image)
         if not encoded_ok:
             raise OSError('Could not encode capture')
-        for directory in ('originals', 'annotations', 'review'):
-            (self.session / directory).mkdir(parents=True, exist_ok=True)
-        original = self.session / 'originals' / name
-        annotation = self.session / 'annotations' / (name + '.json')
+        for directory in (originals_dir(self.collection), annotations_dir(self.collection)):
+            directory.mkdir(parents=True, exist_ok=True)
+        original = originals_dir(self.collection) / name
+        annotation = annotations_dir(self.collection) / (name + '.json')
         with original.open('xb') as output:
             output.write(encoded.tobytes())
         annotation_created = False
@@ -129,15 +127,19 @@ class DraftRecorder:
 
 
 def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
-            change_threshold=1.0, stability_threshold=0.3, stable_samples=2,
+            change_threshold=1.0, stability_threshold=0.3, stable_samples=2, selector=None,
             clock=time.monotonic, sleep=time.sleep, report=print):
-    """Poll via an injected capture function; never click, train or approve."""
+    """Poll via an injected capture function; never click, train or approve.
+
+    A selector returns reasons for keeping a settled screen; without reasons
+    the screen becomes the new baseline but is not written.
+    """
     if not math.isfinite(interval) or interval <= 0 or not math.isfinite(duration) or duration <= 0:
         raise ValueError('Interval and duration must be finite and positive')
     if type(max_images) is not int or max_images < 1:
         raise ValueError('max_images must be positive')
     detector = ChangeDetector(change_threshold, stability_threshold, stable_samples)
-    counts = dict(polls=0, saved=0, duplicates=0, capture_failures=0, unreadable_screens=0)
+    counts = dict(polls=0, saved=0, duplicates=0, skipped=0, capture_failures=0, unreadable_screens=0)
     start = clock()
     while clock() - start < duration and counts['saved'] < max_images:
         image = capture()
@@ -155,13 +157,17 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
             else:
                 if detector.consider(screen):
                     # Persist only after both stability and change checks pass.
-                    annotation = recorder.save(image)
+                    reasons = selector(screen) if selector is not None else None
+                    annotation = recorder.save(image, reasons) if reasons is None or reasons else False
                     detector.mark_saved(screen)
-                    if annotation is None:
+                    if annotation is False:
+                        counts['skipped'] += 1
+                    elif annotation is None:
                         counts['duplicates'] += 1
                     else:
                         counts['saved'] += 1
-                        report(f'Draft saved: {annotation}')
+                        detail = f' ({", ".join(reasons)})' if reasons else ''
+                        report(f'Draft saved: {annotation}{detail}')
         if counts['saved'] < max_images:
             sleep(interval)
     return counts
@@ -214,6 +220,12 @@ def main():
     parser.add_argument('--stability-threshold', type=float, default=0.3)
     parser.add_argument('--stable-samples', type=int, default=2)
     parser.add_argument('--crop', type=int, nargs=4, metavar=('LEFT', 'TOP', 'RIGHT', 'BOTTOM'))
+    parser.add_argument('--save-all', action='store_true',
+                        help='Save every settled change instead of only recognition gaps')
+    parser.add_argument('--min-examples', type=int, default=3,
+                        help='Values with fewer reviewed train examples count as rare')
+    parser.add_argument('--max-per-reason', type=int, default=5,
+                        help='Stop selecting a reason once this many drafts await review')
     args = parser.parse_args()
     if not args.window_title.strip():
         parser.error('A nonempty game window title is required')
@@ -225,11 +237,19 @@ def main():
                 and math.isfinite(args.duration) and args.duration > 0 and args.max_images > 0):
             raise ValueError('Interval, duration and max-images must be positive and finite')
         recorder = DraftRecorder(args.collection, args.session, args.crop)
-        print(f'Monitoring with {backend}; split={recorder.split}; Ctrl+C stops capture. Drafts require review.', flush=True)
+        selector = None
+        if not args.save_all:
+            from .selection import GapSelector
+            selector = GapSelector.from_collection(args.collection, min_examples=args.min_examples,
+                                                   max_per_reason=args.max_per_reason)
+        mode = 'all settled changes' if selector is None else 'recognition gaps only'
+        print(f'Monitoring with {backend}; split={recorder.split}; saving {mode}; '
+              'Ctrl+C stops capture. Drafts require review.', flush=True)
         with capture_source(backend, args.window_title, args.portal_python) as capture:
             counts = monitor(capture, recorder, interval=args.interval, duration=args.duration,
                              max_images=args.max_images, change_threshold=args.change_threshold,
-                             stability_threshold=args.stability_threshold, stable_samples=args.stable_samples)
+                             stability_threshold=args.stability_threshold, stable_samples=args.stable_samples,
+                             selector=selector)
         print(json.dumps(counts))
     except KeyboardInterrupt:
         print('\nMonitoring stopped; saved drafts remain unapproved.')

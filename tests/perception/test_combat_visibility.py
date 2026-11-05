@@ -45,14 +45,13 @@ class CombatVisibilityTests(unittest.TestCase):
             with self.subTest(reader=case.name), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 for name, status in (('visible', 'visible'), ('hidden', 'occluded')):
-                    session = root / 'sessions' / name
-                    (session / 'annotations').mkdir(parents=True)
-                    (session / 'originals').mkdir()
+                    (root / 'annotations').mkdir(parents=True, exist_ok=True)
+                    (root / 'originals').mkdir(parents=True, exist_ok=True)
                     # A hidden annotation must be skipped before image loading.
                     if status == 'visible':
-                        cv2.imwrite(str(session / 'originals/screen.png'), screen(case))
-                    (session / 'annotations/screen.json').write_text(json.dumps({
-                        'split': 'train', 'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720],
+                        cv2.imwrite(str(root / f'originals/{name}__screen.png'), screen(case))
+                    (root / f'annotations/{name}__screen.json').write_text(json.dumps({
+                        'split': 'train', 'image': f'../originals/{name}__screen.png', 'game_crop': [0, 0, 1280, 720],
                         'screen_state': {'screen_kind': 'gameplay', 'combat_stats': case.labels,
                                          'combat_visibility': {key: status for key in case.labels},
                                          'reviews': {'combat_stats': True, 'screen_kind': True}},
@@ -64,17 +63,16 @@ class CombatVisibilityTests(unittest.TestCase):
     def test_save_reload_export_preserve_occlusion_and_require_reapproval(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            session = root / 'sessions/run'
-            (session / 'annotations').mkdir(parents=True)
-            (session / 'originals').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), game_screen())
+            (root / 'annotations').mkdir(parents=True, exist_ok=True)
+            (root / 'originals').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(root / 'originals/run__screen.png'), game_screen())
             annotation = piece_annotation()
-            annotation.update(image='../originals/screen.png', session_id='run', confirmed=True, floor=1)
+            annotation.update(image='../originals/run__screen.png', session_id='run', confirmed=True, floor=1)
             annotation['screen_state'] = {'screen_kind': 'gameplay', 'combat_stats': {'grenade_damage': 2},
                                           'reviews': {'screen_kind': True, 'combat_stats': True}}
-            path = session / 'annotations/screen.json'
+            path = root / 'annotations/run__screen.json'
             path.write_text(json.dumps(annotation))
-            relative = 'sessions/run/annotations/screen.json'
+            relative = 'annotations/run__screen.json'
             _, data, _, revision = load_item(root, relative)
             data['screen_state']['combat_visibility'] = {'grenade_damage': 'occluded'}
             payload = dict(data, id=relative, revision=revision)
@@ -87,7 +85,7 @@ class CombatVisibilityTests(unittest.TestCase):
             payload = dict(data, id=relative, revision=revision, combat_reviewed=True)
             self.assertTrue(save_item(root, payload)['reviews']['combat_stats'])
             output = root / 'dataset'
-            build_dataset(session / 'annotations', output)
+            build_dataset(root / 'annotations', output)
             record = json.loads((output / 'manifest.jsonl').read_text().splitlines()[0])
             self.assertEqual(record['combat_visual_targets']['grenade_damage'],
                              {'visibility': 'occluded', 'value': None, 'reviewed': True})

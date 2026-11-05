@@ -84,14 +84,13 @@ class MeleeAvailabilityReaderTests(unittest.TestCase):
                 ("fraction", "train", "gameplay", True, True, 0.5),
                 ("positive-no-title", "train", "gameplay", True, True, 2),
             ):
-                session = collection / "sessions" / name
-                (session / "annotations").mkdir(parents=True)
-                (session / "originals").mkdir()
+                (collection / "annotations").mkdir(exist_ok=True)
+                (collection / "originals").mkdir(exist_ok=True)
                 # Excluded splits have no image: reading them must fail this test.
                 if split == "train":
-                    cv2.imwrite(str(session / "originals/screen.png"), absent_screen())
-                (session / "annotations/screen.json").write_text(json.dumps({
-                    "split": split, "image": "../originals/screen.png",
+                    cv2.imwrite(str(collection / f"originals/{name}__screen.png"), absent_screen())
+                (collection / f"annotations/{name}__screen.json").write_text(json.dumps({
+                    "split": split, "image": f"../originals/{name}__screen.png",
                     "game_crop": [0, 0, 1280, 720], "screen_state": {
                         "screen_kind": kind, "combat_stats": {"melee_damage": value},
                         "reviews": {"screen_kind": screen_review, "combat_stats": combat_review},
@@ -105,12 +104,11 @@ class MeleeAvailabilityReaderTests(unittest.TestCase):
     def test_default_combat_factory_loads_absence_without_positive_title(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            session = collection / "sessions/run"
-            (session / "annotations").mkdir(parents=True)
-            (session / "originals").mkdir()
-            cv2.imwrite(str(session / "originals/screen.png"), absent_screen())
-            (session / "annotations/screen.json").write_text(json.dumps({
-                "split": "train", "image": "../originals/screen.png",
+            (collection / "annotations").mkdir()
+            (collection / "originals").mkdir()
+            cv2.imwrite(str(collection / "originals/run__screen.png"), absent_screen())
+            (collection / "annotations/run__screen.json").write_text(json.dumps({
+                "split": "train", "image": "../originals/run__screen.png",
                 "game_crop": [0, 0, 1280, 720], "screen_state": {
                     "screen_kind": "gameplay", "combat_stats": {"melee_damage": 0},
                     "reviews": {"screen_kind": True, "combat_stats": True},

@@ -54,18 +54,17 @@ class BoardMetadataTests(unittest.TestCase):
     def test_allied_rook_and_moat_survive_save_and_export(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
-            session = collection / 'sessions/run-01'
-            (session / 'annotations').mkdir(parents=True)
-            (session / 'originals').mkdir()
-            cv2.imwrite(str(session / 'originals/screen.png'), np.zeros((720, 1280, 3), dtype=np.uint8))
-            annotation = session / 'annotations/screen.json'
+            (collection / 'annotations').mkdir(parents=True, exist_ok=True)
+            (collection / 'originals').mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(collection / 'originals/run-01__screen.png'), np.zeros((720, 1280, 3), dtype=np.uint8))
+            annotation = collection / 'annotations/run-01__screen.json'
             annotation.write_text(json.dumps({
                 'schema': 'piece-cells-v1', 'session_id': 'run-01', 'split': 'train', 'floor': 1,
-                'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720],
+                'image': '../originals/run-01__screen.png', 'game_crop': [0, 0, 1280, 720],
                 'confirmed': False, 'exclude_cells': [], 'board': self.board(),
                 'screen_state': {'screen_kind': 'gameplay'},
             }))
-            relative = 'sessions/run-01/annotations/screen.json'
+            relative = 'annotations/run-01__screen.json'
             _, data, _, revision = load_item(collection, relative)
             sides, terrain = board_metadata(data)
             sides[6][4] = 'ally'
@@ -77,7 +76,7 @@ class BoardMetadataTests(unittest.TestCase):
             self.assertEqual(stored['piece_sides'][6][4], 'ally')
             self.assertEqual(stored['terrain'][4], ['moat'] * 8)
             output = collection / 'dataset'
-            build_dataset(collection / 'sessions', output)
+            build_dataset(collection / 'annotations', output)
             records = [json.loads(line) for line in (output / 'manifest.jsonl').read_text().splitlines()]
             rook = next(row for row in records if row['row'] == 6 and row['col'] == 4)
             self.assertEqual(rook['piece_side'], 'ally')
@@ -96,7 +95,7 @@ class BoardMetadataTests(unittest.TestCase):
             derived = json.loads(annotation.read_text())
             self.assertEqual(derived['terrain'], terrain_from_moat(True))
             self.assertEqual(derived['terrain_source'], 'moat_card')
-            build_dataset(collection / 'sessions', collection / 'derived_dataset')
+            build_dataset(collection / 'annotations', collection / 'derived_dataset')
             records = [json.loads(line) for line in (collection / 'derived_dataset/manifest.jsonl').read_text().splitlines()]
             self.assertTrue(all(row['moat_active'] and row['terrain_source'] == 'moat_card' for row in records))
             saved_data.update(revision=saved['revision'], moat_active=False, piece_reviewed=False)

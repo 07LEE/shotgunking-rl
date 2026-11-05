@@ -28,11 +28,11 @@ class RefreshCollectionTests(unittest.TestCase):
         self.assertEqual(data['screen_state']['souls'], [])
 
     def fixture(self, root):
-        path = root / 'sessions/ref/annotations/screen.json'
+        path = root / 'annotations/ref__screen.json'
         path.parent.mkdir(parents=True)
-        (path.parent.parent / 'originals').mkdir()
-        cv2.imwrite(str(path.parent.parent / 'originals/screen.png'), np.zeros((720, 1280, 3), np.uint8))
-        path.write_text(json.dumps({'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'confirmed': False, 'screen_state': {}}))
+        (root / 'originals').mkdir()
+        cv2.imwrite(str(root / 'originals/ref__screen.png'), np.zeros((720, 1280, 3), np.uint8))
+        path.write_text(json.dumps({'image': '../originals/ref__screen.png', 'game_crop': [0, 0, 1280, 720], 'confirmed': False, 'screen_state': {}}))
         return path
 
     def test_dry_run_is_read_only_and_existing_report_is_protected(self):

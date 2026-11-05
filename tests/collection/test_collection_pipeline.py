@@ -57,7 +57,7 @@ class CollectionPipelineTests(unittest.TestCase):
         self.assertTrue(second.exists())
         result = pipeline.tick(4)
         self.assertEqual(result['created'], 1)
-        annotations = list((self.root / 'sessions/play/annotations').glob('*.json'))
+        annotations = list((self.root / 'annotations').glob('play__*.json'))
         values = [json.loads(p.read_text()) for p in annotations]
         self.assertEqual(len({v['split'] for v in values}), 1)
         self.assertTrue(all(not v['confirmed'] for v in values))
@@ -99,19 +99,19 @@ class CollectionPipelineTests(unittest.TestCase):
         duplicate.write_bytes(raw)
         result = pipeline.tick(1)
         self.assertEqual((result['duplicates'], result['created']), (1, 0))
-        archived = list((self.root / 'sessions/play/duplicates').glob('*'))
+        archived = list((self.root / 'duplicates').glob('*'))
         self.assertEqual(archived[0].read_bytes(), raw)
         self.image(changed=True)
         result = pipeline.tick(2)
         self.assertIn('inbox/screen.png', result['errors'])
-        self.assertEqual((self.root / 'sessions/play/originals/screen.png').read_bytes(), raw)
+        self.assertEqual((self.root / 'originals/play__screen.png').read_bytes(), raw)
         self.assertTrue((self.root / 'inbox/screen.png').exists())
 
     def test_interrupted_import_recovery_preserves_reviewed_annotation(self):
         self.image()
         import_images(self.root, 'play')
         self.assertEqual(self.pipeline(settle=0).tick(0)['created'], 1)
-        annotation = self.root / 'sessions/play/annotations/screen.png.json'
+        annotation = self.root / 'annotations/play__screen.png.json'
         data = json.loads(annotation.read_text())
         data['confirmed'] = True
         annotation.write_text(json.dumps(data))
@@ -125,7 +125,7 @@ class CollectionPipelineTests(unittest.TestCase):
         self.image()
         self.predict.side_effect = ValueError('crop required')
         result = self.pipeline(settle=0).tick(0)
-        self.assertIn('originals/screen.png', result['errors'])
+        self.assertIn('originals/play__screen.png', result['errors'])
         self.predict.reset_mock()
         self.pipeline(settle=0).tick(1)
         self.predict.assert_not_called()
@@ -172,7 +172,7 @@ class CollectionPipelineTests(unittest.TestCase):
                 result = self.pipeline(settle=0).tick(2)
                 self.assertEqual(result['duplicates'], 1)
                 self.assertFalse(source.exists())
-                archived = list((self.root / 'sessions/play/duplicates').glob('*'))
+                archived = list((self.root / 'duplicates').glob('*'))
                 self.assertEqual(len(archived), 1)
                 self.assertEqual(archived[0].read_bytes(), raw)
                 report = json.loads((Path(result['report']) / 'pipeline.json').read_text())
@@ -195,7 +195,7 @@ class CollectionPipelineTests(unittest.TestCase):
         replacement = self.image('copy.png', changed=True).read_bytes()
         result = self.pipeline(settle=0).tick(2)
         self.assertEqual((result['duplicates'], result['created']), (0, 1))
-        self.assertEqual((self.root / 'sessions/play/originals/copy.png').read_bytes(), replacement)
+        self.assertEqual((self.root / 'originals/play__copy.png').read_bytes(), replacement)
         report = json.loads((Path(result['report']) / 'pipeline.json').read_text())
         self.assertFalse(report['events'])
 
@@ -279,7 +279,7 @@ with patch.object(Path, 'rename', interrupt):
                 self.predict.assert_not_called()
                 report = json.loads((Path(result['report']) / 'pipeline.json').read_text())
                 self.assertEqual(len(report['events']), 1)
-                self.assertEqual(len(list((self.root / 'sessions/play/duplicates').glob('*'))), 1)
+                self.assertEqual(len(list((self.root / 'duplicates').glob('*'))), 1)
                 self.assertFalse((self.root / 'inbox/copy.png').exists())
                 self.assertIsNone(self.pipeline(settle=0).tick(3)['report'])
 
@@ -298,7 +298,7 @@ with patch.object(Path, 'rename', interrupt):
             self.assertFalse(thread.is_alive())
         self.assertEqual(len(errors), 1)
         self.assertIn('Another collection importer', errors[0])
-        self.assertFalse((self.root / 'sessions/other-session').exists())
+        self.assertEqual(list((self.root / 'originals').glob('other-session__*')), [])
 
     def test_batch_finishes_and_leaves_later_arrivals_for_next_run(self):
         self.image()

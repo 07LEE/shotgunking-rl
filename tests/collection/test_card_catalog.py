@@ -18,13 +18,12 @@ class CardCatalogTests(unittest.TestCase):
         image = np.zeros((720, 1280, 3), np.uint8)
         left, top, right, bottom = slot_box('choice:0')
         image[top:bottom, left:right] = np.random.default_rng(23).integers(0, 255, (116, 84, 3), dtype=np.uint8)
-        session = root / 'sessions/ref'
-        (session / 'originals').mkdir(parents=True)
-        (session / 'annotations').mkdir()
-        original = session / 'originals/screen.png'
+        (root / 'originals').mkdir(parents=True, exist_ok=True)
+        (root / 'annotations').mkdir(parents=True, exist_ok=True)
+        original = root / 'originals/ref__screen.png'
         cv2.imwrite(str(original), image)
-        annotation = session / 'annotations/screen.json'
-        annotation.write_text(json.dumps({'split': split, 'image': '../originals/screen.png', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'screen_kind': 'card_selection', 'card_choices': ['known', None, None, None], 'reviews': {'screen_kind': True, 'cards': reviewed}}}))
+        annotation = root / 'annotations/ref__screen.json'
+        annotation.write_text(json.dumps({'split': split, 'image': '../originals/ref__screen.png', 'game_crop': [0, 0, 1280, 720], 'screen_state': {'screen_kind': 'card_selection', 'card_choices': ['known', None, None, None], 'reviews': {'screen_kind': True, 'cards': reviewed}}}))
         reference = {'annotation': annotation.relative_to(root).as_posix(), 'slot': 'choice:0', 'image_sha256': hashlib.sha256(original.read_bytes()).hexdigest()}
         catalog = {'schema': 'card-catalog-v1', 'revision': 1, 'entries': [{'key': 'known', 'side': 'black', 'names': {'en': 'Known'}, 'references': [reference], 'effects': None}]}
         (root / 'card_catalog.json').write_text(json.dumps(catalog))

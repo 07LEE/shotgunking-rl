@@ -40,8 +40,8 @@ def load_melee_title_reference(collection, title_annotation=None, *, exclude=Non
         raise ValueError('Invalid melee title reference path')
     if exclude is not None and path == Path(exclude).resolve():
         return None, None
-    if not path.is_relative_to(root / 'sessions'):
-        raise ValueError('Title reference must belong to the collection sessions')
+    if path.parent != root / 'annotations':
+        raise ValueError('Title reference must be a collection annotation')
     raw = path.read_bytes()
     data = json.loads(raw)
     state = data.get('screen_state') or {}

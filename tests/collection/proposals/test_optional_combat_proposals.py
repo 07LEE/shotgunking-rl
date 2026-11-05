@@ -31,7 +31,7 @@ class OptionalCombatProposalTests(unittest.TestCase):
     def test_readers_skip_excluded_annotation_before_loading_it(self):
         for cls in (KnockbackReader, PenetrationReader, MeleeDamageReader):
             with self.subTest(reader=cls.__name__), tempfile.TemporaryDirectory() as directory:
-                annotation = Path(directory) / 'sessions/ref/annotations/screen.json'
+                annotation = Path(directory) / 'annotations/ref__screen.json'
                 annotation.parent.mkdir(parents=True)
                 annotation.write_text('invalid json is intentionally excluded')
                 cls.from_collection(directory, exclude=annotation)

@@ -11,6 +11,7 @@ import cv2
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src'))
+from shotgun_king_rl.collection_layout import annotation_paths
 from shotgun_king_rl.perception import SpreadReader
 from shotgun_king_rl.vision.layout import normalize_game_screen
 
@@ -20,7 +21,7 @@ def evaluate(collection):
     reader = SpreadReader.from_collection(collection)
     samples = []
     digest = hashlib.sha256()
-    for path in sorted((collection / 'sessions').glob('*/annotations/*.json')):
+    for path in annotation_paths(collection):
         raw = path.read_bytes()
         data = json.loads(raw)
         state = data.get('screen_state') or {}

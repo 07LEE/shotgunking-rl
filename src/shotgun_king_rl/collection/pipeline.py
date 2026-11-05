@@ -7,7 +7,6 @@ import hashlib
 import json
 import math
 from pathlib import Path
-import re
 import shutil
 import time
 import uuid
@@ -18,6 +17,7 @@ from PIL import Image
 from .audit import audit_collection
 from .backlog import build_backlog
 from .importer import COLLECTION, import_images
+from ..collection_layout import annotation_paths, originals_dir, session_images, stored_name, validate_session_id
 from .locking import collection_lock
 from .prepare import prepare_session
 
@@ -39,13 +39,11 @@ def digest(path):
 
 class CollectionPipeline:
     def __init__(self, collection, session, *, settle=2.0, crop=None, retry_errors=False):
-        if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]*', session):
-            raise ValueError('Invalid session ID')
+        validate_session_id(session)
         if not math.isfinite(settle) or settle < 0:
             raise ValueError('Settle time must be nonnegative')
         self.collection = Path(collection)
         self.session = session
-        self.directory = self.collection / 'sessions' / session
         self.settle = settle
         self.crop = list(crop) if crop else None
         self.observed = {}
@@ -122,7 +120,7 @@ class CollectionPipeline:
         if self.inbox_names is not None:
             paths = [p for p in paths if p.name in self.inbox_names]
         active_keys = {'inbox/' + p.name for p in paths}
-        originals = images(self.directory / 'originals')
+        originals = session_images(self.collection, self.session)
         active_keys.update('originals/' + p.name for p in originals)
         self.state['failed'] = {k: v for k, v in self.state['failed'].items() if k in active_keys}
         for path in paths:
@@ -164,29 +162,28 @@ class CollectionPipeline:
                     pending.append(path.name)
                     continue
                 if fingerprint in hashes:
-                    archive = self.directory / 'duplicates'
+                    archive = self.collection / 'duplicates'
                     archive.mkdir(parents=True, exist_ok=True)
-                    target = archive / (uuid.uuid4().hex + path.suffix.lower())
+                    target = archive / stored_name(self.session, uuid.uuid4().hex + path.suffix.lower())
                     event = {'duplicate': path.name, 'duplicate_of': hashes[fingerprint], 'archive': str(target.relative_to(self.collection))}
                     self.state['pending_duplicate'] = {'event': event, 'sha256': fingerprint}
                     self.state['pending_report'] = True
                     self.save()
                     duplicates += self.recover_duplicate()
-                elif (self.directory / 'originals' / path.name).exists():
+                elif (originals_dir(self.collection) / stored_name(self.session, path.name)).exists():
                     self.fail(key, path, 'Filename collision with different content; rename the inbox file')
                 else:
                     self.state['pending_report'] = True
                     self.save()
                     moved += import_images(self.collection, self.session, [path.name])
-                    hashes[fingerprint] = path.name
+                    hashes[fingerprint] = stored_name(self.session, path.name)
                 if not path.exists():
                     self.state['failed'].pop(key, None)
 
         # Recover interrupted imports, while never regenerating an existing annotation.
-        annotations = self.directory / 'annotations'
-        known = {Path(json.loads(p.read_text()).get('image', '')).name for p in annotations.glob('*.json')}
+        known = {Path(json.loads(p.read_text()).get('image', '')).name for p in annotation_paths(self.collection, [self.session])}
         todo = []
-        for path in images(self.directory / 'originals'):
+        for path in session_images(self.collection, self.session):
             key = 'originals/' + path.name
             if path.name in known:
                 self.state['failed'].pop(key, None)
@@ -198,7 +195,7 @@ class CollectionPipeline:
             self.save()
             # Prepare separately so one bad screenshot cannot block other drafts.
             for name in todo:
-                path = self.directory / 'originals' / name
+                path = originals_dir(self.collection) / name
                 try:
                     result = prepare_session(self.collection, self.session, self.crop, image_names=[], original_names=[name])
                     created += result['created']
@@ -230,8 +227,8 @@ class CollectionPipeline:
         if staging.exists():
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
-        (staging / 'audit.json').write_text(json.dumps(audit_collection(self.collection / 'sessions'), indent=2) + '\n')
-        if any((self.directory / 'annotations').glob('*.json')):
+        (staging / 'audit.json').write_text(json.dumps(audit_collection(self.collection), indent=2) + '\n')
+        if annotation_paths(self.collection, [self.session]):
             build_backlog(self.collection, staging / 'backlog', [self.session])
         result = {'status': 'complete', 'report_id': self.state['report_run'], 'session': self.session, 'errors': self.state['failed'], 'events': self.state['events'], 'review_required': True, 'notice': 'Drafts only; no approval, dataset build, game input or training.'}
         (staging / 'pipeline.json').write_text(json.dumps(result, indent=2) + '\n')
@@ -266,7 +263,7 @@ def main():
                     break
                 time.sleep(min(args.interval, max(0, deadline - time.monotonic())))
             kinds = Counter()
-            for path in (pipeline.directory / 'annotations').glob('*.json'):
+            for path in annotation_paths(pipeline.collection, [pipeline.session]):
                 data = json.loads(path.read_text())
                 kinds[(data.get('screen_state') or {}).get('screen_kind') or 'unknown'] += 1
             result.update(totals)

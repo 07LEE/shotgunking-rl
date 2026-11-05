@@ -12,12 +12,11 @@ BOARD = [["empty"] * 8 for _ in range(8)]
 
 
 def add_annotation(root, session_id, split, name, *, complete=True, cards_reviewed=None, screen_kind="gameplay", confirmed=True, image=b"image"):
-    session = root / session_id
-    originals = session / "originals"
-    annotations = session / "annotations"
+    originals = root / "originals"
+    annotations = root / "annotations"
     originals.mkdir(parents=True, exist_ok=True)
     annotations.mkdir(exist_ok=True)
-    (originals / f"{name}.png").write_bytes(image)
+    (originals / f"{session_id}__{name}.png").write_bytes(image)
     reviews = {
         "screen_kind": complete,
         "ammo": complete,
@@ -27,7 +26,7 @@ def add_annotation(root, session_id, split, name, *, complete=True, cards_review
     }
     data = {
         "schema": "piece-cells-v1",
-        "image": f"../originals/{name}.png",
+        "image": f"../originals/{session_id}__{name}.png",
         "session_id": session_id,
         "split": split,
         "confirmed": confirmed,
@@ -50,23 +49,23 @@ def add_annotation(root, session_id, split, name, *, complete=True, cards_review
             "reviews": reviews,
         },
     }
-    (annotations / f"{name}.json").write_text(json.dumps(data))
+    (annotations / f"{session_id}__{name}.json").write_text(json.dumps(data))
 
 
 class CollectionAuditTests(unittest.TestCase):
     def test_complete_independent_splits_are_evaluation_ready(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
+            collection = Path(directory)
             for index, split in enumerate(("train", "val", "test")):
                 add_annotation(
-                    sessions,
+                    collection,
                     f"run-{split}",
                     split,
                     "screen",
                     image=f"image-{index}".encode(),
                 )
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertTrue(report["evaluation_ready"])
         self.assertEqual(report["screens"], 3)
@@ -77,11 +76,11 @@ class CollectionAuditTests(unittest.TestCase):
 
     def test_card_review_is_not_required_for_page_completion(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
+            collection = Path(directory)
             for index, split in enumerate(("train", "val", "test")):
-                add_annotation(sessions, f"run-{split}", split, "screen", cards_reviewed=False, image=f"image-{index}".encode())
+                add_annotation(collection, f"run-{split}", split, "screen", cards_reviewed=False, image=f"image-{index}".encode())
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertTrue(report["evaluation_ready"])
         self.assertEqual(report["page_info_complete"], 3)
@@ -90,16 +89,16 @@ class CollectionAuditTests(unittest.TestCase):
 
     def test_soul_review_is_independent_and_counted(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
+            collection = Path(directory)
             for index, split in enumerate(("train", "val", "test")):
-                add_annotation(sessions, f"run-{split}", split, "screen", image=f"image-{index}".encode())
-            path = sessions / "run-train/annotations/screen.json"
+                add_annotation(collection, f"run-{split}", split, "screen", image=f"image-{index}".encode())
+            path = collection / "annotations/run-train__screen.json"
             data = json.loads(path.read_text())
             data["screen_state"]["souls"] = ["knight", "bishop", "knight"]
             data["screen_state"]["reviews"]["soul"] = True
             path.write_text(json.dumps(data))
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertTrue(report["evaluation_ready"])
         self.assertEqual(report["reviews"]["soul"], 1)
@@ -109,17 +108,17 @@ class CollectionAuditTests(unittest.TestCase):
 
     def test_unknown_grenade_damage_is_not_usable_even_with_zero_grenades(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
-            add_annotation(sessions, "run-zero", "train", "zero", image=b"zero")
-            add_annotation(sessions, "run-live", "val", "live", image=b"live")
+            collection = Path(directory)
+            add_annotation(collection, "run-zero", "train", "zero", image=b"zero")
+            add_annotation(collection, "run-live", "val", "live", image=b"live")
             for session, name, remaining in (("run-zero", "zero", 0), ("run-live", "live", 1)):
-                path = sessions / session / "annotations" / f"{name}.json"
+                path = collection / "annotations" / f"{session}__{name}.json"
                 data = json.loads(path.read_text())
                 data["screen_state"]["combat_stats"]["grenades_remaining"] = remaining
                 data["screen_state"]["combat_stats"].pop("grenade_damage")
                 path.write_text(json.dumps(data))
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertEqual(report["usable_labels"]["train"]["combat_stats"], 0)
         self.assertEqual(report["usable_labels"]["val"]["combat_stats"], 0)
@@ -131,23 +130,23 @@ class CollectionAuditTests(unittest.TestCase):
                    {"grenades_remaining": 1.5})
         for values in invalid:
             with self.subTest(values=values), tempfile.TemporaryDirectory() as directory:
-                sessions = Path(directory)
-                add_annotation(sessions, "run", "train", "screen")
-                path = sessions / "run/annotations/screen.json"
+                collection = Path(directory)
+                add_annotation(collection, "run", "train", "screen")
+                path = collection / "annotations/run__screen.json"
                 data = json.loads(path.read_text())
                 data["screen_state"]["combat_stats"].update(values)
                 path.write_text(json.dumps(data))
-                report = audit_collection(sessions)
+                report = audit_collection(collection)
                 self.assertEqual(report["usable_labels"]["train"]["combat_stats"], 0)
                 self.assertIn("missing_usable_labels:train:combat_stats", report["issues"])
 
     def test_non_gameplay_screen_does_not_require_piece_or_stat_review(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
-            add_annotation(sessions, "run-01", "train", "gameplay", image=b"gameplay")
-            add_annotation(sessions, "run-01", "train", "cards", screen_kind="card_selection", confirmed=False, image=b"cards")
+            collection = Path(directory)
+            add_annotation(collection, "run-01", "train", "gameplay", image=b"gameplay")
+            add_annotation(collection, "run-01", "train", "cards", screen_kind="card_selection", confirmed=False, image=b"cards")
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertEqual(report["screens"], 2)
         self.assertEqual(report["piece_screens"], 1)
@@ -157,11 +156,11 @@ class CollectionAuditTests(unittest.TestCase):
 
     def test_missing_reviews_splits_and_duplicate_images_are_reported(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
-            add_annotation(sessions, "run-01", "train", "one", complete=False)
-            add_annotation(sessions, "run-01", "train", "two", image=b"image")
+            collection = Path(directory)
+            add_annotation(collection, "run-01", "train", "one", complete=False)
+            add_annotation(collection, "run-01", "train", "two", image=b"image")
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertFalse(report["evaluation_ready"])
         self.assertIn("missing_split:val", report["issues"])
@@ -173,11 +172,11 @@ class CollectionAuditTests(unittest.TestCase):
 
     def test_one_session_cannot_span_splits(self):
         with tempfile.TemporaryDirectory() as directory:
-            sessions = Path(directory)
-            add_annotation(sessions, "run-01", "train", "one", image=b"one")
-            add_annotation(sessions, "run-01", "test", "two", image=b"two")
+            collection = Path(directory)
+            add_annotation(collection, "run-01", "train", "one", image=b"one")
+            add_annotation(collection, "run-01", "test", "two", image=b"two")
 
-            report = audit_collection(sessions)
+            report = audit_collection(collection)
 
         self.assertIn("mixed_session_split:run-01", report["issues"])
         self.assertIsNone(report["sessions"][0]["split"])

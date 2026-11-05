@@ -10,7 +10,7 @@
     }
     const queueFor = session => Array.from(document.querySelectorAll('.queue-session')).find(group => group.dataset.session === session);
     const row = id => Array.from(document.querySelectorAll('.queue-item')).find(button => button.dataset.id === id);
-    const id = (session, name) => 'sessions/' + session + '/annotations/' + name + '.png.json';
+    const id = (session, name) => 'annotations/' + session + '__' + name + '.png.json';
     async function pick(target) {
         const button = row(target);
         if (!button) throw Error('Missing queue item ' + target);

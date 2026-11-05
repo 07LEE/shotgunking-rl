@@ -69,12 +69,11 @@ class HudReaderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             for name, seed in (('melee', 7), ('other-title', 11)):
-                session = collection / 'sessions' / name
-                (session / 'originals').mkdir(parents=True)
-                (session / 'annotations').mkdir()
-                cv2.imwrite(str(session / 'originals/screen.png'), screen(case, seed=seed))
-                (session / 'annotations/screen.json').write_text(json.dumps({
-                    'split': 'train', 'image': '../originals/screen.png',
+                (collection / 'originals').mkdir(exist_ok=True)
+                (collection / 'annotations').mkdir(exist_ok=True)
+                cv2.imwrite(str(collection / f'originals/{name}__screen.png'), screen(case, seed=seed))
+                (collection / f'annotations/{name}__screen.json').write_text(json.dumps({
+                    'split': 'train', 'image': f'../originals/{name}__screen.png',
                     'game_crop': [0, 0, 1280, 720], 'screen_state': {
                         'screen_kind': 'gameplay', 'combat_stats': {'melee_damage': 2 if seed == 7 else 40},
                         'reviews': {'screen_kind': True, 'combat_stats': True}}}))
@@ -105,15 +104,14 @@ class HudReaderTests(unittest.TestCase):
                 ] + [(f'invalid-{i}', 'train', True, 'gameplay', values)
                      for i, values in enumerate(case.invalid_labels)]
                 for name, split, reviewed, kind, overrides in sources:
-                    session = collection / 'sessions' / name
-                    (session / 'originals').mkdir(parents=True)
-                    (session / 'annotations').mkdir()
-                    cv2.imwrite(str(session / 'originals/screen.png'), screen(case))
-                    annotation = {'split': split, 'image': '../originals/screen.png',
+                    (collection / 'originals').mkdir(exist_ok=True)
+                    (collection / 'annotations').mkdir(exist_ok=True)
+                    cv2.imwrite(str(collection / f'originals/{name}__screen.png'), screen(case))
+                    annotation = {'split': split, 'image': f'../originals/{name}__screen.png',
                                   'game_crop': [0, 0, 1280, 720], 'screen_state': {
                                       'screen_kind': kind, 'combat_stats': case.labels | overrides,
                                       'reviews': {'screen_kind': True, 'combat_stats': reviewed}}}
-                    (session / 'annotations/screen.json').write_text(json.dumps(annotation))
+                    (collection / f'annotations/{name}__screen.json').write_text(json.dumps(annotation))
                 kwargs = ({'title_reference': case.patch(screen(case))[:30]}
                           if case.name == 'melee_damage' else {})
                 reader = case.reader.from_collection(collection, **kwargs)

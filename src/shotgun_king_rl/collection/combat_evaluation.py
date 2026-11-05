@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from ..collection_layout import annotation_paths
 from ..perception import (
     AttackReader, CombatStatsReader, GrenadeCountReader, GrenadeDamageReader,
     KnockbackReader, MeleeDamageReader, PenetrationReader, RangeReader, SpreadReader,
@@ -38,7 +39,7 @@ def build_combat_reader(collection, title_annotation=None):
     metadata["readers"]["grenade_damage_reader"]["title_references"] = len(readers["grenade_damage_reader"].titles)
     metadata["readers"]["grenade_damage_reader"]["integer_references"] = len(readers["grenade_damage_reader"].integers)
     digest = hashlib.sha256()
-    for path in sorted((collection / "sessions").glob("*/annotations/*.json")):
+    for path in annotation_paths(collection):
         raw = path.read_bytes()
         data = json.loads(raw)
         state = data.get("screen_state") or {}

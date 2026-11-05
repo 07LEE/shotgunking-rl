@@ -47,13 +47,11 @@ class ReaderBenchmarkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection)
-            test = collection / "sessions/held-out/annotations"
-            test.mkdir(parents=True)
-            (test / "screen.json").write_text(json.dumps({"split": "test", "image": "nonexistent.png"}))
+            (collection / "annotations/held-out__screen.json").write_text(json.dumps({"split": "test", "image": "nonexistent.png"}))
             result = benchmark_readers(collection, repeats=2)
             self.assertEqual(result["samples"], 1)
             self.assertEqual(result["timings"]["observation"]["calls"], 2)
-            self.assertEqual(list(result["predictions"]), ["run-01/annotations/screen.json"])
+            self.assertEqual(list(result["predictions"]), ["annotations/run-01__screen.json"])
             self.assertEqual(result["evaluation"]["splits"]["test"]["annotations"], 0)
             self.assertNotIn("pieces", result["timings"])  # Blank screen is unknown.
 
@@ -61,7 +59,7 @@ class ReaderBenchmarkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)
             create_reviewed_screen(collection)
-            (collection / "sessions/run-01/annotations/other.json").write_text(json.dumps({"split": "test"}))
+            (collection / "annotations/run-01__other.json").write_text(json.dumps({"split": "test"}))
             with self.assertRaisesRegex(ValueError, "mixed session splits"):
                 benchmark_readers(collection)
             for repeats in (0, -1, True):

@@ -20,7 +20,15 @@ Put screenshots from one play session in `data/collection/inbox/`, process them,
 ./scripts/run_review.sh
 ```
 
-Processing classifies the current inbox and creates annotation drafts, then exits. Reuse the session ID for the same play session and review the predictions before using them as labels.
+Processing classifies the current inbox and creates annotation drafts, then exits. Reuse the session ID for the same play session and review the predictions before using them as labels. Images go to `data/collection/originals/` and drafts to `data/collection/annotations/`, each file name prefixed with `SESSION_ID__`; a session keeps one train/val/test split.
+
+To collect while you play, start automatic capture with the game window open:
+
+```bash
+./scripts/run_collect.sh
+```
+
+Capture saves only screens the current readers cannot fully read, such as unreadable stat rows or rarely reviewed values, and records the reasons shown during review. Stop with Ctrl+C. The session ID defaults to today's date and the next run number; pass `--session SESSION_ID` to resume one, `--review` to open the review page afterwards, or `--save-all` to keep every settled screen change.
 
 To use a trained model, open Shotgun King in a visible window and run suggestion mode:
 
