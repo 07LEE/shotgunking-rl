@@ -1,5 +1,6 @@
 """Composable perception contracts for policy-ready game state."""
 
+from .board_context import BoardContextReader
 from .combat import CombatStatsReader
 from .attack import AttackReader
 from .grenade_count import GrenadeCountReader
@@ -25,6 +26,7 @@ from .types import (
 __all__ = [
     "AttackReader",
     "AmmoReading",
+    "BoardContextReader",
     "BoardContextReading",
     "CombatStatsReading",
     "CombatStatsReader",
