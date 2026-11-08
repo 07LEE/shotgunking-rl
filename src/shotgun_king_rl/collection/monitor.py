@@ -34,6 +34,9 @@ class ChangeDetector:
         self.stability_threshold = stability_threshold
         self.stable_samples = stable_samples
         self.saved = None
+        self.status = 'waiting'
+        self.change = None
+        self.stability = None
         self.reset_pending()
 
     def reset_pending(self):
@@ -51,14 +54,19 @@ class ChangeDetector:
 
     def consider(self, screen):
         current = self.thumbnail(screen)
-        if self.saved is not None and self.difference(current, self.saved) < self.change_threshold:
+        self.change = self.difference(current, self.saved) if self.saved is not None else None
+        self.stability = self.difference(current, self.candidate) if self.candidate is not None else None
+        if self.change is not None and self.change < self.change_threshold:
+            self.status = 'below_change_threshold'
             self.reset_pending()
             return False
-        if self.candidate is None or self.difference(current, self.candidate) > self.stability_threshold:
+        if self.candidate is None or self.stability > self.stability_threshold:
+            self.status = 'waiting_for_stability'
             self.candidate = current
             self.samples = 1
             return False
         self.samples += 1
+        self.status = 'settled' if self.samples >= self.stable_samples else 'waiting_for_stability'
         return self.samples >= self.stable_samples
 
     def mark_saved(self, screen):
@@ -141,33 +149,62 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
     detector = ChangeDetector(change_threshold, stability_threshold, stable_samples)
     counts = dict(polls=0, saved=0, duplicates=0, skipped=0, capture_failures=0, unreadable_screens=0)
     start = clock()
+    last_report = start
+    previous_frame = None
+    frame_delta = None
+    raw_changes = 0
+    status = 'waiting'
     while clock() - start < duration and counts['saved'] < max_images:
         image = capture()
         counts['polls'] += 1
         if image is None:
+            status = 'capture_failed'
             counts['capture_failures'] += 1
             detector.reset_pending()
         else:
+            thumbnail = ChangeDetector.thumbnail(image)
+            if previous_frame is not None:
+                frame_delta = ChangeDetector.difference(thumbnail, previous_frame)
+                raw_changes += int(frame_delta > 0)
+            previous_frame = thumbnail
             try:
                 screen = normalize(image, recorder.crop)
             except ValueError as exc:
+                status = 'crop_failed'
                 counts['unreadable_screens'] += 1
                 detector.reset_pending()
                 report(f'Skipped screen: {exc}')
             else:
-                if detector.consider(screen):
+                settled = detector.consider(screen)
+                status = detector.status
+                if settled:
                     # Persist only after both stability and change checks pass.
                     reasons = selector(screen) if selector is not None else None
                     annotation = recorder.save(image, reasons) if reasons is None or reasons else False
                     detector.mark_saved(screen)
                     if annotation is False:
+                        status = 'gap_filter_skipped'
                         counts['skipped'] += 1
                     elif annotation is None:
+                        status = 'duplicate'
                         counts['duplicates'] += 1
                     else:
+                        status = 'saved'
                         counts['saved'] += 1
                         detail = f' ({", ".join(reasons)})' if reasons else ''
                         report(f'Draft saved: {annotation}{detail}')
+        now = clock()
+        if now - last_report >= 10:
+            def metric(value):
+                return 'n/a' if value is None else f'{value:.4f}'
+            report(f'Capture status: {status}; polls={counts["polls"]}; '
+                   f'saved={counts["saved"]}; filtered={counts["skipped"]}; '
+                   f'duplicates={counts["duplicates"]}; crop_failures={counts["unreadable_screens"]}; '
+                   f'capture_failures={counts["capture_failures"]}; raw_changes={raw_changes}; '
+                   f'frame_delta={metric(frame_delta)}; change={metric(detector.change)}'
+                   f'/{change_threshold}; stability={metric(detector.stability)}'
+                   f'/{stability_threshold}')
+            last_report = now
         if counts['saved'] < max_images:
             sleep(interval)
     return counts

@@ -53,6 +53,29 @@ class ChangeDetectorTests(unittest.TestCase):
 
 
 class CollectionMonitorTests(unittest.TestCase):
+    def test_progress_distinguishes_frozen_unstable_and_filtered_frames(self):
+        a = game_screen()
+        b = a.copy()
+        b[120:250, 390:520] = 240
+        cases = (
+            ([a] * 12, None, 'below_change_threshold', 'raw_changes=0'),
+            ([a, b] * 6, None, 'waiting_for_stability', 'raw_changes=10'),
+            ([a] * 9 + [b] * 3, lambda _: [], 'gap_filter_skipped', 'filtered=2'),
+        )
+        for frames, selector, status, detail in cases:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                ticks = [0.0]
+                reports = []
+                def sleep(seconds):
+                    ticks[0] += seconds
+                monitor(Mock(side_effect=frames), DraftRecorder(directory, 'session'),
+                        duration=12, interval=1, clock=lambda: ticks[0], sleep=sleep,
+                        report=reports.append, selector=selector)
+                progress = [line for line in reports if line.startswith('Capture status:')]
+                self.assertEqual(len(progress), 1)
+                self.assertIn(status, progress[0])
+                self.assertIn(detail, progress[0])
+
     def run_monitor(self, frames, recorder, **kwargs):
         ticks = [0.0]
         capture = Mock(side_effect=frames)
