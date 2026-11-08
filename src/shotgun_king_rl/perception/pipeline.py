@@ -124,8 +124,13 @@ class PerceptionPipeline:
 
         context_source = "board-context:unavailable"
         if accepted_board is not None:
-            context = (read_frame(self.context_reader, frame) if self.context_reader is not None
-                       else Prediction.unknown(source=context_source, reason="reader_unavailable"))
+            board_context = getattr(self.context_reader, 'read_with_board', None)
+            if callable(board_context):
+                context = board_context(frame, accepted_board)
+            elif self.context_reader is not None:
+                context = read_frame(self.context_reader, frame)
+            else:
+                context = Prediction.unknown(source=context_source, reason="reader_unavailable")
             context_source = context.source
             if context.is_accepted and valid_board_context(context.value, accepted_board):
                 accepted_context = BoardContextReading(context.value.piece_sides.copy(), context.value.moat_active)
