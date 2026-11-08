@@ -53,6 +53,21 @@ class ChangeDetectorTests(unittest.TestCase):
 
 
 class CollectionMonitorTests(unittest.TestCase):
+    def test_poll_period_includes_capture_processing_time(self):
+        ticks = [0.0]
+        sleeps = []
+        def capture():
+            ticks[0] += 0.15
+            return None
+        def sleep(seconds):
+            sleeps.append(seconds)
+            ticks[0] += seconds
+        result = monitor(capture, Mock(), interval=0.2, duration=0.39,
+                         clock=lambda: ticks[0], sleep=sleep, report=lambda _: None)
+        self.assertEqual(result['polls'], 2)
+        for seconds in sleeps:
+            self.assertAlmostEqual(seconds, 0.05)
+
     def test_progress_distinguishes_frozen_unstable_and_filtered_frames(self):
         a = game_screen()
         b = a.copy()
@@ -72,9 +87,9 @@ class CollectionMonitorTests(unittest.TestCase):
                         duration=12, interval=1, clock=lambda: ticks[0], sleep=sleep,
                         report=reports.append, selector=selector)
                 progress = [line for line in reports if line.startswith('Capture status:')]
-                self.assertEqual(len(progress), 1)
-                self.assertIn(status, progress[0])
-                self.assertIn(detail, progress[0])
+                self.assertEqual(len(progress), 5)
+                self.assertIn(status, progress[-1])
+                self.assertIn(detail, progress[-1])
 
     def run_monitor(self, frames, recorder, **kwargs):
         ticks = [0.0]
@@ -145,6 +160,9 @@ class CollectionMonitorTests(unittest.TestCase):
             result = self.run_monitor([np.zeros((100, 100, 3), dtype=np.uint8)] * 2, recorder)
             self.assertEqual(result['unreadable_screens'], 2)
             self.assertEqual(result['saved'], 0)
+            diagnostics = list((recorder.collection / 'diagnostics').glob('*.png'))
+            self.assertEqual(len(diagnostics), 1)
+            self.assertFalse((recorder.collection / 'annotations').exists())
 
     def test_explicit_crop_is_used_for_detection_and_draft(self):
         with tempfile.TemporaryDirectory() as directory:

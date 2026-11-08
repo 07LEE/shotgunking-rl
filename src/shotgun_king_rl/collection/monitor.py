@@ -134,7 +134,7 @@ class DraftRecorder:
         return annotation
 
 
-def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
+def monitor(capture, recorder, *, interval=0.2, duration=3600, max_images=500,
             change_threshold=1.0, stability_threshold=0.3, stable_samples=2, selector=None,
             clock=time.monotonic, sleep=time.sleep, report=print):
     """Poll via an injected capture function; never click, train or approve.
@@ -154,7 +154,9 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
     frame_delta = None
     raw_changes = 0
     status = 'waiting'
+    crop_failure_reported = False
     while clock() - start < duration and counts['saved'] < max_images:
+        poll_start = clock()
         image = capture()
         counts['polls'] += 1
         if image is None:
@@ -173,7 +175,16 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
                 status = 'crop_failed'
                 counts['unreadable_screens'] += 1
                 detector.reset_pending()
-                report(f'Skipped screen: {exc}')
+                if not crop_failure_reported:
+                    directory = recorder.collection / 'diagnostics'
+                    directory.mkdir(parents=True, exist_ok=True)
+                    path = directory / f'{recorder.session_id}__crop_failure_{uuid4().hex[:8]}.png'
+                    if not cv2.imwrite(str(path), image):
+                        raise OSError(f'Could not save diagnostic capture: {path}')
+                    height, width = image.shape[:2]
+                    report(f'Skipped screen: {exc}; capture={width}x{height}; '
+                           f'raw frame saved: {path}. Repeated crop failures are suppressed.')
+                    crop_failure_reported = True
             else:
                 settled = detector.consider(screen)
                 status = detector.status
@@ -194,7 +205,7 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
                         detail = f' ({", ".join(reasons)})' if reasons else ''
                         report(f'Draft saved: {annotation}{detail}')
         now = clock()
-        if now - last_report >= 10:
+        if now - last_report >= 2:
             def metric(value):
                 return 'n/a' if value is None else f'{value:.4f}'
             report(f'Capture status: {status}; polls={counts["polls"]}; '
@@ -206,7 +217,9 @@ def monitor(capture, recorder, *, interval=0.5, duration=3600, max_images=500,
                    f'/{stability_threshold}')
             last_report = now
         if counts['saved'] < max_images:
-            sleep(interval)
+            remaining = interval - (clock() - poll_start)
+            if remaining > 0:
+                sleep(remaining)
     return counts
 
 
@@ -250,7 +263,8 @@ def main():
     parser.add_argument('--window-title', default='Shotgun King')
     parser.add_argument('--capture-backend', choices=('auto', 'x11', 'portal'), default='auto')
     parser.add_argument('--portal-python', default='/usr/bin/python3', help='System Python with Gio/GStreamer bindings')
-    parser.add_argument('--interval', type=float, default=0.5)
+    parser.add_argument('--interval', type=float, default=0.2,
+                        help='Target poll period in seconds, including processing time')
     parser.add_argument('--duration', type=float, default=3600, help='Maximum seconds to monitor')
     parser.add_argument('--max-images', type=int, default=500)
     parser.add_argument('--change-threshold', type=float, default=1.0, help='Mean thumbnail grayscale change, 0..255')
