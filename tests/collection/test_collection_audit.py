@@ -53,6 +53,20 @@ def add_annotation(root, session_id, split, name, *, complete=True, cards_review
 
 
 class CollectionAuditTests(unittest.TestCase):
+    def test_excluded_cells_are_not_counted_as_reviewed_piece_classes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            add_annotation(root, 'run-01', 'train', 'screen')
+            path = root / 'annotations/run-01__screen.json'
+            data = json.loads(path.read_text())
+            data['board'][0][0] = 'ambiguous_royal'
+            data['exclude_cells'] = [[0, 0], [3, 7]]
+            path.write_text(json.dumps(data))
+            report = audit_collection(root)
+        self.assertNotIn('ambiguous_royal', report['piece_classes']['train'])
+        self.assertEqual(report['piece_classes']['train']['empty'], 62)
+        self.assertEqual(report['pieces_confirmed'], 1)
+
     def test_complete_independent_splits_are_evaluation_ready(self):
         with tempfile.TemporaryDirectory() as directory:
             collection = Path(directory)

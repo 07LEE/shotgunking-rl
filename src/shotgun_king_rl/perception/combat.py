@@ -6,6 +6,27 @@ from .frame import PreparedFrame, read_frame
 from .pipeline import Reader
 from .types import CombatStatsReading, Prediction, PredictionStatus, RangeReading
 from .validation import valid_combat_stats
+from .visibility import COMBAT_FIELDS
+from .optional_zero import ZERO_WHEN_NOT_DISPLAYED, ZERO_RULE_SOURCE
+
+
+def combat_state_contract():
+    """Return a fresh description of supported combat evidence and memory."""
+    return {
+        'required_fields': list(COMBAT_FIELDS),
+        'grenade_damage_required_at_zero_count': True,
+        'not_displayed_means_zero': False,
+        'zero_when_not_displayed_fields': list(ZERO_WHEN_NOT_DISPLAYED),
+        'zero_rule_source': ZERO_RULE_SOURCE,
+        'zero_condition': 'recognized_primary_titles_and_all_optional_rows_known',
+        'occluded_or_displayed_unreadable_means_zero': False,
+        'missing_or_rejected_required_field': 'block_policy',
+        'retained_fields': ['grenade_damage'],
+        'retention_condition': 'directly_observed_same_run_and_verified_not_displayed',
+        'reset_screens': ['card_selection', 'retry'],
+        'unseen_changes_between_captures': 'unsupported',
+        'offline_diagnostics': 'stateless; no seeded or retained game-state values',
+    }
 
 
 @dataclass
