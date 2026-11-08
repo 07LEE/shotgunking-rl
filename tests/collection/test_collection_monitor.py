@@ -53,6 +53,44 @@ class ChangeDetectorTests(unittest.TestCase):
 
 
 class CollectionMonitorTests(unittest.TestCase):
+    def test_poll_period_includes_capture_processing_time(self):
+        ticks = [0.0]
+        sleeps = []
+        def capture():
+            ticks[0] += 0.15
+            return None
+        def sleep(seconds):
+            sleeps.append(seconds)
+            ticks[0] += seconds
+        result = monitor(capture, Mock(), interval=0.2, duration=0.39,
+                         clock=lambda: ticks[0], sleep=sleep, report=lambda _: None)
+        self.assertEqual(result['polls'], 2)
+        for seconds in sleeps:
+            self.assertAlmostEqual(seconds, 0.05)
+
+    def test_progress_distinguishes_frozen_unstable_and_filtered_frames(self):
+        a = game_screen()
+        b = a.copy()
+        b[120:250, 390:520] = 240
+        cases = (
+            ([a] * 12, None, 'below_change_threshold', 'raw_changes=0'),
+            ([a, b] * 6, None, 'waiting_for_stability', 'raw_changes=10'),
+            ([a] * 9 + [b] * 3, lambda _: [], 'gap_filter_skipped', 'filtered=2'),
+        )
+        for frames, selector, status, detail in cases:
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as directory:
+                ticks = [0.0]
+                reports = []
+                def sleep(seconds):
+                    ticks[0] += seconds
+                monitor(Mock(side_effect=frames), DraftRecorder(directory, 'session'),
+                        duration=12, interval=1, clock=lambda: ticks[0], sleep=sleep,
+                        report=reports.append, selector=selector)
+                progress = [line for line in reports if line.startswith('Capture status:')]
+                self.assertEqual(len(progress), 5)
+                self.assertIn(status, progress[-1])
+                self.assertIn(detail, progress[-1])
+
     def run_monitor(self, frames, recorder, **kwargs):
         ticks = [0.0]
         capture = Mock(side_effect=frames)
@@ -122,6 +160,9 @@ class CollectionMonitorTests(unittest.TestCase):
             result = self.run_monitor([np.zeros((100, 100, 3), dtype=np.uint8)] * 2, recorder)
             self.assertEqual(result['unreadable_screens'], 2)
             self.assertEqual(result['saved'], 0)
+            diagnostics = list((recorder.collection / 'diagnostics').glob('*.png'))
+            self.assertEqual(len(diagnostics), 1)
+            self.assertFalse((recorder.collection / 'annotations').exists())
 
     def test_explicit_crop_is_used_for_detection_and_draft(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -131,7 +172,12 @@ class CollectionMonitorTests(unittest.TestCase):
             result = self.run_monitor([image, image], recorder)
             self.assertEqual(result['saved'], 1)
             data = json.loads(next((recorder.collection / 'annotations').glob('*.json')).read_text())
-            self.assertEqual(data['game_crop'], [20, 10, 1300, 730])
+            self.assertEqual(data['game_crop'], [0, 0, 1280, 720])
+            self.assertEqual(data['auto_capture']['source_crop'], [20, 10, 1300, 730])
+            import cv2
+            stored = cv2.imread(str(recorder.collection / 'originals' / Path(data['image']).name))
+            np.testing.assert_array_equal(stored, image[10:730, 20:1300])
+            self.assertIsNone(DraftRecorder(directory, 'session', crop=[20, 10, 1300, 730]).save(image))
 
     def test_annotation_failure_does_not_leave_an_original(self):
         with tempfile.TemporaryDirectory() as directory:

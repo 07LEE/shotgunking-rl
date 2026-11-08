@@ -40,6 +40,13 @@ class ScreenLayoutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Game area not detected"):
             normalize_game_screen(np.zeros((800, 1200, 3), dtype=np.uint8))
 
+    def test_small_window_on_large_portal_canvas_excludes_title_bar(self):
+        capture = np.zeros((2880, 5120, 3), dtype=np.uint8)
+        capture[50:124, 51:1331] = 45
+        capture[124:844, 51:1331] = self.game
+        self.assertEqual(detect_game_crop(capture), [51, 124, 1331, 844])
+        np.testing.assert_array_equal(normalize_game_screen(capture), self.game)
+
     def test_gameplay_board_requires_checker_pattern(self):
         screen = np.zeros((720, 1280, 3), dtype=np.uint8)
         colors = ((170, 180, 220), (90, 100, 150))

@@ -13,6 +13,19 @@ from shotgun_king_rl.collection.screen_state import match, propose, propose_scre
 
 
 class ScreenStateRecognitionTests(unittest.TestCase):
+    def test_gameplay_attack_fallback_is_connected_and_preserves_exclusion(self):
+        from shotgun_king_rl.perception.types import Prediction
+        with tempfile.TemporaryDirectory() as directory, patch(
+            'shotgun_king_rl.collection.screen_state.propose_screen_kind', return_value='gameplay'
+        ), patch('shotgun_king_rl.collection.screen_state.AttackReader.from_collection') as factory:
+            factory.return_value.read.return_value = Prediction.accepted(7, source='test', confidence=.95)
+            excluded = Path(directory) / 'excluded.json'
+            result = propose(np.zeros((720, 1280, 3), np.uint8), Path(directory), exclude=excluded)
+            self.assertEqual(result['screen_state']['combat_stats']['attack'], 7)
+            self.assertIn('attack', result['prediction']['numeric_fields'])
+            self.assertFalse(result['screen_state']['reviews']['combat_stats'])
+            factory.assert_called_once_with(Path(directory), exclude=excluded)
+
     def test_shifted_empty_soul_slot_is_distinct_from_unknown(self):
         screen = np.zeros((720, 1280, 3), np.uint8)
         pattern = np.random.default_rng(75).integers(0, 255, (117, 85, 3), dtype=np.uint8)

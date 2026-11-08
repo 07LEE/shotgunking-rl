@@ -9,6 +9,7 @@ from ..collection_layout import annotation_paths
 from .images import normalize
 from ..vision import analyzer, screens
 from ..perception.hud import stat_patch
+from ..perception.attack import AttackReader
 from .numeric import numeric_token, match_numeric, match_floor_shapes
 from .loaded_ammo import loaded_shell_count, match_loaded
 from .reserve_ammo import reserve_shell_count, match_reserve
@@ -241,6 +242,12 @@ def propose(screen, collection, exclude=None):
         for field, value in zip(fields, values):
             state['combat_stats'][field] = value
             confidence[field] = result[1] if result else None
+    if screen_kind == 'gameplay' and state['combat_stats']['attack'] is None:
+        attack = AttackReader.from_collection(collection, exclude=exclude).read(screen)
+        if attack.is_accepted:
+            state['combat_stats']['attack'] = attack.value
+            confidence['attack'] = attack.confidence
+            numeric_fields.append('attack')
     left, top, right, bottom = SOUL_REGION
     soul_result = match(patch(screen, (left - 4, top - 4, right + 4, bottom + 4)), souls, threshold=.9, margin=.04)
     state['souls'] = ([] if soul_result[0] == 'none' else [soul_result[0]]) if soul_result else None

@@ -65,7 +65,7 @@ def check_retry_popup(img, *, board_gray=None, gray=None):
 
 
 def check_card_selection_screen(img, *, gray=None):
-    """Require all card-border points at one shared nearby alignment."""
+    """Match card borders, allowing a selected lower pair obscured by a tooltip."""
     if img is None or cv2 is None or np is None:
         return False
 
@@ -81,11 +81,27 @@ def check_card_selection_screen(img, *, gray=None):
             (420, 545), (420, 619), (528, 545), (528, 619),
             (420, 656), (420, 730), (528, 656), (528, 730),
         )
-        return any(
+        if any(
             all(gray[y + dy, x + dx] >= 215 for y, x in card_borders)
             for dy in range(-4, 5)
             for dx in range(-4, 5)
-        )
+        ):
+            return True
+        # Keep both upper cards and the unobscured top of the lower right card.
+        # A complete selected-pair outline supplies independent lower-row geometry.
+        visible_borders = card_borders[:8] + ((420, 656), (420, 730))
+        if not any(
+            all(gray[y + dy, x + dx] >= 215 for y, x in visible_borders)
+            for dy in range(-4, 5) for dx in range(-4, 5)
+        ):
+            return False
+        blue, green, red = cv2.split(img)
+        selection = ((red > 90) & (red.astype(float) > green * 1.7)
+                     & (blue.astype(float) > green * 1.3)).astype(np.uint8) * 255
+        contours, _ = cv2.findContours(selection, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        return any(470 <= x <= 490 and 370 <= y <= 390
+                   and 300 <= w <= 340 and 170 <= h <= 200
+                   for x, y, w, h in map(cv2.boundingRect, contours))
     except (AttributeError, IndexError, TypeError, ValueError, cv2.error):
         return False
 

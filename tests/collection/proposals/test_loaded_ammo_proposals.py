@@ -51,6 +51,14 @@ class LoadedAmmoProposalTests(unittest.TestCase):
         self.assertEqual(match_loaded(image, self.examples(0))[0], 0)
         self.assertIsNone(match_loaded(image, self.examples(1)))
 
+    def test_loaded_slot_bodies_ignore_upper_edge_without_accepting_wrong_count(self):
+        for count in (1, 2):
+            with self.subTest(count=count):
+                image = self.image(count)
+                image[34:40, 382:416] = 220
+                self.assertEqual(match_loaded(image, self.examples(count))[0], count)
+                self.assertIsNone(match_loaded(image, self.examples((count + 1) % 3)))
+
     def test_absent_slot_bodies_do_not_imply_zero(self):
         image = self.image(0)
         image[30:79, 378:420] = 0

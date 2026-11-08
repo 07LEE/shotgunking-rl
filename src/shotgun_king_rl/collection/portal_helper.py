@@ -235,6 +235,10 @@ def main():
             print(json.dumps({'available': True, 'elements': list(ELEMENTS)}))
         else:
             stream(Gio, GLib, Gst)
+    except KeyboardInterrupt:
+        # The terminal sends Ctrl+C to both parent and helper; stream's finally
+        # releases the pipeline and portal before normal shutdown here.
+        return 0
     except Exception as exc:
         if args.check:
             print(str(exc), file=sys.stderr)
