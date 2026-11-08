@@ -6,10 +6,23 @@ import cv2
 import numpy as np
 
 from shotgun_king_rl.perception.numeric import numeric_token
+from shotgun_king_rl.perception.attack import AttackReader, attack_patch, hud_digit_glyphs
 from tests.support.hud import CASES, screen
 
 
 class NumericHudFallbackTests(unittest.TestCase):
+    def test_attack_digit_fallback_requires_title_single_digit_and_no_conflict(self):
+        case = next(case for case in CASES if case.name == 'attack')
+        reference = screen(case)
+        query = screen(case, digits='7')
+        digit = hud_digit_glyphs(query)[0]
+        reader = AttackReader([(4, attack_patch(reference))], digit_examples=[(7, digit)])
+        self.assertEqual(reader.read(query).value, 7)
+        self.assertFalse(reader.read(screen(case, seed=11, digits='7')).is_accepted)
+        self.assertFalse(reader.read(screen(case, digits='77')).is_accepted)
+        conflicting = AttackReader([(4, attack_patch(reference))], digit_examples=[(7, digit), (9, digit)])
+        self.assertFalse(conflicting.read(query).is_accepted)
+
     def cases(self):
         return [case for case in CASES if case.name in ('attack', 'range', 'spread', 'melee_damage')]
 

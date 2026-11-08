@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
+import cv2
 
 from shotgun_king_rl.vision.screens import check_card_selection_screen
 from shotgun_king_rl.collection.prepare import draft_annotation
@@ -33,3 +34,13 @@ class CardScreenProposalTests(unittest.TestCase):
         read.assert_not_called()
         self.assertTrue(all(cell == 'empty' for row in result['board'] for cell in row))
         self.assertFalse(result['confirmed'])
+
+    def test_lower_tooltip_requires_selected_pair_and_upper_cards(self):
+        image = self.image()
+        image[420:529, 545:620] = 0
+        image[528, 656:731] = 0
+        self.assertFalse(check_card_selection_screen(image))
+        cv2.rectangle(image, (478, 380), (799, 564), (150, 30, 160), 2)
+        self.assertTrue(check_card_selection_screen(image))
+        image[220, 545] = 0
+        self.assertFalse(check_card_selection_screen(image))

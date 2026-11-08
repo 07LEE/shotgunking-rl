@@ -172,7 +172,12 @@ class CollectionMonitorTests(unittest.TestCase):
             result = self.run_monitor([image, image], recorder)
             self.assertEqual(result['saved'], 1)
             data = json.loads(next((recorder.collection / 'annotations').glob('*.json')).read_text())
-            self.assertEqual(data['game_crop'], [20, 10, 1300, 730])
+            self.assertEqual(data['game_crop'], [0, 0, 1280, 720])
+            self.assertEqual(data['auto_capture']['source_crop'], [20, 10, 1300, 730])
+            import cv2
+            stored = cv2.imread(str(recorder.collection / 'originals' / Path(data['image']).name))
+            np.testing.assert_array_equal(stored, image[10:730, 20:1300])
+            self.assertIsNone(DraftRecorder(directory, 'session', crop=[20, 10, 1300, 730]).save(image))
 
     def test_annotation_failure_does_not_leave_an_original(self):
         with tempfile.TemporaryDirectory() as directory:

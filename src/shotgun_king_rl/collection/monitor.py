@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from .dataset import choose_session_split
-from .images import normalize
+from .images import detect_crop, normalize
 from ..collection_layout import annotations_dir, originals_dir, session_images, stored_name, validate_session_id
 from .prepare import COLLECTION, draft_annotation
 
@@ -96,11 +96,18 @@ class DraftRecorder:
                 self.seen.add(image_digest(image))
 
     def save(self, image, reasons=None):
+        source_crop = self.crop if self.crop is not None else detect_crop(image)
+        # Validate before slicing, retaining the original viewport pixels.
+        normalize(image, source_crop)
+        left, top, right, bottom = source_crop
+        image = image[top:bottom, left:right].copy()
+        height, width = image.shape[:2]
+        stored_crop = [0, 0, width, height]
         digest = image_digest(image)
         if digest in self.seen:
             return None
         name = stored_name(self.session_id, datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S_%fZ_') + uuid4().hex[:8] + '.png')
-        data = draft_annotation(image, name, self.collection, self.session_id, self.split, self.crop)
+        data = draft_annotation(image, name, self.collection, self.session_id, self.split, stored_crop)
         # Automatic suggestions never carry human approvals, including future proposers.
         data['confirmed'] = False
         state = data.setdefault('screen_state', {})
@@ -108,7 +115,8 @@ class DraftRecorder:
         state['reviews'] = {key: False for key in ('screen_kind', 'ammo', 'combat_stats', 'cards', 'soul')}
         data.setdefault('prediction', {})['human_review_required'] = True
         data['auto_capture'] = {'method': 'settled-screen-change-v1', 'pixel_sha256': digest,
-                                'captured_at': datetime.now(timezone.utc).isoformat()}
+                                'captured_at': datetime.now(timezone.utc).isoformat(),
+                                'source_crop': list(source_crop)}
         if reasons is not None:
             data['auto_capture']['reasons'] = list(reasons)
         encoded_ok, encoded = cv2.imencode('.png', image)
