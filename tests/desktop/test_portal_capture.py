@@ -25,6 +25,20 @@ def pipe_with(data):
 
 
 class PortalPacketTests(unittest.TestCase):
+    def test_helper_interrupt_is_quiet_but_capture_errors_are_reported(self):
+        for error, expected in ((KeyboardInterrupt(), 0), (RuntimeError('capture failed'), 1)):
+            with self.subTest(error=type(error).__name__), patch.object(
+                portal_helper, 'libraries', return_value=(Mock(), Mock(), Mock())
+            ), patch.object(portal_helper, 'stream', side_effect=error), patch.object(
+                portal_helper, 'send'
+            ) as send, patch('sys.argv', ['portal_helper']), patch('sys.stderr', new_callable=io.StringIO) as stderr:
+                self.assertEqual(portal_helper.main(), expected)
+                self.assertEqual(stderr.getvalue(), '')
+                if expected == 0:
+                    send.assert_not_called()
+                else:
+                    send.assert_called_once_with(b'E', b'capture failed')
+
     def test_partial_reads_are_reassembled(self):
         real_read = os.read
         with pipe_with(packet(b'R', b'ok')) as pipe, patch.object(portal.os, 'read', side_effect=lambda fd, size: real_read(fd, min(1, size))) as read:
