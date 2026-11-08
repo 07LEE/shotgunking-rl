@@ -140,3 +140,39 @@ class BoardContextReaderTests(unittest.TestCase):
         self.assertFalse(rejected.ready_for_policy)
         self.assertIsNone(rejected.board_context)
         self.assertTrue(any(issue.startswith('board_context:piece_sides:unmatched_cell:') for issue in rejected.issues))
+
+    def test_accepted_controlled_king_identity_supplies_only_its_own_side(self):
+        reader = BoardContextReader.from_collection(self.root)
+        # Change the controlled king's appearance, leaving other cells and moat intact.
+        board_image = PreparedFrame(self.image).board_image.copy()
+        board_image[7*65:8*65, 3*65:4*65] = 0
+        frame = Mock(board_image=board_image)
+        board = np.zeros((8, 8), np.int32)
+        board[7, 3] = 1
+        self.assertFalse(reader.read_prepared(frame).is_accepted)
+        result = reader.read_with_board(frame, board)
+        self.assertTrue(result.is_accepted)
+        self.assertEqual(result.value.piece_sides[7, 3], 1)
+        self.assertEqual(board[7, 3], 1)
+        board_image[:65, :65] = 0
+        self.assertEqual(reader.read_with_board(frame, board).reason, 'piece_sides:unmatched_cell:0,0')
+
+    def test_accepted_identity_cannot_overrule_conflicting_side_evidence(self):
+        reader = BoardContextReader.from_collection(self.root)
+        board = np.zeros((8, 8), np.int32)
+        board[0, 0] = 1  # Reference explicitly labels this cell empty.
+        result = reader.read_with_board(PreparedFrame(self.image), board)
+        self.assertEqual(result.reason, 'piece_sides:identity_conflict:0,0')
+        for invalid in (board.astype(bool), board + .5, np.full((8, 8), 7), np.ones((8, 8), int)):
+            self.assertEqual(reader.read_with_board(PreparedFrame(self.image), invalid).reason,
+                             'invalid_accepted_board')
+
+    def test_rejected_piece_board_cannot_supply_controlled_king_identity(self):
+        context = Mock()
+        pipeline = PerceptionPipeline(
+            FakeReader(Prediction.accepted(ScreenKind.GAMEPLAY, source='screen')),
+            FakeReader(Prediction.rejected(None, source='board', reason='ambiguous_royal_kind')),
+            FakeReader(Prediction.accepted(AmmoReading(1, 4), source='ammo')),
+            FakeReader(Prediction.accepted(VALID_COMBAT_STATS, source='combat')), context)
+        self.assertFalse(pipeline.observe(self.image).ready_for_policy)
+        context.read_with_board.assert_not_called()

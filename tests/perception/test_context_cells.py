@@ -2,6 +2,7 @@
 
 import unittest
 
+import cv2
 import numpy as np
 
 from shotgun_king_rl.perception import BoardContextReader, BoardContextReading
@@ -9,6 +10,140 @@ from shotgun_king_rl.perception.context_cells import CellSideReader, MoatRowRead
 
 
 class ContextCellTests(unittest.TestCase):
+    def test_scanline_phase_uses_agreeing_row_background_without_weakening_scores(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        bands = np.where(np.arange(65) % 6 < 3, 30, -30)
+        mask = np.zeros((65, 65), bool)
+        mask[15:48, 27:38] = True
+        mask[15:25, 20:45] = True
+        def cell(phase):
+            pixels = np.broadcast_to((100+phase*bands)[:, None], (65, 65)).copy()
+            pixels[mask] += 40
+            return np.repeat(pixels[:, :, None], 3, axis=2).astype(np.uint8)
+        image[:65, :65] = cell(1)
+        sides = np.zeros((8, 8), np.int8)
+        sides[0, 0] = 2
+        reader = CellSideReader([(image, sides)])
+        query = cell(-1)
+        baseline = CellSideReader([(image, sides)])
+        baseline._row_glyphs = ()
+        self.assertFalse(baseline.read_cell(query).is_accepted)
+        self.assertEqual(reader.read_cell(query).value, 2)
+        extra = query.copy()
+        extra[25:45, 15:23] = 220
+        self.assertFalse(reader.read_cell(extra).is_accepted)
+        contaminated = query.copy()
+        contaminated[15:40, :8] = 220
+        self.assertIsNone(reader._row_side(contaminated))
+        conflict = sides.copy()
+        conflict[0, 0] = 1
+        self.assertFalse(CellSideReader([(image, sides), (image, conflict)]).read_cell(query).is_accepted)
+
+    def test_central_red_indicator_blocks_even_a_known_controlled_king(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        sides = np.zeros((8, 8), np.int8)
+        reader = CellSideReader([(image, sides)])
+        patch = image[:65, :65].copy()
+        patch[15:45, 25:40] = (30, 30, 230)
+        for identity in (-1, 1):
+            result = reader.read_cell(patch, known_identity=identity)
+            self.assertFalse(result.is_accepted)
+            self.assertEqual(result.reason, 'indicator_occlusion')
+
+    def test_half_pixel_glyph_alignment_preserves_side_conflict_rejection(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        cell = image[:65, :65]
+        cv2.circle(cell, (32, 25), 8, (220, 220, 220), -1)
+        cv2.rectangle(cell, (27, 32), (37, 48), (220, 220, 220), -1)
+        sides = np.zeros((8, 8), np.int8)
+        sides[0, 0] = 2
+        shifted = cv2.warpAffine(cell, np.float32([[1, 0, .5], [0, 1, .5]]),
+                                (65, 65), borderValue=(100, 100, 100))
+        baseline = CellSideReader([(image, sides)])
+        baseline._subpixel_glyphs = ()
+        baseline._stroke_glyphs = ()
+        self.assertFalse(baseline.read_cell(shifted).is_accepted)
+        self.assertEqual(CellSideReader([(image, sides)]).read_cell(shifted).value, 2)
+        other = sides.copy()
+        other[0, 0] = 1
+        self.assertFalse(CellSideReader([(image, sides), (image, other)]).read_cell(shifted).is_accepted)
+
+    def test_full_stroke_match_tolerates_shading_but_not_extra_strokes_or_side_conflict(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        cell = image[:65, :65]
+        cv2.circle(cell, (32, 25), 8, (220, 220, 220), -1)
+        cv2.rectangle(cell, (27, 32), (37, 48), (220, 220, 220), -1)
+        sides = np.zeros((8, 8), np.int8)
+        sides[0, 0] = 2
+        query = cell.copy()
+        foreground = query[:, :, 0] == 220
+        stripes = (np.indices((65, 65))[1] // 4) % 2 == 0
+        query[foreground & stripes] = 185
+        query[foreground & ~stripes] = 255
+        baseline = CellSideReader([(image, sides)])
+        baseline._stroke_glyphs = ()
+        self.assertFalse(baseline.read_cell(query).is_accepted)
+        reader = CellSideReader([(image, sides)])
+        self.assertEqual(reader.read_cell(query).value, 2)
+        self.assertIsNone(reader._stroke_side(np.zeros((45, 45), np.float32), 220))
+        extra = query.copy()
+        extra[15:50, 15:23] = 220
+        self.assertFalse(reader.read_cell(extra).is_accepted)
+        conflicting = sides.copy()
+        conflicting[0, 0] = 1
+        self.assertFalse(CellSideReader([(image, sides), (image, conflicting)]).read_cell(query).is_accepted)
+
+    def test_shifted_reviewed_glyph_needs_matching_shape_brightness_and_side(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        patch = image[:65, :65]
+        cv2.circle(patch, (32, 25), 8, (220, 220, 220), -1)
+        cv2.rectangle(patch, (27, 32), (37, 48), (220, 220, 220), -1)
+        sides = np.zeros((8, 8), np.int8)
+        sides[0, 0] = 2
+        shifted = image.copy()
+        shifted[:65, :65] = cv2.warpAffine(patch, np.float32([[1, 0, 3], [0, 1, 0]]),
+                                         (65, 65), borderValue=(100, 100, 100))
+        reader = CellSideReader([(image, sides)])
+        self.assertEqual(reader.read_board(shifted).value[0, 0], 2)
+        dark = shifted.copy()
+        dark[:65, :65][dark[:65, :65, 0] > 150] = 20
+        self.assertEqual(reader.read_board(dark).reason, 'unmatched_cell:0,0')
+        unknown = shifted.copy()
+        unknown[15:50, 15:50] = 220
+        self.assertEqual(reader.read_board(unknown).reason, 'unmatched_cell:0,0')
+        conflicting = sides.copy()
+        conflicting[0, 0] = 1
+        self.assertEqual(CellSideReader([(image, sides), (image, conflicting)]).read_board(shifted).reason,
+                         'unmatched_cell:0,0')
+
+    def test_small_rendering_noise_keeps_reviewed_sides_and_moat(self):
+        changed = np.minimum(self.image.astype(np.int16) + 1, 255).astype(np.uint8)
+        sides = CellSideReader([(self.image, self.sides)]).read_board(changed)
+        self.assertTrue(sides.is_accepted)
+        np.testing.assert_array_equal(sides.value, self.sides)
+        self.assertIs(MoatRowReader([(self.image, False)]).read_board(changed).value, False)
+
+    def test_low_average_error_cannot_hide_new_local_marker(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        changed = image.copy()
+        changed[20:25, 20:25] = 255
+        reader = CellSideReader([(image, np.zeros((8, 8), np.int8))])
+        self.assertEqual(reader.read_board(changed).reason, 'unmatched_cell:0,0')
+        changed = image.copy()
+        changed[4*65+20:4*65+25, 20:25] = 255
+        self.assertEqual(MoatRowReader([(image, False)]).read_board(changed).reason, 'unmatched_row')
+
+    def test_near_renderings_with_conflicting_labels_stay_unknown(self):
+        first = np.full((520, 520, 3), 100, np.uint8)
+        second = np.full_like(first, 102)
+        query = np.full_like(first, 101)
+        other = self.sides.copy()
+        other[0, 2] = 1
+        reader = CellSideReader([(first, self.sides), (second, other)])
+        self.assertEqual(reader.read_board(query).reason, 'conflicting_cell:0,0')
+        self.assertEqual(MoatRowReader([(first, True), (second, False)]).read_board(query).reason,
+                         'conflicting_references')
+
     def setUp(self):
         self.image = np.random.default_rng(31).integers(0, 256, (520, 520, 3), dtype=np.uint8)
         self.sides = np.zeros((8, 8), dtype=np.int8)
