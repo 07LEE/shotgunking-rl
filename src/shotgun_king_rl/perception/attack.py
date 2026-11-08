@@ -86,12 +86,14 @@ class AttackReader:
         self.digit_examples = tuple((value, token.copy()) for value, token in digit_examples)
 
     @classmethod
-    def from_collection(cls, collection):
+    def from_collection(cls, collection, *, exclude=None):
         examples = []
         numeric_examples = []
         dim_numeric_examples = []
         digit_examples = []
         for path in annotation_paths(collection):
+            if exclude is not None and path.resolve() == Path(exclude).resolve():
+                continue
             data = json.loads(path.read_text())
             state = data.get("screen_state") or {}
             reviews = state.get("reviews") or {}
