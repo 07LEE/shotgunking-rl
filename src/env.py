@@ -338,6 +338,7 @@ class ShotgunKingEnv(gym.Env if gym is not None else object):
             "ready_for_policy": bool(result and result.ready_for_policy),
             "issues": list(result.issues) if result else ["observation_unavailable"],
             "sources": list(result.sources) if result else [],
+            "reader_metadata": self.perception_metadata,
             "combat_stats": asdict(result.combat_stats) if result and result.combat_stats else None,
             "board_context": asdict(result.board_context) if result and result.board_context else None,
             "grenade_damage_memory": self.perception_pipeline.memory_info() if result is not None and self.perception_pipeline is not None else None,
