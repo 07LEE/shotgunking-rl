@@ -72,6 +72,15 @@ class BoardContextReaderTests(unittest.TestCase):
                 self.save()
                 self.assertEqual(BoardContextReader.from_collection(self.root).metadata()['references'], 0)
 
+    def test_explicit_sides_load_without_inventing_missing_moat_state(self):
+        self.data.pop('moat_active')
+        self.save()
+        reader = BoardContextReader.from_collection(self.root)
+        self.assertEqual(reader.metadata()['side_reference_frames'], 1)
+        self.assertEqual(reader.metadata()['moat_reference_frames'], 0)
+        self.assertTrue(reader.side_reader.read_board(PreparedFrame(self.image).board_image).is_accepted)
+        self.assertEqual(reader.read(self.image).reason, 'moat:references_unavailable')
+
     def test_changed_board_overlay_and_invalid_frame_do_not_reuse_state(self):
         reader = BoardContextReader.from_collection(self.root)
         self.assertTrue(reader.read(self.image).is_accepted)
@@ -87,7 +96,7 @@ class BoardContextReaderTests(unittest.TestCase):
         (self.root / 'annotations/run-02__screen.json').write_text(json.dumps(self.data))
         result = BoardContextReader.from_collection(self.root).read(self.image)
         self.assertFalse(result.is_accepted)
-        self.assertEqual(result.reason, 'conflicting_references')
+        self.assertEqual(result.reason, 'moat:conflicting_references')
 
     def test_input_arrays_are_copied_and_prepared_path_matches_read(self):
         board = PreparedFrame(self.image).board_image
@@ -130,4 +139,4 @@ class BoardContextReaderTests(unittest.TestCase):
         rejected = pipeline.observe(changed)
         self.assertFalse(rejected.ready_for_policy)
         self.assertIsNone(rejected.board_context)
-        self.assertIn('board_context:unmatched_board_snapshot', rejected.issues)
+        self.assertTrue(any(issue.startswith('board_context:piece_sides:unmatched_cell:') for issue in rejected.issues))

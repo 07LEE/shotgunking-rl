@@ -1,9 +1,4 @@
-"""Conservative context lookup for explicitly reviewed board snapshots.
-
-This bootstrap reader accepts only an identical normalized board image. It is
-not a general side/card classifier: unseen positions, overlays and rendering
-changes remain unknown until separately validated recognition is available.
-"""
+"""Compose reviewed cell-side evidence and independent fixed-row moat evidence."""
 
 import hashlib
 import json
@@ -15,17 +10,22 @@ import numpy as np
 from ..collection_layout import annotation_paths
 from ..state_schema import SIDE_ALLY, SIDE_EMPTY, SIDE_ENEMY
 from ..vision.layout import normalize_game_screen
+from .context_cells import CellSideReader, MoatRowReader
 from .frame import PreparedFrame
 from .types import BoardContextReading, Prediction
 
 
 class BoardContextReader:
-    source = 'board-context-reviewed-snapshots:v1'
+    source = 'board-context:reviewed-cells-and-moat-row-v2'
 
     def __init__(self, references=(), provenance=()):
-        self._references = tuple((image.copy(), BoardContextReading(
-            context.piece_sides.copy(), context.moat_active)) for image, context in references)
+        references = tuple(references)
+        self.side_reader = CellSideReader((image, context.piece_sides) for image, context in references)
+        self.moat_reader = MoatRowReader((image, context.moat_active) for image, context in references
+                                        if type(context.moat_active) is bool)
         self._provenance = tuple(dict(item) for item in provenance)
+        self._side_frames = len(references)
+        self._joint_frames = sum(type(context.moat_active) is bool for _, context in references)
 
     @classmethod
     def from_collection(cls, collection):
@@ -42,7 +42,6 @@ class BoardContextReader:
                     or state.get('screen_kind') != 'gameplay'
                     or (state.get('reviews') or {}).get('screen_kind') is not True
                     or not isinstance(data.get('piece_sides'), list)
-                    or type(data.get('moat_active')) is not bool
                     or data.get('exclude_cells')):
                 continue
             board = data.get('board')
@@ -63,43 +62,42 @@ class BoardContextReader:
             if image_path.parent != originals or not image_path.is_file():
                 continue
             image_bytes = image_path.read_bytes()
-            image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
             try:
+                image = cv2.imdecode(np.frombuffer(image_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
                 image = normalize_game_screen(image, data.get('game_crop'))
                 snapshot = PreparedFrame(image, normalized=True).board_image
             except (ValueError, TypeError, cv2.error):
                 continue
             if snapshot is None:
                 continue
-            references.append((snapshot, BoardContextReading(sides, data['moat_active'])))
+            references.append((snapshot, BoardContextReading(sides, data.get('moat_active'))))
             provenance.append({'annotation': path.name,
                                'annotation_sha256': hashlib.sha256(raw).hexdigest(),
                                'image_sha256': hashlib.sha256(image_bytes).hexdigest(),
-                               'moat_active': data['moat_active']})
+                               'moat_active': data.get('moat_active')})
         return cls(references, provenance)
 
     def metadata(self):
-        return {'source': self.source, 'matching': 'exact_normalized_board',
-                'references': len(self._references),
+        return {'source': self.source, 'matching': 'exact_cells_and_fixed_moat_row',
+                'references': self._joint_frames, 'side_reference_frames': self._side_frames,
+                'moat_reference_frames': self.moat_reader.reference_rows,
+                'side_reference_cells': self.side_reader.reference_cells,
+                'side_source': self.side_reader.source, 'moat_source': self.moat_reader.source,
                 'provenance': [dict(item) for item in self._provenance]}
 
     def read(self, image):
         return self.read_prepared(PreparedFrame(image))
 
     def read_prepared(self, frame):
-        if not self._references:
+        if not self._side_frames:
             return Prediction.unknown(source=self.source, reason='references_unavailable')
-        snapshot = frame.board_image
-        if snapshot is None:
+        image = frame.board_image
+        if image is None:
             return Prediction.unknown(source=self.source, reason='invalid_frame')
-        matches = [context for image, context in self._references
-                   if np.array_equal(snapshot, image)]
-        if not matches:
-            return Prediction.unknown(source=self.source, reason='unmatched_board_snapshot')
-        context = matches[0]
-        if any(other.moat_active != context.moat_active
-               or not np.array_equal(other.piece_sides, context.piece_sides)
-               for other in matches[1:]):
-            return Prediction.unknown(source=self.source, reason='conflicting_references')
-        return Prediction.accepted(BoardContextReading(
-            context.piece_sides.copy(), context.moat_active), source=self.source)
+        sides = self.side_reader.read_board(image)
+        if not sides.is_accepted:
+            return Prediction.unknown(source=self.source, reason=f'piece_sides:{sides.reason}')
+        moat = self.moat_reader.read_board(image)
+        if not moat.is_accepted:
+            return Prediction.unknown(source=self.source, reason=f'moat:{moat.reason}')
+        return Prediction.accepted(BoardContextReading(sides.value, moat.value), source=self.source)
