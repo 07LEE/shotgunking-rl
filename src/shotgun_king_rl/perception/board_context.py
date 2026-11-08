@@ -23,7 +23,7 @@ def _valid_accepted_board(board):
 
 
 class BoardContextReader:
-    source = 'board-context:reviewed-cells-and-moat-row-v8'
+    source = 'board-context:reviewed-cells-and-moat-row-v9'
 
     def __init__(self, references=(), provenance=()):
         references = tuple(references)
@@ -95,11 +95,15 @@ class BoardContextReader:
                                  'maximum_brightness_difference': 20, 'translation_pixels': 6,
                                  'translation_grid_pixels': .5,
                                  'stroke_minimum_overlap': .95, 'stroke_minimum_distance_score': .98,
+                                 'row_background': {'edge_lane_width': 8, 'maximum_lane_difference': 24},
                                  'supplies_empty_cells': False},
                 'neighbor_overlap': {'source': self.overlap_reader.source, 'maximum_fragment_pixels': 400,
                                      'visible_floor_core': [22, 22, 43, 43], 'requires_occupied_neighbor': True,
                                      'floor_max_channel_error': 24, 'floor_core_mean_error': 2,
-                                     'minimum_neighbor_floor_fraction': .25, 'red_channel_margin': 100},
+                                     'minimum_neighbor_floor_fraction': .25, 'red_channel_margin': 100,
+                                     'floor_selection': 'complete_connected_explanation'},
+                'indicator_occlusion': {'red_channel_margin': 100, 'minimum_pixels': 30,
+                                        'minimum_size': [8, 12], 'must_overlap_cell_center': True},
                 'moat_floor_evidence': {'minimum_visible_empty_tiles': 2, 'requires_agreement': True},
                 'accepted_board_identities': {'empty': 'reviewed_cell_evidence_required', 'player_king': 'ally',
                                               'other_pieces': 'reviewed_side_evidence_required'},

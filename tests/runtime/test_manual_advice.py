@@ -49,6 +49,19 @@ class ManualAdviceTests(unittest.TestCase):
             invalid = replace(state, issues=(*state.issues, extra))
             self.assertTrue(build_manual_advice(invalid)['blocked'])
 
+    def test_occlusion_message_names_the_square_and_refresh_condition(self):
+        board = np.zeros((8, 8), int)
+        board[4, 4] = 1
+        state = replace(observed(board), ready_for_policy=False, board_context=None, combat_stats=None,
+                        issues=('board_context:piece_sides:indicator_occlusion:5,2', 'combat_stats:unknown'))
+        result = build_manual_advice(state)
+        self.assertTrue(result['blocked'])
+        message = format_manual_advice(result)
+        self.assertIn('c3:', message)
+        self.assertIn('표시가 사라진 뒤 다시 확인', message)
+        self.assertNotIn('전투 수치 확인 필요', message)
+        self.assertEqual(result['moves'], [])
+
     def test_vacating_king_reveals_rook_ray_and_does_not_mutate_input(self):
         board = np.zeros((8, 8), int)
         board[4, 4], board[4, 0] = 1, 5

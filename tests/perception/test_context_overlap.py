@@ -45,6 +45,21 @@ class NeighborOverlapTests(unittest.TestCase):
         np.testing.assert_array_equal(self.query, original)
         self.assertIs(result.value.moat_active, False)
 
+    def test_contaminated_empty_reference_cannot_force_a_negative_ghost(self):
+        contaminated = self.reference.copy()
+        # This reviewed empty tile contains the head of its own occupied neighbor.
+        contaminated[65+46:130, 65+26:65+39] = 220
+        contaminated[130:130+49, 65+26:65+39] = 220
+        sides = self.sides.copy()
+        sides[2, 1] = 2
+        reader = NeighborOverlapReader([(self.reference, self.sides), (contaminated, sides)])
+        query = self.reference.copy()
+        query[3*65-10:3*65+49, 3*65+26:3*65+39] = 220
+        patch = query[2*65:3*65, 3*65:4*65]
+        nearest = reader._floor(patch, empty=True)
+        self.assertFalse(nearest[-1].any())  # The closest patch creates a ghost.
+        self.assertTrue(reader.accepts_empty(query, 2, 3, self.board, self.predictions(query)))
+
     def test_occupancy_unknown_neighbor_and_missing_floor_cannot_supply_empty(self):
         occupied = self.board.copy()
         occupied[2, 3] = 2

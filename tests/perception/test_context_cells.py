@@ -10,6 +10,46 @@ from shotgun_king_rl.perception.context_cells import CellSideReader, MoatRowRead
 
 
 class ContextCellTests(unittest.TestCase):
+    def test_scanline_phase_uses_agreeing_row_background_without_weakening_scores(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        bands = np.where(np.arange(65) % 6 < 3, 30, -30)
+        mask = np.zeros((65, 65), bool)
+        mask[15:48, 27:38] = True
+        mask[15:25, 20:45] = True
+        def cell(phase):
+            pixels = np.broadcast_to((100+phase*bands)[:, None], (65, 65)).copy()
+            pixels[mask] += 40
+            return np.repeat(pixels[:, :, None], 3, axis=2).astype(np.uint8)
+        image[:65, :65] = cell(1)
+        sides = np.zeros((8, 8), np.int8)
+        sides[0, 0] = 2
+        reader = CellSideReader([(image, sides)])
+        query = cell(-1)
+        baseline = CellSideReader([(image, sides)])
+        baseline._row_glyphs = ()
+        self.assertFalse(baseline.read_cell(query).is_accepted)
+        self.assertEqual(reader.read_cell(query).value, 2)
+        extra = query.copy()
+        extra[25:45, 15:23] = 220
+        self.assertFalse(reader.read_cell(extra).is_accepted)
+        contaminated = query.copy()
+        contaminated[15:40, :8] = 220
+        self.assertIsNone(reader._row_side(contaminated))
+        conflict = sides.copy()
+        conflict[0, 0] = 1
+        self.assertFalse(CellSideReader([(image, sides), (image, conflict)]).read_cell(query).is_accepted)
+
+    def test_central_red_indicator_blocks_even_a_known_controlled_king(self):
+        image = np.full((520, 520, 3), 100, np.uint8)
+        sides = np.zeros((8, 8), np.int8)
+        reader = CellSideReader([(image, sides)])
+        patch = image[:65, :65].copy()
+        patch[15:45, 25:40] = (30, 30, 230)
+        for identity in (-1, 1):
+            result = reader.read_cell(patch, known_identity=identity)
+            self.assertFalse(result.is_accepted)
+            self.assertEqual(result.reason, 'indicator_occlusion')
+
     def test_half_pixel_glyph_alignment_preserves_side_conflict_rejection(self):
         image = np.full((520, 520, 3), 100, np.uint8)
         cell = image[:65, :65]

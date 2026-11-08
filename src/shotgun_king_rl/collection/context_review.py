@@ -17,7 +17,7 @@ from ..perception.frame import PreparedFrame, read_frame
 from ..vision.layout import normalize_game_screen
 
 
-REASONS = {'unmatched_cell': '검수 참조와 일치하지 않음',
+REASONS = {'indicator_occlusion': '색 표시가 칸을 가려 바닥·기물 확인 불가', 'unmatched_cell': '검수 참조와 일치하지 않음',
            'conflicting_cell': '소속 참조가 서로 충돌함',
            'identity_conflict': '조종 왕 식별과 소속 근거가 충돌함',
            'references_unavailable': '검수된 소속 참조 없음'}

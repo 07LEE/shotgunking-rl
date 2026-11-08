@@ -48,6 +48,36 @@ def _glyph(image):
     return signal.astype(np.float32), float(gray[10:55, 10:55][foreground].mean())
 
 
+def _row_glyph(image):
+    """Remove scanline color using agreeing floor lanes on both cell edges."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY).astype(np.float32)
+    left = np.median(gray[:, :8], axis=1)
+    right = np.median(gray[:, 57:], axis=1)
+    if np.any(np.abs(left-right) > 24):
+        return None
+    background = np.median(np.concatenate([gray[:, :8], gray[:, 57:]], axis=1), axis=1)
+    signal = np.abs(gray-background[:, None])[10:55, 10:55]
+    if signal.max() <= 35:
+        return None
+    signal = signal / signal.max() * 255
+    foreground = signal > 100
+    if np.count_nonzero(foreground) < 30:
+        return None
+    return signal, float(gray[10:55, 10:55][foreground].mean())
+
+
+def has_indicator_occlusion(image):
+    """Recognize a substantial central red overlay, without filling its contents."""
+    pixels = image.astype(np.int16)
+    red = ((pixels[:, :, 2]-pixels[:, :, 1] > 100)
+           & (pixels[:, :, 2]-pixels[:, :, 0] > 100)).astype(np.uint8)
+    _, components, stats, _ = cv2.connectedComponentsWithStats(red, connectivity=8)
+    central = set(components[22:43, 22:43].ravel()) - {0}
+    return any(stats[label, cv2.CC_STAT_AREA] >= 30
+               and stats[label, cv2.CC_STAT_WIDTH] >= 8
+               and stats[label, cv2.CC_STAT_HEIGHT] >= 12 for label in central)
+
+
 class CellSideReader:
     """Match complete cell images without assuming sides from positions or colors.
 
@@ -57,12 +87,13 @@ class CellSideReader:
     supply empty cells; unmatched shapes and conflicting labels stay unknown.
     """
 
-    source = 'piece-sides:reviewed-cells-v5'
+    source = 'piece-sides:reviewed-cells-v6'
 
     def __init__(self, references=()):
         self._labels = {}
         appearances = {}
         glyphs = {}
+        row_glyphs = {}
         self.reference_cells = 0
         for image, sides in references:
             if (not _valid_board_image(image) or not isinstance(sides, np.ndarray)
@@ -79,6 +110,13 @@ class CellSideReader:
                         appearances[key] = (appearance, set())
                     appearances[key][1].add(int(sides[row, col]))
                     if sides[row, col] != SIDE_EMPTY:
+                        row_glyph = _row_glyph(patch)
+                        if row_glyph is not None:
+                            signal, brightness = row_glyph
+                            key = (signal.tobytes(), brightness)
+                            if key not in row_glyphs:
+                                row_glyphs[key] = (signal, brightness, set())
+                            row_glyphs[key][2].add(int(sides[row, col]))
                         glyph = _glyph(patch)
                         if glyph is not None:
                             signal, brightness = glyph
@@ -90,6 +128,7 @@ class CellSideReader:
         self._appearances = np.stack([a for a, _ in appearances.values()]) if appearances else None
         self._appearance_labels = tuple(labels for _, labels in appearances.values())
         self._glyphs = tuple(glyphs.values())
+        self._row_glyphs = tuple(row_glyphs.values())
         self._subpixel_glyphs = tuple((cv2.resize(signal, (90, 90), interpolation=cv2.INTER_LINEAR), brightness, labels)
                                      for signal, brightness, labels in self._glyphs)
         self._stroke_glyphs = tuple(((signal > 100).astype(np.uint8), brightness, labels)
@@ -125,12 +164,12 @@ class CellSideReader:
                 scores[side] = max(scores.get(side, -1), score)
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .98:
-            return self._stroke_side(signal, brightness)
+            return self._stroke_side(signal, brightness, fallback=lambda: self._row_side(image))
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .04:
             return None
         return ranked[0][0]
 
-    def _stroke_side(self, signal, brightness):
+    def _stroke_side(self, signal, brightness, *, fallback=None):
         """Require the full foreground, not a selected matching fragment."""
         query = (signal > 100).astype(np.uint8)
         if not query.any():
@@ -150,8 +189,28 @@ class CellSideReader:
                 scores[side] = max(scores.get(side, (-1, -1)), evidence)
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1][0] < .95 or ranked[0][1][1] < .98:
-            return None
+            return fallback() if fallback is not None else None
         if len(ranked) > 1 and ranked[0][1][0] - ranked[1][1][0] < .04:
+            return None
+        return ranked[0][0]
+
+    def _row_side(self, image):
+        glyph = _row_glyph(image)
+        if glyph is None:
+            return None
+        signal, brightness = glyph
+        padded = cv2.copyMakeBorder(signal, 6, 6, 6, 6, cv2.BORDER_CONSTANT, value=0)
+        scores = {}
+        for template, reference_brightness, labels in self._row_glyphs:
+            if abs(brightness-reference_brightness) > 20:
+                continue
+            score = float(cv2.matchTemplate(padded, template, cv2.TM_CCOEFF_NORMED).max())
+            for side in labels:
+                scores[side] = max(scores.get(side, -1), score)
+        ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+        if not ranked or ranked[0][1] < .98:
+            return None
+        if len(ranked) > 1 and ranked[0][1]-ranked[1][1] < .04:
             return None
         return ranked[0][0]
 
@@ -185,6 +244,8 @@ class CellSideReader:
             return Prediction.unknown(source=self.source, reason='invalid_known_identity')
         if not self._labels:
             return Prediction.unknown(source=self.source, reason='references_unavailable')
+        if has_indicator_occlusion(patch):
+            return Prediction.unknown(source=self.source, reason='indicator_occlusion')
         labels = self._labels.get(_key(patch))
         if labels is None:
             labels = _near_labels(patch, self._appearances, self._appearance_labels)

@@ -86,8 +86,19 @@ def format_manual_advice(result):
                   'board': '기물 배치 확인 필요', 'ammo': '탄약 확인 필요',
                   'screen': '플레이 화면 확인 필요', 'combat_stats': '전투 수치 확인 필요'}
         messages = []
-        for issue in result['issues']:
+        movement_issues = [issue for issue in result['issues'] if not issue.startswith('combat_stats:')]
+        for issue in movement_issues or result['issues']:
             message = labels.get(issue.split(':', 1)[0], issue)
+            parts = issue.split(':')
+            if len(parts) == 4 and parts[:2] == ['board_context', 'piece_sides']:
+                try:
+                    row, col = map(int, parts[3].split(','))
+                    if 0 <= row < 8 and 0 <= col < 8:
+                        reason = ('색 표시가 가려 바닥·기물 확인 불가; 표시가 사라진 뒤 다시 확인'
+                                  if parts[2] == 'indicator_occlusion' else '기물 소속 확인 필요')
+                        message = f'{_square_name((row, col))}: {reason}'
+                except ValueError:
+                    pass
             if message not in messages:
                 messages.append(message)
         return '추천 보류: ' + ', '.join(messages)
