@@ -88,8 +88,11 @@ def audit_collection(collection: Path) -> dict:
                 confirmed += 1
                 session["pieces_confirmed"] += 1
                 if split in SPLITS:
-                    for row in data.get("board") or []:
-                        piece_classes[split].update(row)
+                    excluded = data.get("exclude_cells") or []
+                    for row_index, row in enumerate(data.get("board") or []):
+                        piece_classes[split].update(
+                            label for col_index, label in enumerate(row)
+                            if [row_index, col_index] not in excluded)
         for section in REVIEW_SECTIONS:
             if reviews.get(section) is True:
                 review_counts[section] += 1
