@@ -13,6 +13,7 @@ from shotgun_king_rl.perception.knockback import KnockbackReader, knockback_patc
 from shotgun_king_rl.perception.penetration import PenetrationReader, penetration_patch
 from shotgun_king_rl.perception.types import PredictionStatus
 from shotgun_king_rl.perception.hud import stat_context_patch
+from shotgun_king_rl.perception.numeric import numeric_token
 
 
 def screen(y=250, seed=7, digits="50%"):
@@ -30,6 +31,19 @@ READERS = (
 
 
 class PercentageReaderTests(unittest.TestCase):
+    def test_shifted_knockback_needs_both_title_and_complete_percentage(self):
+        reference = screen()
+        row = knockback_patch(reference)
+        token = numeric_token(reference, 192, threshold=110)
+        reader = KnockbackReader([(50, row)], numeric_examples=[(50, token, row)])
+        def shifted(image):
+            return cv2.warpAffine(image, np.float32([[1, 0, 2], [0, 1, 0]]), (1280, 720))
+        self.assertEqual(reader.read(shifted(reference)).value, 50)
+        self.assertFalse(reader.read(shifted(screen(seed=11))).is_accepted)
+        self.assertFalse(reader.read(shifted(screen(digits='95%'))).is_accepted)
+        conflicting = KnockbackReader(numeric_examples=[(50, token, row), (40, token, row)])
+        self.assertFalse(conflicting.read(shifted(reference)).is_accepted)
+
     def test_accepts_known_percentage_after_vertical_hud_shift(self):
         for field, reader_cls, patch_fn, known in READERS:
             with self.subTest(reader=field):

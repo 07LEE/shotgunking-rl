@@ -10,6 +10,7 @@ from .visibility import visual_combat_stats
 
 from ..vision.layout import normalize_game_screen
 from .hud import reviewed_zero_score, stat_context_patch, stat_patch
+from .numeric import match_numeric_with_title, numeric_token
 from .types import Prediction
 
 
@@ -26,18 +27,20 @@ class KnockbackReader:
     Zero requires a reviewed matching panel and exact row, never absence alone.
     """
 
-    source = "knockback-reviewed-templates:v2"
+    source = "knockback-reviewed-templates:v3"
 
-    def __init__(self, examples=(), zero_examples=()):
+    def __init__(self, examples=(), zero_examples=(), *, numeric_examples=()):
         self.examples = tuple((value, template.copy()) for value, template in examples)
         self._template_stds = tuple(template.std() for _, template in self.examples)
         self.zero_examples = tuple((context.copy(), row.copy()) for context, row in zero_examples)
         self._zero_stds = tuple(context.std() for context, _ in self.zero_examples)
+        self.numeric_examples = tuple((value, token.copy(), row.copy()) for value, token, row in numeric_examples)
 
     @classmethod
     def from_collection(cls, collection, *, exclude=None):
         examples = []
         zero_examples = []
+        numeric_examples = []
         for path in annotation_paths(collection):
             if exclude is not None and path.resolve() == Path(exclude).resolve():
                 continue
@@ -67,7 +70,10 @@ class KnockbackReader:
                     zero_examples.append((context, template))
             elif template is not None:
                 examples.append((value, template))
-        return cls(examples, zero_examples)
+                token = numeric_token(image, 192, threshold=110)
+                if token is not None:
+                    numeric_examples.append((value, token, template))
+        return cls(examples, zero_examples, numeric_examples=numeric_examples)
 
     def read(self, image) -> Prediction[int]:
         try:
@@ -91,6 +97,11 @@ class KnockbackReader:
             return Prediction.unknown(source=self.source, reason="knockback_not_found")
         ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
         if not ranked or ranked[0][1] < .97:
+            numeric = match_numeric_with_title(
+                numeric_token(image, 192, threshold=110), stat_patch(image, 192, padding=8),
+                self.numeric_examples)
+            if numeric is not None:
+                return Prediction.accepted(numeric[0], source=self.source, confidence=numeric[1])
             return Prediction.unknown(source=self.source, reason="knockback_no_match")
         if len(ranked) > 1 and ranked[0][1] - ranked[1][1] < .04:
             return Prediction.unknown(source=self.source, reason="knockback_ambiguous")
