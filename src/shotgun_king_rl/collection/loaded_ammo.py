@@ -31,17 +31,17 @@ def match_loaded(image, examples):
         for value, template in examples
         if value == count and template.shape == (41, 168) and template[:, :34].std() >= 5
     ]
-    if count == 0:
-        # Empty slots are dim: the moving gun edge above/right of them can
-        # dominate whole-row correlation. Verify the slot bodies separately.
-        empty_query = cv2.cvtColor(image[36:76, 380:418], cv2.COLOR_BGR2GRAY)
-        for value, template in examples:
-            if value != 0 or template.shape != (41, 168):
-                continue
-            empty_template = template[6:38, 2:32]
-            if empty_template.std() < 5:
-                continue
-            scores.append(float(cv2.matchTemplate(empty_query, empty_template, cv2.TM_CCOEFF_NORMED).max()))
+    # The moving gun edge and row cap can dominate whole-row correlation.
+    # Verify both slot bodies for every count, retaining the matching-count
+    # reference, visible-gun and confidence requirements above.
+    body_query = cv2.cvtColor(image[36:76, 380:418], cv2.COLOR_BGR2GRAY)
+    for value, template in examples:
+        if value != count or template.shape != (41, 168):
+            continue
+        body_template = template[6:38, 2:32]
+        if body_template.std() < 5:
+            continue
+        scores.append(float(cv2.matchTemplate(body_query, body_template, cv2.TM_CCOEFF_NORMED).max()))
     if not scores or max(scores) < .97:
         return None
     return count, max(scores)
